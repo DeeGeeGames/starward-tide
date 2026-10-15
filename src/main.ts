@@ -24,7 +24,6 @@ const element = function <T extends HTMLElement>(
 const board = element('board', HTMLElement);
 const mapWorld = element('map-world', HTMLDivElement);
 const planetPanel = element('planet-panel', HTMLElement);
-const zoomLevel = element('zoom-level', HTMLOutputElement);
 const dispatchControls = element('dispatch-controls', HTMLDivElement);
 const canvas = element('space', HTMLCanvasElement);
 const context = canvas.getContext('2d');
@@ -419,7 +418,6 @@ let camera: Camera = { x: 0, y: 0, scale: 1 };
 let fitScale = 1;
 const applyCamera = function () {
 	mapWorld.style.transform = `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})`;
-	zoomLevel.value = `${Math.round((camera.scale / fitScale) * 100)}%`;
 };
 const fitMap = function () {
 	const width = board.clientWidth;
@@ -546,14 +544,6 @@ board.addEventListener(
 	},
 	{ passive: false },
 );
-for (const [id, factor] of [
-	['zoom-in', 1.25],
-	['zoom-out', 0.8],
-] as const)
-	element(id, HTMLButtonElement).addEventListener('click', function () {
-		zoomAt({ x: board.clientWidth / 2, y: board.clientHeight / 2 }, factor);
-	});
-element('fit-map', HTMLButtonElement).addEventListener('click', fitMap);
 board.addEventListener('keydown', function (event) {
 	const deltas: Record<string, Point> = {
 		ArrowLeft: { x: 50, y: 0 },
@@ -585,6 +575,33 @@ element('close-guide', HTMLButtonElement).addEventListener(
 	'click',
 	toggleGuide,
 );
+
+const fullscreen = element('fullscreen', HTMLButtonElement);
+const syncFullscreen = function () {
+	const active = Boolean(document.fullscreenElement);
+	const label = active ? 'Exit fullscreen' : 'Enter fullscreen';
+	fullscreen.setAttribute('aria-pressed', String(active));
+	fullscreen.setAttribute('aria-label', label);
+	fullscreen.textContent = active ? '⊡' : '⛶';
+	fullscreen.disabled = !document.fullscreenEnabled;
+	fullscreen.title = document.fullscreenEnabled
+		? label
+		: 'Fullscreen unavailable in this browser';
+};
+fullscreen.addEventListener('click', async function () {
+	fullscreen.disabled = true;
+	try {
+		if (document.fullscreenElement) await document.exitFullscreen();
+		else await document.documentElement.requestFullscreen();
+	} catch {
+		feedback('Fullscreen could not open. Check browser permissions.');
+		refresh();
+	} finally {
+		syncFullscreen();
+	}
+});
+document.addEventListener('fullscreenchange', syncFullscreen);
+syncFullscreen();
 
 const restart = async function (next: Scenario = scenario) {
 	if (busy) return;
