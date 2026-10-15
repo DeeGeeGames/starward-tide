@@ -1,6 +1,6 @@
 import { zoomCamera } from './camera';
 import type { Camera, Point } from './camera';
-import { CONFIG, COLORS } from './config';
+import { CONFIG, COLORS, MAP } from './config';
 import type { DispatchFilter, Production, Scenario } from './config';
 import {
 	createGame,
@@ -23,6 +23,8 @@ const element = function <T extends HTMLElement>(
 };
 const board = element('board', HTMLElement);
 const mapWorld = element('map-world', HTMLDivElement);
+mapWorld.style.width = `${MAP.width}px`;
+mapWorld.style.height = `${MAP.height}px`;
 const planetPanel = element('planet-panel', HTMLElement);
 const dispatchControls = element('dispatch-controls', HTMLDivElement);
 const canvas = element('space', HTMLCanvasElement);
@@ -129,8 +131,8 @@ const mountPlanets = function () {
 		const button = document.createElement('button');
 		button.className = 'planet';
 		button.dataset.planet = p.name;
-		button.style.left = `${p.x / 6}%`;
-		button.style.top = `${p.y / 6.6}%`;
+		button.style.left = `${p.x}px`;
+		button.style.top = `${p.y}px`;
 		button.innerHTML =
 			'<span class="surface"></span><span class="count"></span><span class="name"></span><span class="orbit-count"></span><span class="production-mark"></span><span class="production-progress"><i></i></span>';
 		const count = button.querySelector('.count');
@@ -300,8 +302,7 @@ const refresh = function () {
 };
 
 const draw = function () {
-	const width = 600,
-		height = 660;
+	const { width, height } = MAP;
 	const dpr = Math.min((devicePixelRatio || 1) * Math.max(1, camera.scale), 3);
 	if (
 		canvas.width !== Math.round(width * dpr) ||
@@ -310,13 +311,13 @@ const draw = function () {
 		canvas.width = Math.round(width * dpr);
 		canvas.height = Math.round(height * dpr);
 	}
-	ctx.setTransform(canvas.width / 600, 0, 0, canvas.height / 660, 0, 0);
-	ctx.clearRect(0, 0, 600, 660);
-	for (let i = 0; i < 115; i++) {
+	ctx.setTransform(canvas.width / width, 0, 0, canvas.height / height, 0, 0);
+	ctx.clearRect(0, 0, width, height);
+	for (let i = 0; i < 460; i++) {
 		ctx.fillStyle = i % 4 === 0 ? '#738ea45c' : '#42627b55';
 		ctx.fillRect(
-			(i * 137.57) % 600,
-			(i * 83.37) % 660,
+			(i * 137.57) % width,
+			(i * 83.37) % height,
 			i % 5 === 0 ? 1.8 : 1,
 			i % 5 === 0 ? 1.8 : 1,
 		);
@@ -426,11 +427,11 @@ const fitMap = function () {
 	const bottom = 85;
 	fitScale = Math.max(
 		0.1,
-		Math.min((width - 48) / 600, (height - top - bottom) / 660),
+		Math.min((width - 48) / MAP.width, (height - top - bottom) / MAP.height),
 	);
 	camera = {
-		x: (width - 600 * fitScale) / 2,
-		y: top + (height - top - bottom - 660 * fitScale) / 2,
+		x: (width - MAP.width * fitScale) / 2,
+		y: top + (height - top - bottom - MAP.height * fitScale) / 2,
 		scale: fitScale,
 	};
 	applyCamera();
