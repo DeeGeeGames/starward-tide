@@ -359,7 +359,8 @@ export const createGame = async function (scenario: Scenario = 'skirmish') {
 				components: { planet: p },
 			} of queries.planets) {
 				if (p.owner === 'neutral') continue;
-				p.progress += p.rate * dt;
+				p.progress +=
+					p.rate * CONFIG.productionRateMultiplier * dt;
 				const cost = CONFIG.cost[p.production];
 				while (p.progress >= cost) {
 					p.progress -= cost;

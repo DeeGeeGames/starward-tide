@@ -8,6 +8,7 @@ export const CONFIG = {
 	gunHealth: 4,
 	gunDamage: 2.4,
 	arrivalGrace: 0.75,
+	productionRateMultiplier: 0.25,
 	cost: { troops: 1, ships: 6, guns: 5 },
 	aiInterval: 2.8,
 } as const;
