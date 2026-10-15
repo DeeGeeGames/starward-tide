@@ -69,8 +69,6 @@ button:disabled {
 }
 #map-world {
 	position: absolute;
-	width: 600px;
-	height: 660px;
 	transform-origin: 0 0;
 }
 canvas,

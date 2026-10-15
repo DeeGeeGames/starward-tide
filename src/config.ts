@@ -1,3 +1,5 @@
+export const MAP = { width: 1200, height: 1320 } as const;
+
 export const CONFIG = {
 	step: 0.05,
 	travelSpeed: 23.75,
