@@ -226,7 +226,7 @@ const refresh = function () {
 				)} guns${p && p.owner !== 'blue' ? ' · orbit only' : ''}`;
 	productionInfo.textContent =
 		p && p.owner === 'blue' && selected.length === 1
-			? `${p.rate.toFixed(1)} work / sec`
+			? `${(p.rate * CONFIG.productionRateMultiplier).toFixed(1)} work / sec`
 			: 'on selected worlds';
 	for (const button of productionButtons) {
 		button.disabled = ownedSelected.length === 0 || Boolean(match.winner);
