@@ -1,6 +1,6 @@
 export const CONFIG = {
 	step: 0.05,
-	travelSpeed: 95,
+	travelSpeed: 23.75,
 	dropshipCapacity: 10,
 	shipHealth: 6,
 	transportHealth: 2,
@@ -8,7 +8,7 @@ export const CONFIG = {
 	gunHealth: 4,
 	gunDamage: 2.4,
 	arrivalGrace: 0.75,
-	productionRateMultiplier: 0.25,
+	productionRateMultiplier: 0.125,
 	cost: { troops: 1, ships: 6, guns: 5 },
 	aiInterval: 2.8,
 } as const;
