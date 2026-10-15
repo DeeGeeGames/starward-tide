@@ -286,6 +286,10 @@ const refresh = function () {
 	clock.textContent = timeLabel(match.time);
 	pause.textContent = match.paused ? '▷' : 'Ⅱ';
 	pause.setAttribute('aria-label', match.paused ? 'Resume game' : 'Pause game');
+	pause.setAttribute('aria-pressed', String(match.paused));
+	pause.title = match.paused
+		? 'Resume game'
+		: 'Pause action to issue orders and change production';
 	const result = match.winner
 		? match.winner === 'blue'
 			? 'All rival worlds captured. You win. Restart to play again.'
@@ -296,7 +300,7 @@ const refresh = function () {
 		(performance.now() < noticeUntil
 			? orderMessage
 			: match.paused && !welcome.open
-				? 'Paused · change orders or resume when ready'
+				? 'Paused · issue orders and change production · resume to continue'
 				: '');
 	banner.style.display = banner.textContent ? 'block' : 'none';
 	const key = match.notices
@@ -776,7 +780,8 @@ const frame = function (now: number) {
 	const dt = Math.min(Math.max((now - previous) / 1000, 0), 0.1);
 	previous = now;
 	if (!busy) {
-		world.update(dt * speed);
+		// Keep rendering and command input live while simulation time is frozen.
+		if (!world.getResource('match').paused) world.update(dt * speed);
 		draw();
 		if (now - lastRefresh > 100) {
 			refresh();

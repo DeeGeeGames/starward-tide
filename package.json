@@ -7,7 +7,7 @@
 		"dev": "bun --port 3000 index.html",
 		"typecheck": "tsc --noEmit",
 		"build": "bun run typecheck && bun run scripts/build.ts",
-		"check": "bun run build"
+		"check": "bun test && bun run build"
 	},
 	"dependencies": {
 		"ecspresso": "0.24.1"
