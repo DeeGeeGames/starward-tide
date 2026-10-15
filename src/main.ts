@@ -589,17 +589,17 @@ board.addEventListener(
 				: event.deltaMode === 2
 					? board.clientHeight
 					: 1;
-		if (event.ctrlKey || event.metaKey) {
+		if (event.deltaY !== 0) {
 			const rect = board.getBoundingClientRect();
+			const sensitivity = event.ctrlKey || event.metaKey ? 0.01 : 0.002;
 			zoomAt(
 				{ x: event.clientX - rect.left, y: event.clientY - rect.top },
-				Math.exp(-event.deltaY * multiplier * 0.01),
+				Math.exp(-event.deltaY * multiplier * sensitivity),
 			);
 		} else {
 			camera = {
 				...camera,
 				x: camera.x - event.deltaX * multiplier,
-				y: camera.y - event.deltaY * multiplier,
 			};
 			applyCamera();
 		}
