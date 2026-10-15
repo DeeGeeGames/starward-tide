@@ -109,16 +109,28 @@ const selectPlanet = function (id: number) {
 	else if (multi) {
 		if (selectable) selected = [...selected, id];
 		else feedback('Finish source selection before choosing a destination.');
-	} else if (selected.length > 0) {
+	} else {
+		selected = selectable ? [id] : [];
+		inspected = selectable ? undefined : id;
+	}
+	if (selectable) inspected = undefined;
+	refresh();
+};
+const sendToPlanet = function (id: number) {
+	if (busy || welcome.open || world.getResource('match').winner) return;
+	const p = world.getComponent(id, 'planet');
+	if (!p) return;
+	if (multi) feedback('Finish source selection before sending units.');
+	else if (selected.length === 0)
+		feedback('Select a blue planet or orbital ring first.');
+	else {
 		const sent = dispatch(world, selected, id, fraction, filter);
 		feedback(
 			sent > 0
 				? `${sent} ${sent === 1 ? 'unit' : 'units'} launched → ${p.name}`
 				: 'No units launched. Check stock, filter, or blockade.',
 		);
-	} else if (selectable) selected = [id];
-	else inspected = id;
-	if (selectable || selected.length > 0) inspected = undefined;
+	}
 	refresh();
 };
 const mountPlanets = function () {
@@ -149,6 +161,12 @@ const mountPlanets = function () {
 		)
 			throw new Error('Planet template incomplete');
 		name.textContent = p.name;
+		button.addEventListener('pointerdown', function (event) {
+			if (event.pointerType === 'mouse' && event.button === 2) {
+				event.preventDefault();
+				sendToPlanet(id);
+			}
+		});
 		button.addEventListener('click', function () {
 			selectPlanet(id);
 		});
@@ -222,7 +240,7 @@ const refresh = function () {
 		selected.length === 0
 			? p
 				? `${p.owner === 'blue' ? 'Your' : p.owner === 'red' ? 'Rival' : 'Neutral'} world · ${p.troops} troops · ${first === undefined ? 0 : shipsAt(world, first, 'red').length} rival ships · ${Math.ceil(p.guns)} guns`
-				: 'Tap a blue planet, then a destination.'
+				: 'Tap or left-click a blue planet to select.'
 			: `${ownedSelected.reduce(function (sum, p) {
 					return sum + p.troops;
 				}, 0)} troops · ${selected.reduce(function (sum, id) {
@@ -249,9 +267,9 @@ const refresh = function () {
 		);
 	}
 	instruction.textContent = multi
-		? 'Tap sources to add · turn off to send'
+		? 'Tap or left-click sources · finish selection to send'
 		: selected.length
-			? 'Tap a destination to send'
+			? 'Hold or right-click a destination to send'
 			: 'Select a blue planet or orbital ring';
 	multiButton.setAttribute('aria-pressed', String(multi));
 	multiButton.textContent = multi ? '✓ Finish selection' : '＋ Multi-select';
@@ -446,6 +464,12 @@ const localPoint = function (event: PointerEvent): Point {
 };
 const pointers = new Map<number, Point>();
 let gestureMoved = false;
+let holdHandled = false;
+let holdTimer: ReturnType<typeof setTimeout> | undefined;
+const cancelHold = function () {
+	clearTimeout(holdTimer);
+	holdTimer = undefined;
+};
 let gestureStart: Point | undefined;
 const midpoint = function (a: Point, b: Point): Point {
 	return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
@@ -454,10 +478,29 @@ board.addEventListener('pointerdown', function (event) {
 	if (event.button !== 0) return;
 	if (pointers.size === 0) {
 		gestureMoved = false;
+		holdHandled = false;
 		gestureStart = localPoint(event);
 	}
 	pointers.set(event.pointerId, localPoint(event));
-	if (pointers.size > 1) gestureMoved = true;
+	if (pointers.size > 1) {
+		gestureMoved = true;
+		cancelHold();
+	} else if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+		const target =
+			event.target instanceof Element
+				? event.target.closest('button.planet')
+				: null;
+		const id = [...views].find(function ([, view]) {
+			return view.button === target;
+		})?.[0];
+		if (id !== undefined) {
+			holdTimer = setTimeout(function () {
+				holdTimer = undefined;
+				holdHandled = true;
+				sendToPlanet(id);
+			}, 500);
+		}
+	}
 });
 board.addEventListener('pointermove', function (event) {
 	const previous = pointers.get(event.pointerId);
@@ -469,6 +512,7 @@ board.addEventListener('pointermove', function (event) {
 	)
 		gestureMoved = true;
 	if (gestureMoved) {
+		cancelHold();
 		board.setPointerCapture(event.pointerId);
 		const other = [...pointers.entries()].find(function ([id]) {
 			return id !== event.pointerId;
@@ -499,6 +543,9 @@ board.addEventListener('pointermove', function (event) {
 	pointers.set(event.pointerId, current);
 });
 const endPointer = function (event: PointerEvent) {
+	if (!pointers.has(event.pointerId)) return;
+	cancelHold();
+	if (event.type !== 'pointerup') gestureMoved = true;
 	pointers.delete(event.pointerId);
 	if (pointers.size === 0) board.classList.remove('dragging');
 };
@@ -511,13 +558,23 @@ board.addEventListener('lostpointercapture', function (event) {
 board.addEventListener(
 	'click',
 	function (event) {
-		if (gestureMoved && event.detail !== 0) {
+		if ((gestureMoved || holdHandled) && event.detail !== 0) {
 			event.stopImmediatePropagation();
 			event.preventDefault();
 		}
 	},
 	true,
 );
+board.addEventListener('contextmenu', function (event) {
+	event.preventDefault();
+});
+const cancelGesture = function () {
+	cancelHold();
+	pointers.clear();
+	gestureMoved = true;
+	board.classList.remove('dragging');
+};
+window.addEventListener('blur', cancelGesture);
 board.addEventListener(
 	'wheel',
 	function (event) {
@@ -607,6 +664,7 @@ syncFullscreen();
 const restart = async function (next: Scenario = scenario) {
 	if (busy) return;
 	busy = true;
+	cancelGesture();
 	try {
 		const replacement = await createGame(next);
 		await world.dispose();
@@ -686,6 +744,7 @@ welcome.addEventListener('cancel', function () {
 });
 document.addEventListener('visibilitychange', function () {
 	if (document.hidden) {
+		cancelGesture();
 		hiddenPause = !world.getResource('match').paused;
 		world.getResource('match').paused = true;
 	} else if (hiddenPause && !welcome.open) {
@@ -735,6 +794,7 @@ raf = requestAnimationFrame(frame);
 window.addEventListener('pagehide', function (event) {
 	if (event.persisted) return;
 	disposed = true;
+	cancelGesture();
 	cancelAnimationFrame(raf);
 	resizeObserver.disconnect();
 	void world.dispose();
