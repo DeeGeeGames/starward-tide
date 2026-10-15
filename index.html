@@ -13,54 +13,68 @@
 	</head>
 	<body>
 		<div id="app">
-			<header>
-				<div>
-					<span class="eyebrow">PLAYABLE STUDY / 01</span>
-					<h1>Galaxy Conquest<span class="prototype">prototype</span></h1>
+			<main id="board" aria-label="Star map" tabindex="0">
+				<div id="map-world">
+					<canvas id="space" aria-hidden="true"></canvas>
+					<div id="planets"></div>
+				</div>
+			</main>
+			<header class="hud">
+				<div class="brand">
+					<span class="eyebrow">SECTOR 01 / TACTICAL COMMAND</span>
+					<h1>Galaxy Conquest</h1>
+				</div>
+				<div class="scorebar">
+					<span class="blue">● <strong id="blue-count">1</strong> YOU</span>
+					<div id="clock">00:00</div>
+					<span class="red">● <strong id="red-count">1</strong> RIVAL</span>
 				</div>
 				<div class="header-actions">
+					<button
+						id="fullscreen"
+						aria-label="Enter fullscreen"
+						aria-pressed="false"
+						title="Enter fullscreen"
+					>
+						⛶
+					</button>
 					<button id="pause" aria-label="Pause game">Ⅱ</button
-					><button id="restart" aria-label="Restart scenario">↻</button>
+					><button id="restart" aria-label="Restart scenario">↻</button
+					><button
+						id="settings"
+						aria-label="Open field guide"
+						aria-expanded="false"
+					>
+						☰
+					</button>
 				</div>
 			</header>
-			<div class="scorebar">
-				<span class="blue">● YOU <strong id="blue-count">1</strong></span>
-				<div id="clock">00:00</div>
-				<span class="red"><strong id="red-count">1</strong> RIVAL ●</span>
+			<div class="map-heading hud">
+				<span class="eyebrow">TACTICAL VIEW</span
+				><span id="instruction">Select a blue planet or orbital ring</span
+				><button id="multi" aria-pressed="false">＋ Multi-select</button>
 			</div>
-			<main>
-				<section class="map-section" aria-label="Star map">
-					<div class="map-heading">
-						<span id="instruction">Select one of your planets</span
-						><button id="multi" aria-pressed="false">＋ Multi-select</button>
+			<div class="navigation-hint">
+				DRAG TO EXPLORE · SCROLL TO PAN · PINCH TO ZOOM
+			</div>
+			<div id="banner" role="status"></div>
+			<aside id="planet-panel" aria-label="Planet commands" hidden>
+				<section class="command-panel">
+					<div class="panel-title">
+						<span class="eyebrow">COMMAND</span
+						><button id="clear" class="text-button">Clear selection</button>
 					</div>
-					<div id="board">
-						<canvas id="space" aria-hidden="true"></canvas>
-						<div id="planets"></div>
-						<div id="banner" role="status"></div>
+					<h2 id="selection-name">No source selected</h2>
+					<p id="selection-info">Tap a blue planet, then a destination.</p>
+					<div class="control-label">
+						Produce <span id="production-info">on selected worlds</span>
 					</div>
-					<div class="map-key">
-						<span>● surface owner</span><span>◌ orbital ships</span
-						><span>▲ transport</span
-						><span class="blockade-key">◌ hostile blockade</span>
+					<div id="production" class="segments">
+						<button data-production="troops">▥ Troops</button
+						><button data-production="ships">◆ Ships</button
+						><button data-production="guns">✣ Guns</button>
 					</div>
-				</section>
-				<aside>
-					<section class="command-panel">
-						<div class="panel-title">
-							<span class="eyebrow">COMMAND</span
-							><button id="clear" class="text-button">Clear selection</button>
-						</div>
-						<h2 id="selection-name">No source selected</h2>
-						<p id="selection-info">Tap a blue planet, then a destination.</p>
-						<div class="control-label">
-							Produce <span id="production-info">on selected worlds</span>
-						</div>
-						<div id="production" class="segments">
-							<button data-production="troops">▥ Troops</button
-							><button data-production="ships">◆ Ships</button
-							><button data-production="guns">✣ Guns</button>
-						</div>
+					<div id="dispatch-controls">
 						<div class="control-label">
 							Send amount <span>guns stay behind</span>
 						</div>
@@ -76,66 +90,74 @@
 							><button data-filter="ships">Ships only</button
 							><button data-filter="troops">Troops only</button>
 						</div>
-					</section>
-					<details class="lab">
-						<summary>Prototype lab <span>scenarios & tuning</span></summary>
-						<div class="lab-content">
-							<label
-								>Scenario<select id="scenario">
-									<option value="skirmish">Skirmish · human vs AI</option>
-									<option value="blockade">Blockade · take the surface</option>
-									<option value="invasion">Invasion · test your escort</option>
-								</select></label
-							>
-							<label
-								>Simulation pace<select id="speed">
-									<option value="0.5">0.5× · inspect</option>
-									<option value="1" selected>1× · normal</option>
-									<option value="2">2× · fast</option>
-								</select></label
-							>
-							<label class="checkbox"
-								><input id="ai" type="checkbox" checked /> Rival AI
-								active</label
-							>
-							<p>
-								Changing scenario restarts. Production: troops 1, ships 6, guns
-								5 work. Each transport carries up to 10 troops.
-							</p>
-							<div id="metrics"></div>
-						</div>
-					</details>
-					<details class="guide">
-						<summary>How to play</summary>
+					</div>
+				</section>
+			</aside>
+			<section id="field-guide" class="hud" aria-label="Field guide" hidden>
+				<div class="panel-title">
+					<span class="eyebrow">FIELD GUIDE</span
+					><button id="close-guide" aria-label="Close field guide">×</button>
+				</div>
+				<details class="lab">
+					<summary>Prototype lab <span>scenarios & tuning</span></summary>
+					<div class="lab-content">
+						<label
+							>Scenario<select id="scenario">
+								<option value="skirmish">Skirmish · human vs AI</option>
+								<option value="blockade">Blockade · take the surface</option>
+								<option value="invasion">Invasion · test your escort</option>
+							</select></label
+						>
+						<label
+							>Simulation pace<select id="speed">
+								<option value="0.5">0.5× · inspect</option>
+								<option value="1" selected>1× · normal</option>
+								<option value="2">2× · fast</option>
+							</select></label
+						>
+						<label class="checkbox"
+							><input id="ai" type="checkbox" checked /> Rival AI active</label
+						>
 						<p>
-							Tap a blue world, then any destination to send. Tap the source
-							again to deselect. Use Multi-select to gather sources, then turn
-							it off and choose a destination. You can also send to friendly
-							worlds.
+							Changing scenario restarts. Production: troops 1, ships 6, guns 5
+							work. Each transport carries up to 10 troops.
 						</p>
-						<p>
-							Troops capture surfaces. Ships win orbit. Guns defend but never
-							travel. A dashed enemy-colored ring means blockade: the surface
-							cannot dispatch. Tap a blue orbital ring over an enemy world to
-							redirect your ships.
-						</p>
-						<p>
-							Enemy guns and ships stop landings. Transports wait in orbit and
-							can be destroyed; escorts absorb fire first. Take every rival
-							planet to win. Switching production discards unfinished work.
-						</p>
-					</details>
-					<div id="events" aria-live="polite"></div>
-				</aside>
-			</main>
-			<footer>TOUCH-FIRST EXPERIMENT <span>BUN + ECSPRESSO</span></footer>
+						<div id="metrics"></div>
+					</div>
+				</details>
+				<details class="guide">
+					<summary>How to play</summary>
+					<p>
+						Tap a blue world, then any destination to send. Tap the source again
+						to deselect. Use Multi-select to gather sources, then turn it off
+						and choose a destination. You can also send to friendly worlds.
+					</p>
+					<p>
+						Troops capture surfaces. Ships win orbit. Guns defend but never
+						travel. A dashed enemy-colored ring means blockade: the surface
+						cannot dispatch. Tap a blue orbital ring over an enemy world to
+						redirect your ships.
+					</p>
+					<p>
+						Enemy guns and ships stop landings. Transports wait in orbit and can
+						be destroyed; escorts absorb fire first. Take every rival planet to
+						win. Switching production discards unfinished work.
+					</p>
+				</details>
+				<div class="map-key">
+					<span>● surface owner</span><span>◆ orbital ships</span
+					><span>△ transport</span><span>◌ hostile blockade</span>
+				</div>
+				<div id="events" aria-live="polite"></div>
+			</section>
 		</div>
 		<dialog id="welcome">
 			<span class="eyebrow">GALAXY CONQUEST / FIRST CONTACT</span>
 			<h2>Win the orbit.<br />Take the world.</h2>
 			<p>
-				Build troops, ships, or guns. Tap your planet, then a destination to
-				launch. Transports carry troops automatically.
+				Drag to explore and pinch to zoom. Select your planet to open its
+				commands, then tap a destination to launch. Transports carry troops
+				automatically.
 			</p>
 			<div class="roles">
 				<span>▥<b>Troops</b>Capture</span><span>◆<b>Ships</b>Escort</span

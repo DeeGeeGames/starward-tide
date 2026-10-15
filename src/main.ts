@@ -1,3 +1,5 @@
+import { zoomCamera } from './camera';
+import type { Camera, Point } from './camera';
 import { CONFIG, COLORS } from './config';
 import type { DispatchFilter, Production, Scenario } from './config';
 import {
@@ -19,7 +21,10 @@ const element = function <T extends HTMLElement>(
 	if (!(found instanceof constructor)) throw new Error(`Missing ${id}`);
 	return found;
 };
-const board = element('board', HTMLDivElement);
+const board = element('board', HTMLElement);
+const mapWorld = element('map-world', HTMLDivElement);
+const planetPanel = element('planet-panel', HTMLElement);
+const dispatchControls = element('dispatch-controls', HTMLDivElement);
 const canvas = element('space', HTMLCanvasElement);
 const context = canvas.getContext('2d');
 if (!context) throw new Error('Canvas 2D is required');
@@ -60,6 +65,7 @@ interface PlanetView {
 const views = new Map<number, PlanetView>();
 let world: Game = await createGame();
 let selected: number[] = [];
+let inspected: number | undefined;
 let fraction = 0.5;
 let filter: DispatchFilter = 'combined';
 let multi = false;
@@ -109,7 +115,8 @@ const selectPlanet = function (id: number) {
 				: 'No units launched. Check stock, filter, or blockade.',
 		);
 	} else if (selectable) selected = [id];
-	else feedback('Select a blue surface or a blue orbital presence first.');
+	else inspected = id;
+	if (selectable || selected.length > 0) inspected = undefined;
 	refresh();
 };
 const mountPlanets = function () {
@@ -166,19 +173,14 @@ const refresh = function () {
 		const red = shipsAt(world, id, 'red').length;
 		const guns = Math.ceil(p.guns);
 		const blocked = isBlockaded(world, id);
-		const hitSize = Math.max(
-			54,
-			(((p.radius + 32) * 2) / 600) * board.clientWidth,
-		);
+		const hitSize = Math.max(54, (p.radius + 32) * 2);
 		view.button.style.width = `${hitSize}px`;
 		view.button.style.height = `${hitSize}px`;
 		view.button.style.setProperty('--owner', COLORS[p.owner]);
-		view.button.style.setProperty(
-			'--diameter',
-			`${((p.radius * 2) / 600) * board.clientWidth}px`,
-		);
-		view.button.classList.toggle('selected', selected.includes(id));
-		view.button.setAttribute('aria-pressed', String(selected.includes(id)));
+		view.button.style.setProperty('--diameter', `${p.radius * 2}px`);
+		const highlighted = selected.includes(id) || inspected === id;
+		view.button.classList.toggle('selected', highlighted);
+		view.button.setAttribute('aria-pressed', String(highlighted));
 		view.button.setAttribute(
 			'aria-label',
 			`${p.name}, ${p.owner === 'blue' ? 'your' : p.owner === 'red' ? 'rival' : 'neutral'} planet, ${p.troops} troops, ${blue} your ships, ${red} rival ships, ${guns} guns${blocked ? ', blockaded' : ''}`,
@@ -199,11 +201,13 @@ const refresh = function () {
 		view.mark.textContent = p.owner === 'neutral' ? '' : icons[p.production];
 		view.progress.style.width = `${(p.progress / CONFIG.cost[p.production]) * 100}%`;
 	}
+	planetPanel.hidden = selected.length === 0 && inspected === undefined;
+	dispatchControls.hidden = selected.length === 0;
 	const ownedSelected = selected.flatMap(function (id) {
 		const p = world.getComponent(id, 'planet');
 		return p?.owner === 'blue' ? [p] : [];
 	});
-	const first = selected[0];
+	const first = selected[0] ?? inspected;
 	const p =
 		first === undefined ? undefined : world.getComponent(first, 'planet');
 	selectionName.textContent =
@@ -214,7 +218,9 @@ const refresh = function () {
 				: 'No source selected';
 	selectionInfo.textContent =
 		selected.length === 0
-			? 'Tap a blue planet, then a destination.'
+			? p
+				? `${p.owner === 'blue' ? 'Your' : p.owner === 'red' ? 'Rival' : 'Neutral'} world · ${p.troops} troops · ${first === undefined ? 0 : shipsAt(world, first, 'red').length} rival ships · ${Math.ceil(p.guns)} guns`
+				: 'Tap a blue planet, then a destination.'
 			: `${ownedSelected.reduce(function (sum, p) {
 					return sum + p.troops;
 				}, 0)} troops · ${selected.reduce(function (sum, id) {
@@ -294,9 +300,9 @@ const refresh = function () {
 };
 
 const draw = function () {
-	const width = board.clientWidth,
-		height = board.clientHeight;
-	const dpr = Math.min(devicePixelRatio || 1, 2);
+	const width = 600,
+		height = 660;
+	const dpr = Math.min((devicePixelRatio || 1) * Math.max(1, camera.scale), 3);
 	if (
 		canvas.width !== Math.round(width * dpr) ||
 		canvas.height !== Math.round(height * dpr)
@@ -407,6 +413,196 @@ const draw = function () {
 	}
 };
 
+// The simulation and both render layers share one world-space transform.
+let camera: Camera = { x: 0, y: 0, scale: 1 };
+let fitScale = 1;
+const applyCamera = function () {
+	mapWorld.style.transform = `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})`;
+};
+const fitMap = function () {
+	const width = board.clientWidth;
+	const height = board.clientHeight;
+	const top = width < 700 ? 200 : 130;
+	const bottom = 85;
+	fitScale = Math.max(
+		0.1,
+		Math.min((width - 48) / 600, (height - top - bottom) / 660),
+	);
+	camera = {
+		x: (width - 600 * fitScale) / 2,
+		y: top + (height - top - bottom - 660 * fitScale) / 2,
+		scale: fitScale,
+	};
+	applyCamera();
+};
+const zoomAt = function (anchor: Point, factor: number) {
+	camera = zoomCamera(camera, anchor, factor, fitScale * 0.5, fitScale * 5);
+	applyCamera();
+};
+const localPoint = function (event: PointerEvent): Point {
+	const rect = board.getBoundingClientRect();
+	return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+};
+const pointers = new Map<number, Point>();
+let gestureMoved = false;
+let gestureStart: Point | undefined;
+const midpoint = function (a: Point, b: Point): Point {
+	return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+};
+board.addEventListener('pointerdown', function (event) {
+	if (event.button !== 0) return;
+	if (pointers.size === 0) {
+		gestureMoved = false;
+		gestureStart = localPoint(event);
+	}
+	pointers.set(event.pointerId, localPoint(event));
+	if (pointers.size > 1) gestureMoved = true;
+});
+board.addEventListener('pointermove', function (event) {
+	const previous = pointers.get(event.pointerId);
+	if (!previous) return;
+	const current = localPoint(event);
+	if (
+		gestureStart &&
+		Math.hypot(current.x - gestureStart.x, current.y - gestureStart.y) > 6
+	)
+		gestureMoved = true;
+	if (gestureMoved) {
+		board.setPointerCapture(event.pointerId);
+		const other = [...pointers.entries()].find(function ([id]) {
+			return id !== event.pointerId;
+		})?.[1];
+		if (other) {
+			const before = midpoint(previous, other);
+			const after = midpoint(current, other);
+			const distance = Math.hypot(previous.x - other.x, previous.y - other.y);
+			if (distance > 0)
+				zoomAt(
+					before,
+					Math.hypot(current.x - other.x, current.y - other.y) / distance,
+				);
+			camera = {
+				...camera,
+				x: camera.x + after.x - before.x,
+				y: camera.y + after.y - before.y,
+			};
+		} else
+			camera = {
+				...camera,
+				x: camera.x + current.x - previous.x,
+				y: camera.y + current.y - previous.y,
+			};
+		applyCamera();
+		board.classList.add('dragging');
+	}
+	pointers.set(event.pointerId, current);
+});
+const endPointer = function (event: PointerEvent) {
+	pointers.delete(event.pointerId);
+	if (pointers.size === 0) board.classList.remove('dragging');
+};
+window.addEventListener('pointerup', endPointer);
+window.addEventListener('pointercancel', endPointer);
+board.addEventListener('lostpointercapture', function (event) {
+	if (event.target === board && !board.hasPointerCapture(event.pointerId))
+		endPointer(event);
+});
+board.addEventListener(
+	'click',
+	function (event) {
+		if (gestureMoved && event.detail !== 0) {
+			event.stopImmediatePropagation();
+			event.preventDefault();
+		}
+	},
+	true,
+);
+board.addEventListener(
+	'wheel',
+	function (event) {
+		event.preventDefault();
+		const multiplier =
+			event.deltaMode === 1
+				? 16
+				: event.deltaMode === 2
+					? board.clientHeight
+					: 1;
+		if (event.ctrlKey || event.metaKey) {
+			const rect = board.getBoundingClientRect();
+			zoomAt(
+				{ x: event.clientX - rect.left, y: event.clientY - rect.top },
+				Math.exp(-event.deltaY * multiplier * 0.01),
+			);
+		} else {
+			camera = {
+				...camera,
+				x: camera.x - event.deltaX * multiplier,
+				y: camera.y - event.deltaY * multiplier,
+			};
+			applyCamera();
+		}
+	},
+	{ passive: false },
+);
+board.addEventListener('keydown', function (event) {
+	const deltas: Record<string, Point> = {
+		ArrowLeft: { x: 50, y: 0 },
+		ArrowRight: { x: -50, y: 0 },
+		ArrowUp: { x: 0, y: 50 },
+		ArrowDown: { x: 0, y: -50 },
+	};
+	const delta = deltas[event.key];
+	if (!delta) return;
+	event.preventDefault();
+	camera = { ...camera, x: camera.x + delta.x, y: camera.y + delta.y };
+	applyCamera();
+});
+const resizeObserver = new ResizeObserver(fitMap);
+resizeObserver.observe(board);
+const fieldGuide = element('field-guide', HTMLElement);
+const settings = element('settings', HTMLButtonElement);
+const toggleGuide = function () {
+	fieldGuide.hidden = !fieldGuide.hidden;
+	settings.setAttribute('aria-expanded', String(!fieldGuide.hidden));
+	settings.setAttribute(
+		'aria-label',
+		fieldGuide.hidden ? 'Open field guide' : 'Close field guide',
+	);
+	if (fieldGuide.hidden) settings.focus();
+};
+settings.addEventListener('click', toggleGuide);
+element('close-guide', HTMLButtonElement).addEventListener(
+	'click',
+	toggleGuide,
+);
+
+const fullscreen = element('fullscreen', HTMLButtonElement);
+const syncFullscreen = function () {
+	const active = Boolean(document.fullscreenElement);
+	const label = active ? 'Exit fullscreen' : 'Enter fullscreen';
+	fullscreen.setAttribute('aria-pressed', String(active));
+	fullscreen.setAttribute('aria-label', label);
+	fullscreen.textContent = active ? '⊡' : '⛶';
+	fullscreen.disabled = !document.fullscreenEnabled;
+	fullscreen.title = document.fullscreenEnabled
+		? label
+		: 'Fullscreen unavailable in this browser';
+};
+fullscreen.addEventListener('click', async function () {
+	fullscreen.disabled = true;
+	try {
+		if (document.fullscreenElement) await document.exitFullscreen();
+		else await document.documentElement.requestFullscreen();
+	} catch {
+		feedback('Fullscreen could not open. Check browser permissions.');
+		refresh();
+	} finally {
+		syncFullscreen();
+	}
+});
+document.addEventListener('fullscreenchange', syncFullscreen);
+syncFullscreen();
+
 const restart = async function (next: Scenario = scenario) {
 	if (busy) return;
 	busy = true;
@@ -416,9 +612,11 @@ const restart = async function (next: Scenario = scenario) {
 		world = replacement;
 		scenario = next;
 		selected = [];
+		inspected = undefined;
 		multi = false;
 		noticeUntil = 0;
 		lastNoticeKey = '';
+		fitMap();
 		mountPlanets();
 		refresh();
 	} finally {
@@ -454,6 +652,7 @@ multiButton.addEventListener('click', function () {
 });
 element('clear', HTMLButtonElement).addEventListener('click', function () {
 	selected = [];
+	inspected = undefined;
 	multi = false;
 	refresh();
 });
@@ -495,7 +694,9 @@ document.addEventListener('visibilitychange', function () {
 });
 window.addEventListener('keydown', function (event) {
 	if (event.key === 'Escape' && !welcome.open) {
+		if (!fieldGuide.hidden) toggleGuide();
 		selected = [];
+		inspected = undefined;
 		multi = false;
 		refresh();
 	}
@@ -525,6 +726,7 @@ const frame = function (now: number) {
 	raf = requestAnimationFrame(frame);
 };
 world.getResource('match').paused = true;
+fitMap();
 mountPlanets();
 refresh();
 welcome.showModal();
@@ -533,5 +735,6 @@ window.addEventListener('pagehide', function (event) {
 	if (event.persisted) return;
 	disposed = true;
 	cancelAnimationFrame(raf);
+	resizeObserver.disconnect();
 	void world.dispose();
 });
