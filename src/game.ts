@@ -1,4 +1,9 @@
-import ECSpresso, { defineSystemRef } from 'ecspresso';
+import ECSpresso, {
+	defineSystemRef,
+	type FilteredEntity,
+	type WithComponents,
+	type WithResources,
+} from 'ecspresso';
 import {
 	createSpatialIndexPlugin,
 	spatialIndexSystems,
@@ -69,7 +74,18 @@ const spatialIndexPlugin = createSpatialIndexPlugin({
 	phases: ['fixedUpdate'],
 	ordering: { fixedUpdate: { after: [movementSystem] } },
 });
-const localTransformAt = function (x: number, y: number) {
+type SpatialIndexConfig = NonNullable<typeof spatialIndexPlugin['_cfg']>;
+type GameConfig = WithResources<
+	WithComponents<SpatialIndexConfig, { planet: Planet; unit: Unit }>,
+	{ match: Match }
+>;
+export type Game = ECSpresso<GameConfig>;
+type PlanetEntity = FilteredEntity<GameConfig['components'], 'planet'>;
+type UnitEntity = FilteredEntity<GameConfig['components'], 'unit'>;
+type UnitPoint = { x: number; y: number; angle: number };
+type LocalTransform = GameConfig['components']['localTransform'];
+
+const localTransformAt = function (x: number, y: number): LocalTransform {
 	return { x, y, rotation: 0, scaleX: 1, scaleY: 1 };
 };
 const syncUnitPosition = function (
@@ -77,7 +93,7 @@ const syncUnitPosition = function (
 	unitId: number,
 	x: number,
 	y: number,
-) {
+): void {
 	const localTransform = world.getComponent(unitId, 'localTransform');
 	if (localTransform) {
 		localTransform.x = x;
@@ -86,7 +102,7 @@ const syncUnitPosition = function (
 	}
 	world.addComponent(unitId, 'localTransform', localTransformAt(x, y));
 };
-const makeWorld = function () {
+const makeWorld = function (): Game {
 	const match: Match = {
 		time: 0,
 		paused: false,
@@ -108,18 +124,17 @@ const makeWorld = function () {
 		.withFixedTimestep(CONFIG.step)
 		.build();
 };
-export type Game = ReturnType<typeof makeWorld>;
-export const planets = function (world: Game) {
+export const planets = function (world: Game): PlanetEntity[] {
 	return world.getEntitiesWithQuery(['planet']);
 };
-export const units = function (world: Game) {
+export const units = function (world: Game): UnitEntity[] {
 	return world.getEntitiesWithQuery(['unit']);
 };
 export const orbitalUnits = function (
 	world: Game,
 	planetId: number,
 	side?: Side,
-) {
+): UnitEntity[] {
 	return units(world).filter(function ({ components: { unit } }) {
 		return (
 			unit.target === planetId &&
@@ -129,7 +144,11 @@ export const orbitalUnits = function (
 		);
 	});
 };
-export const shipsAt = function (world: Game, planetId: number, side: Side) {
+export const shipsAt = function (
+	world: Game,
+	planetId: number,
+	side: Side,
+): UnitEntity[] {
 	return orbitalUnits(world, planetId, side).filter(function (entity) {
 		return entity.components.unit.kind === 'ship';
 	});
@@ -139,7 +158,7 @@ export const unitPoint = function (
 	planet: Planet,
 	time: number,
 	id: number,
-) {
+): UnitPoint {
 	if (unit.phase !== 'orbit') {
 		return {
 			x: unit.x,
@@ -159,7 +178,7 @@ export const unitPoint = function (
 export const opponent = function (side: Side): Side {
 	return side === 'blue' ? 'red' : 'blue';
 };
-export const isBlockaded = function (world: Game, planetId: number) {
+export const isBlockaded = function (world: Game, planetId: number): boolean {
 	const planet = world.getComponent(planetId, 'planet');
 	if (!planet || planet.owner === 'neutral') return false;
 	return (
@@ -172,14 +191,18 @@ export const notify = function (
 	world: Game,
 	text: string,
 	side: Owner = 'neutral',
-) {
+): void {
 	const match = world.getResource('match');
 	match.notices = [{ text, time: match.time, side }, ...match.notices].slice(
 		0,
 		5,
 	);
 };
-export const spawnShip = function (world: Game, planetId: number, owner: Side) {
+export const spawnShip = function (
+	world: Game,
+	planetId: number,
+	owner: Side,
+): UnitEntity | undefined {
 	const p = world.getComponent(planetId, 'planet');
 	if (!p) return;
 	return world.spawn({
@@ -202,7 +225,7 @@ export const setProduction = function (
 	ids: readonly number[],
 	production: Production,
 	side: Side = 'blue',
-) {
+): void {
 	for (const id of ids) {
 		const p = world.getComponent(id, 'planet');
 		if (!p || p.owner !== side || p.production === production) continue;
@@ -217,7 +240,7 @@ export const dispatch = function (
 	fraction: number,
 	filter: DispatchFilter = 'combined',
 	side: Side = 'blue',
-) {
+): number {
 	const match = world.getResource('match');
 	if (
 		match.winner ||
@@ -286,14 +309,12 @@ export const dispatch = function (
 	return sent;
 };
 
-type UnitEntity = ReturnType<typeof units>[number];
-
 const hurt = function (
 	world: Game,
 	entity: UnitEntity,
 	damage: number,
 	lost: Set<number>,
-) {
+): number {
 	const unit = entity.components.unit;
 	if (damage <= 0 || unit.hp <= 0) return damage;
 	const taken = Math.min(unit.hp, damage);
@@ -319,7 +340,7 @@ const damageOrbit = function (
 	side: Side,
 	damage: number,
 	lost: Set<number>,
-) {
+): void {
 	const planet = world.getComponent(id, 'planet');
 	if (!planet || damage <= 0) return;
 	// Ships absorb fire before fixed defenses and exposed transports.
@@ -348,10 +369,11 @@ interface PassShot {
 	to: { x: number; y: number };
 	owner: Side;
 }
+type TargetCandidate = { entity: UnitEntity; dist: number };
 const preferTarget = function (
-	current: { entity: UnitEntity; dist: number } | undefined,
-	next: { entity: UnitEntity; dist: number },
-) {
+	current: TargetCandidate | undefined,
+	next: TargetCandidate,
+): TargetCandidate {
 	if (!current) return next;
 	const currentShip = current.entity.components.unit.kind === 'ship';
 	const nextShip = next.entity.components.unit.kind === 'ship';
@@ -364,7 +386,7 @@ const preferTarget = function (
 const planPasses = function (
 	world: Game,
 	dt: number,
-) {
+): PassShot[] {
 	const travelers = units(world).filter(function (entity) {
 		const unit = entity.components.unit;
 		return unit.phase === 'travel' && unit.hp > 0;
@@ -426,7 +448,7 @@ const applyPassVolley = function (
 	volley: readonly PassShot[],
 	lost: Set<number>,
 	shots: Engagement[],
-) {
+): void {
 	for (const shot of volley) {
 		const before = shot.target.components.unit.hp;
 		hurt(world, shot.target, shot.damage, lost);
@@ -441,7 +463,7 @@ const applyPassVolley = function (
 	}
 };
 
-const runAI = function (world: Game) {
+const runAI = function (world: Game): void {
 	const all = planets(world);
 	for (const source of all.filter(function (e) {
 		return e.components.planet.owner === 'red';
@@ -467,7 +489,7 @@ const runAI = function (world: Game) {
 				);
 			})
 			.sort(function (a, b) {
-				const score = function (e: typeof a) {
+				const score = function (e: typeof a): number {
 					const t = e.components.planet;
 					return (
 						Math.hypot(p.x - t.x, p.y - t.y) +
@@ -515,10 +537,12 @@ const runAI = function (world: Game) {
 	}
 };
 
-export const createGame = async function (scenario: Scenario = 'skirmish') {
+export const createGame = async function (
+	scenario: Scenario = 'skirmish',
+): Promise<Game> {
 	const world = makeWorld();
 	const economy = defineSystemRef('economy');
-	const active = function () {
+	const active = function (): boolean {
 		const m = world.getResource('match');
 		return !m.paused && !m.winner;
 	};

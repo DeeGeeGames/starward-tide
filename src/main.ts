@@ -136,7 +136,7 @@ const UNIT_HIGHLIGHT: Record<Side, string> = {
 	blue: '#dcf7ff',
 	red: '#ffebe5',
 };
-const drawWarship = function (owner: Side, zoom: number) {
+const drawWarship = function (owner: Side, zoom: number): void {
 	ctx.fillStyle = COLORS[owner];
 	ctx.strokeStyle = '#142a38';
 	ctx.lineWidth = 1;
@@ -185,7 +185,7 @@ const drawTroopTransport = function (
 	zoom: number,
 	scale: number,
 	angle: number,
-) {
+): void {
 	ctx.fillStyle = COLORS[owner];
 	ctx.strokeStyle = '#142a38';
 	ctx.lineWidth = 1;
@@ -233,18 +233,18 @@ const drawTroopTransport = function (
 		ctx.restore();
 	}
 };
-const timeLabel = function (seconds: number) {
+const timeLabel = function (seconds: number): string {
 	return `${Math.floor(seconds / 60)
 		.toString()
 		.padStart(2, '0')}:${Math.floor(seconds % 60)
 		.toString()
 		.padStart(2, '0')}`;
 };
-const feedback = function (text: string) {
+const feedback = function (text: string): void {
 	orderMessage = text;
 	noticeUntil = performance.now() + 2600;
 };
-const selectPlanet = function (id: number) {
+const selectPlanet = function (id: number): void {
 	if (busy || welcome.open || world.getResource('match').winner) return;
 	const p = world.getComponent(id, 'planet');
 	if (!p) return;
@@ -264,7 +264,7 @@ const selectPlanet = function (id: number) {
 	}
 	refresh();
 };
-const sendToPlanet = function (id: number) {
+const sendToPlanet = function (id: number): void {
 	if (busy || welcome.open || world.getResource('match').winner) return;
 	const p = world.getComponent(id, 'planet');
 	if (!p) return;
@@ -290,7 +290,7 @@ const sendToPlanet = function (id: number) {
 	}
 	refresh();
 };
-const mountPlanets = function () {
+const mountPlanets = function (): void {
 	planetLayer.replaceChildren();
 	views.clear();
 	for (const {
@@ -331,7 +331,7 @@ const mountPlanets = function () {
 		views.set(id, { button, count, orbit, mark, progress });
 	}
 };
-const refresh = function () {
+const refresh = function (): void {
 	const match = world.getResource('match');
 	const all = planets(world);
 	selected = selected.filter(function (id) {
@@ -497,7 +497,7 @@ const refresh = function () {
 	aiInput.checked = match.ai;
 };
 
-const draw = function () {
+const draw = function (): void {
 	const { width, height } = MAP;
 	const dpr = Math.min((devicePixelRatio || 1) * Math.max(1, camera.scale), 3);
 	if (
@@ -607,10 +607,10 @@ const draw = function () {
 // The simulation and both render layers share one world-space transform.
 let camera: Camera = { x: 0, y: 0, scale: 1 };
 let fitScale = 1;
-const applyCamera = function () {
+const applyCamera = function (): void {
 	mapWorld.style.transform = `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})`;
 };
-const fitMap = function () {
+const fitMap = function (): void {
 	const width = board.clientWidth;
 	const height = board.clientHeight;
 	const top = width < 700 ? 200 : 130;
@@ -626,7 +626,7 @@ const fitMap = function () {
 	};
 	applyCamera();
 };
-const zoomAt = function (anchor: Point, factor: number) {
+const zoomAt = function (anchor: Point, factor: number): void {
 	camera = zoomCamera(camera, anchor, factor, fitScale * 0.5, fitScale * 5);
 	applyCamera();
 };
@@ -638,7 +638,7 @@ const pointers = new Map<number, Point>();
 let gestureMoved = false;
 let holdHandled = false;
 let holdTimer: ReturnType<typeof setTimeout> | undefined;
-const cancelHold = function () {
+const cancelHold = function (): void {
 	clearTimeout(holdTimer);
 	holdTimer = undefined;
 };
@@ -714,7 +714,7 @@ board.addEventListener('pointermove', function (event) {
 	}
 	pointers.set(event.pointerId, current);
 });
-const endPointer = function (event: PointerEvent) {
+const endPointer = function (event: PointerEvent): void {
 	if (!pointers.has(event.pointerId)) return;
 	cancelHold();
 	if (event.type !== 'pointerup') gestureMoved = true;
@@ -740,7 +740,7 @@ board.addEventListener(
 board.addEventListener('contextmenu', function (event) {
 	event.preventDefault();
 });
-const cancelGesture = function () {
+const cancelGesture = function (): void {
 	cancelHold();
 	pointers.clear();
 	gestureMoved = true;
@@ -791,7 +791,7 @@ const resizeObserver = new ResizeObserver(fitMap);
 resizeObserver.observe(board);
 const fieldGuide = element('field-guide', HTMLElement);
 const settings = element('settings', HTMLButtonElement);
-const toggleGuide = function () {
+const toggleGuide = function (): void {
 	fieldGuide.hidden = !fieldGuide.hidden;
 	settings.setAttribute('aria-expanded', String(!fieldGuide.hidden));
 	settings.setAttribute(
@@ -807,7 +807,7 @@ element('close-guide', HTMLButtonElement).addEventListener(
 );
 
 const fullscreen = element('fullscreen', HTMLButtonElement);
-const syncFullscreen = function () {
+const syncFullscreen = function (): void {
 	const active = Boolean(document.fullscreenElement);
 	const label = active ? 'Exit fullscreen' : 'Enter fullscreen';
 	fullscreen.setAttribute('aria-pressed', String(active));
@@ -833,7 +833,7 @@ fullscreen.addEventListener('click', async function () {
 document.addEventListener('fullscreenchange', syncFullscreen);
 syncFullscreen();
 
-const restart = async function (next: Scenario = scenario) {
+const restart = async function (next: Scenario = scenario): Promise<void> {
 	if (busy) return;
 	busy = true;
 	cancelGesture();
@@ -943,7 +943,7 @@ window.addEventListener('keydown', function (event) {
 });
 let previous = performance.now();
 let lastRefresh = 0;
-const frame = function (now: number) {
+const frame = function (now: number): void {
 	if (disposed) return;
 	const dt = Math.min(Math.max((now - previous) / 1000, 0), 0.1);
 	previous = now;
