@@ -80,11 +80,11 @@
 					<div id="production" class="segments">
 						<button data-production="troops">▥ Troops</button
 						><button data-production="ships">◆ Ships</button
-						><button data-production="guns">✣ Guns</button>
+						><button data-production="guns">✣ Defense Platform</button>
 					</div>
 					<div id="dispatch-controls">
 						<div class="control-label">
-							Send amount <span id="dispatch-info">guns stay behind</span>
+							Send amount <span id="dispatch-info">defense platforms stay behind</span>
 						</div>
 						<div id="amount" class="segments">
 							<button data-amount="0.25">25%</button
@@ -149,7 +149,8 @@
 							><input id="ai" type="checkbox" checked /> Rival AI active</label
 						>
 						<p>
-							Changing scenario restarts. Production: troops 1, ships 6, guns 5
+							Changing scenario restarts. Production: troops 1, ships 6,
+							defense platforms 5
 							work. Each transport carries up to 10 troops.
 						</p>
 						<div id="metrics"></div>
@@ -165,14 +166,14 @@
 						worlds.
 					</p>
 					<p>
-						Troops capture surfaces. Ships win orbit. Guns defend but never
-						travel. A dashed enemy-colored ring means blockade: the surface
+						Troops capture surfaces. Ships win orbit. Defense platforms defend but
+						never travel. A dashed enemy-colored ring means blockade: the surface
 						cannot dispatch. Tap a blue orbital ring over an enemy world to
 						redirect your ships.
 					</p>
 					<p>
-						Enemy guns and ships stop landings. Transports wait in orbit and can
-						be destroyed; escorts absorb fire first. Ships that pass within range
+						Enemy defense platforms and ships stop landings. Transports wait in orbit
+						and can be destroyed; escorts absorb fire first. Ships that pass within range
 						trade shots and keep their destination. Transports cannot shoot back.
 						Take every rival planet to win. Switching production discards unfinished
 						work.
@@ -205,7 +206,7 @@
 			<p>Pause at any time to issue orders and change production, then resume.</p>
 			<div class="roles">
 				<span>▥<b>Troops</b>Capture</span><span>◆<b>Ships</b>Escort</span
-				><span>✣<b>Guns</b>Defend</span>
+				><span>✣<b>Defense Platform</b>Defend</span>
 			</div>
 			<button id="start" class="primary">Start skirmish →</button>
 			<p class="small">
