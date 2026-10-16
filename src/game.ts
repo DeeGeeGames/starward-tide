@@ -375,15 +375,25 @@ const recordHits = function (
 			owner,
 		});
 };
-const fireEnvelope = function (
+interface EnvelopeVolley {
+	targets: readonly UnitEntity[];
+	damage: number;
+	sources: { x: number; y: number; owner: Side }[];
+}
+interface PassShot {
+	target: UnitEntity;
+	damage: number;
+	from: { x: number; y: number };
+	to: { x: number; y: number };
+	owner: Side;
+}
+const planEnvelope = function (
 	world: Game,
 	planetId: number,
 	planet: Planet,
 	side: Side,
 	spent: Set<number>,
 	gunsSpent: Set<number>,
-	lost: Set<number>,
-	shots: Engagement[],
 	time: number,
 	dt: number,
 ) {
@@ -395,17 +405,19 @@ const fireEnvelope = function (
 	if (garrison.length === 0 && guns <= 0) return;
 	const incoming = travelersInside(world, planet, opponent(side));
 	if (incoming.length === 0) return;
-	const hit = absorbTravelers(
-		world,
-		incoming,
-		(garrison.length * CONFIG.shipDamage + guns * CONFIG.gunDamage) * dt,
-		lost,
-	);
 	for (const ship of garrison) spent.add(ship.id);
 	if (guns > 0) gunsSpent.add(planetId);
-	for (const ship of garrison)
-		recordHits(world, shots, pointOf(world, ship, time), hit, side, time);
-	if (guns > 0) recordHits(world, shots, planet, hit, side, time);
+	const sources = garrison.map(function (ship) {
+		const from = pointOf(world, ship, time);
+		return { x: from.x, y: from.y, owner: side };
+	});
+	if (guns > 0) sources.push({ x: planet.x, y: planet.y, owner: side });
+	const volley: EnvelopeVolley = {
+		targets: incoming,
+		damage: (garrison.length * CONFIG.shipDamage + guns * CONFIG.gunDamage) * dt,
+		sources,
+	};
+	return volley;
 };
 const preferTarget = function (
 	current: { entity: UnitEntity; dist: number } | undefined,
@@ -420,11 +432,9 @@ const preferTarget = function (
 		return next;
 	return current;
 };
-const firePasses = function (
+const planPasses = function (
 	world: Game,
 	spent: Set<number>,
-	lost: Set<number>,
-	shots: Engagement[],
 	time: number,
 	dt: number,
 ) {
@@ -436,13 +446,7 @@ const firePasses = function (
 		.sort(function (a, b) {
 			return a.id - b.id;
 		});
-	const volley: {
-		target: UnitEntity;
-		damage: number;
-		from: { x: number; y: number };
-		to: { x: number; y: number };
-		owner: Side;
-	}[] = [];
+	const volley: PassShot[] = [];
 	for (const shooter of shooters) {
 		const from = pointOf(world, shooter, time);
 		const origin = shooter.components.unit;
@@ -483,6 +487,14 @@ const firePasses = function (
 			owner: origin.owner,
 		});
 	}
+	return volley;
+};
+const applyPassVolley = function (
+	world: Game,
+	volley: readonly PassShot[],
+	lost: Set<number>,
+	shots: Engagement[],
+) {
 	for (const shot of volley) {
 		const before = shot.target.components.unit.hp;
 		hurt(world, shot.target, shot.damage, lost);
@@ -632,9 +644,14 @@ export const createGame = async function (scenario: Scenario = 'skirmish') {
 					u.age = 0;
 					return;
 				}
+				const reach = p.radius + CONFIG.arrivalClearance;
 				const travel = Math.min(distance, CONFIG.travelSpeed * dt);
 				u.x += (dx / distance) * travel;
 				u.y += (dy / distance) * travel;
+				if (distance - travel <= reach) {
+					u.phase = 'orbit';
+					u.age = 0;
+				}
 			},
 		);
 	world
@@ -669,36 +686,47 @@ export const createGame = async function (scenario: Scenario = 'skirmish') {
 				damageOrbit(ecs, id, 'blue', redDamage * dt, lost);
 				damageOrbit(ecs, id, 'red', blueDamage * dt, lost);
 			}
+			const envelopes = [];
 			for (const {
 				id,
 				components: { planet: p },
 			} of queries.planets) {
-				fireEnvelope(
+				const blue = planEnvelope(
 					ecs,
 					id,
 					p,
 					'blue',
 					spent,
 					gunsSpent,
-					lost,
-					shots,
 					match.time,
 					dt,
 				);
-				fireEnvelope(
+				const red = planEnvelope(
 					ecs,
 					id,
 					p,
 					'red',
 					spent,
 					gunsSpent,
-					lost,
-					shots,
 					match.time,
 					dt,
 				);
+				if (blue) envelopes.push(blue);
+				if (red) envelopes.push(red);
 			}
-			firePasses(ecs, spent, lost, shots, match.time, dt);
+			// Plan return fire before ring damage lands, so a killing hit does not erase it.
+			const volley = planPasses(ecs, spent, match.time, dt);
+			for (const envelope of envelopes) {
+				const hit = absorbTravelers(
+					ecs,
+					envelope.targets,
+					envelope.damage,
+					lost,
+				);
+				for (const source of envelope.sources)
+					recordHits(ecs, shots, source, hit, source.owner, match.time);
+			}
+			applyPassVolley(ecs, volley, lost, shots);
 			match.engagements = shots;
 			for (const {
 				id,

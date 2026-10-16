@@ -590,3 +590,114 @@ test('passing fire does not skip transport arrival grace', async function () {
 		await world.dispose();
 	}
 });
+
+test('a transport that crosses into the arrival ring keeps its grace', async function () {
+	const world = await quietWorld();
+	try {
+		const sol = named(world, 'Sol');
+		const planet = sol.components.planet;
+		planet.owner = 'red';
+		planet.guns = 2;
+		const reach = planet.radius + CONFIG.arrivalClearance;
+		const start = reach + 0.2;
+		const healthy = spawnTraveler(
+			world,
+			'blue',
+			'transport',
+			planet.x + start,
+			planet.y,
+			sol.id,
+			4,
+		);
+		const angle = 0.4;
+		const fragile = spawnTraveler(
+			world,
+			'blue',
+			'transport',
+			planet.x + Math.cos(angle) * start,
+			planet.y + Math.sin(angle) * start,
+			sol.id,
+			9,
+		);
+		fragile.components.unit.hp = 0.2;
+		expect(
+			Math.hypot(
+				healthy.components.unit.x - planet.x,
+				healthy.components.unit.y - planet.y,
+			),
+		).toBeGreaterThan(reach);
+		world.update(CONFIG.step);
+		for (const transport of [healthy, fragile]) {
+			const unit = transport.components.unit;
+			expect(
+				Math.hypot(unit.x - planet.x, unit.y - planet.y),
+			).toBeLessThanOrEqual(reach);
+			expect(unit.phase).toBe('orbit');
+			expect(unit.age).toBe(0);
+			expect(
+				units(world).some(function (entity) {
+					return entity.id === transport.id;
+				}),
+			).toBe(true);
+		}
+		expect(healthy.components.unit.hp).toBe(CONFIG.transportHealth);
+		expect(fragile.components.unit.hp).toBe(0.2);
+		const match = world.getResource('match');
+		expect(match.transportsLost).toBe(0);
+		expect(match.troopsLost).toBe(0);
+		expect(match.engagements).toEqual([]);
+		expect(planet.guns).toBe(2);
+		expect(planet.owner).toBe('red');
+		expect(planet.troops).toBe(24);
+	} finally {
+		await world.dispose();
+	}
+});
+
+test('a lethal arrival-ring hit still leaves the traveler a return shot', async function () {
+	const world = await quietWorld();
+	try {
+		const sol = named(world, 'Sol');
+		const lyra = named(world, 'Lyra');
+		const planet = sol.components.planet;
+		planet.owner = 'blue';
+		const guard = spawnShip(world, sol.id, 'blue');
+		if (!guard) throw new Error('Missing guard');
+		guard.components.unit.hp = 0.05;
+		const at = unitPoint(guard.components.unit, planet, CONFIG.step, guard.id);
+		const inwardX = planet.x - at.x;
+		const inwardY = planet.y - at.y;
+		const inward = Math.hypot(inwardX, inwardY);
+		const startX = at.x + (inwardX / inward) * 1;
+		const startY = at.y + (inwardY / inward) * 1;
+		const dx = lyra.components.planet.x - startX;
+		const dy = lyra.components.planet.y - startY;
+		const distance = Math.hypot(dx, dy);
+		const travel = Math.min(distance, CONFIG.travelSpeed * CONFIG.step);
+		const combatX = startX + (dx / distance) * travel;
+		const combatY = startY + (dy / distance) * travel;
+		expect(
+			Math.hypot(combatX - planet.x, combatY - planet.y),
+		).toBeLessThanOrEqual(planet.radius + CONFIG.arrivalClearance);
+		expect(Math.hypot(combatX - at.x, combatY - at.y)).toBeLessThanOrEqual(
+			CONFIG.engagementRange,
+		);
+		const passer = spawnTraveler(world, 'red', 'ship', startX, startY, lyra.id);
+		passer.components.unit.hp = 0.05;
+		world.update(CONFIG.step);
+		expect(
+			units(world).some(function (entity) {
+				return entity.id === guard.id || entity.id === passer.id;
+			}),
+		).toBe(false);
+		const owners = world
+			.getResource('match')
+			.engagements.map(function (shot) {
+				return shot.owner;
+			})
+			.sort();
+		expect(owners).toEqual(['blue', 'red']);
+	} finally {
+		await world.dispose();
+	}
+});
