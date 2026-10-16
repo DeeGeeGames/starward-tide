@@ -36,6 +36,13 @@ export interface Notice {
 	time: number;
 	side: Owner;
 }
+export interface Engagement {
+	x1: number;
+	y1: number;
+	x2: number;
+	y2: number;
+	owner: Side;
+}
 interface Match {
 	time: number;
 	paused: boolean;
@@ -48,6 +55,7 @@ interface Match {
 	troopsLost: number;
 	firstCapture: number | null;
 	notices: Notice[];
+	engagements: Engagement[];
 }
 const makeWorld = function () {
 	const match: Match = {
@@ -62,6 +70,7 @@ const makeWorld = function () {
 		troopsLost: 0,
 		firstCapture: null,
 		notices: [],
+		engagements: [],
 	};
 	return ECSpresso.create()
 		.withComponentTypes<{ planet: Planet; unit: Unit }>()
@@ -94,6 +103,28 @@ export const shipsAt = function (world: Game, planetId: number, side: Side) {
 	return orbitalUnits(world, planetId, side).filter(function (entity) {
 		return entity.components.unit.kind === 'ship';
 	});
+};
+export const unitPoint = function (
+	unit: Unit,
+	planet: Planet,
+	time: number,
+	id: number,
+) {
+	if (unit.phase !== 'orbit') {
+		return {
+			x: unit.x,
+			y: unit.y,
+			angle: Math.atan2(planet.y - unit.y, planet.x - unit.x),
+		};
+	}
+	const orbitAngle =
+		time * (unit.owner === 'blue' ? 0.45 : -0.45) + id * 2.399;
+	const reach = planet.radius + (unit.kind === 'ship' ? 20 : 32);
+	return {
+		x: planet.x + Math.cos(orbitAngle) * reach,
+		y: planet.y + Math.sin(orbitAngle) * reach,
+		angle: orbitAngle + Math.PI / 2,
+	};
 };
 export const opponent = function (side: Side): Side {
 	return side === 'blue' ? 'red' : 'blue';
@@ -216,49 +247,253 @@ export const dispatch = function (
 	return sent;
 };
 
+type UnitEntity = ReturnType<typeof units>[number];
+
+const arrivalReach = function (planet: Planet) {
+	return planet.radius + CONFIG.arrivalClearance;
+};
+const hurt = function (
+	world: Game,
+	entity: UnitEntity,
+	damage: number,
+	lost: Set<number>,
+) {
+	const unit = entity.components.unit;
+	if (damage <= 0 || unit.hp <= 0) return damage;
+	const taken = Math.min(unit.hp, damage);
+	unit.hp -= taken;
+	if (unit.hp <= 0 && unit.kind === 'transport' && !lost.has(entity.id)) {
+		lost.add(entity.id);
+		const match = world.getResource('match');
+		match.transportsLost++;
+		match.troopsLost += unit.cargo;
+		const planet = world.getComponent(unit.target, 'planet');
+		const place = planet ? planet.name : 'Transit';
+		notify(
+			world,
+			`${place}: ${unit.cargo} ${unit.owner === 'blue' ? 'your' : 'enemy'} troops lost ${unit.phase === 'orbit' ? 'in orbit' : 'in transit'}`,
+			unit.owner,
+		);
+	}
+	return damage - taken;
+};
+// A defender already shooting in orbit spends that damage there. Envelope fire and
+// passing fire share whatever is left, so one ship is not applied twice.
+const orbitBusy = function (world: Game, planetId: number, side: Side) {
+	const planet = world.getComponent(planetId, 'planet');
+	if (!planet) return false;
+	const enemy = opponent(side);
+	if (shipsAt(world, planetId, enemy).length > 0) return true;
+	if (planet.owner === enemy && planet.guns > 0) return true;
+	return orbitalUnits(world, planetId, enemy).some(function (entity) {
+		const unit = entity.components.unit;
+		return unit.kind === 'transport' && unit.age >= CONFIG.arrivalGrace;
+	});
+};
+const pointOf = function (world: Game, entity: UnitEntity, time: number) {
+	const unit = entity.components.unit;
+	const planet = world.getComponent(unit.target, 'planet');
+	if (!planet) return { x: unit.x, y: unit.y };
+	return unitPoint(unit, planet, time, entity.id);
+};
 const damageOrbit = function (
 	world: Game,
 	id: number,
 	side: Side,
 	damage: number,
+	lost: Set<number>,
 ) {
-	const p = world.getComponent(id, 'planet');
-	if (!p) return;
+	const planet = world.getComponent(id, 'planet');
+	if (!planet || damage <= 0) return;
 	// Ships absorb fire before fixed defenses and exposed transports.
 	const targets = orbitalUnits(world, id, side);
-	for (const entity of targets.filter(function (e) {
-		return e.components.unit.kind === 'ship';
-	})) {
-		const unit = entity.components.unit;
-		const taken = Math.min(unit.hp, damage);
-		unit.hp -= taken;
+	for (const entity of targets.filter(function (entry) {
+		return entry.components.unit.kind === 'ship';
+	}))
+		damage = hurt(world, entity, damage, lost);
+	if (planet.owner === side && planet.guns > 0) {
+		const taken = Math.min(planet.guns * CONFIG.gunHealth, damage);
+		planet.guns = Math.max(0, planet.guns - taken / CONFIG.gunHealth);
 		damage -= taken;
 	}
-	if (p.owner === side && p.guns > 0) {
-		const taken = Math.min(p.guns * CONFIG.gunHealth, damage);
-		p.guns = Math.max(0, p.guns - taken / CONFIG.gunHealth);
-		damage -= taken;
-	}
-	for (const entity of targets.filter(function (e) {
+	for (const entity of targets.filter(function (entry) {
 		return (
-			e.components.unit.kind === 'transport' &&
-			e.components.unit.age >= CONFIG.arrivalGrace
+			entry.components.unit.kind === 'transport' &&
+			entry.components.unit.age >= CONFIG.arrivalGrace
 		);
-	})) {
+	}))
+		damage = hurt(world, entity, damage, lost);
+};
+const travelersInside = function (
+	world: Game,
+	planet: Planet,
+	side: Side,
+) {
+	const reach = arrivalReach(planet);
+	return units(world).filter(function (entity) {
 		const unit = entity.components.unit;
-		const taken = Math.min(unit.hp, damage);
-		unit.hp -= taken;
-		damage -= taken;
-		if (unit.hp <= 0) {
-			const match = world.getResource('match');
-			match.transportsLost++;
-			match.troopsLost += unit.cargo;
-			notify(
-				world,
-				`${p.name}: ${unit.cargo} ${side === 'blue' ? 'your' : 'enemy'} troops lost in orbit`,
-				side,
-			);
+		return (
+			unit.owner === side &&
+			unit.phase === 'travel' &&
+			unit.hp > 0 &&
+			Math.hypot(unit.x - planet.x, unit.y - planet.y) <= reach
+		);
+	});
+};
+const absorbTravelers = function (
+	world: Game,
+	targets: readonly UnitEntity[],
+	damage: number,
+	lost: Set<number>,
+) {
+	const hit: UnitEntity[] = [];
+	for (const kind of ['ship', 'transport'] as const) {
+		for (const entity of targets) {
+			if (damage <= 0) return hit;
+			if (entity.components.unit.kind !== kind) continue;
+			const before = entity.components.unit.hp;
+			damage = hurt(world, entity, damage, lost);
+			if (entity.components.unit.hp < before) hit.push(entity);
 		}
+	}
+	return hit;
+};
+const recordHits = function (
+	world: Game,
+	shots: Engagement[],
+	from: { x: number; y: number },
+	targets: readonly UnitEntity[],
+	owner: Side,
+	time: number,
+) {
+	for (const target of targets)
+		shots.push({
+			x1: from.x,
+			y1: from.y,
+			x2: pointOf(world, target, time).x,
+			y2: pointOf(world, target, time).y,
+			owner,
+		});
+};
+const fireEnvelope = function (
+	world: Game,
+	planetId: number,
+	planet: Planet,
+	side: Side,
+	spent: Set<number>,
+	gunsSpent: Set<number>,
+	lost: Set<number>,
+	shots: Engagement[],
+	time: number,
+	dt: number,
+) {
+	const garrison = shipsAt(world, planetId, side).filter(function (entity) {
+		return !spent.has(entity.id);
+	});
+	const guns =
+		planet.owner === side && !gunsSpent.has(planetId) ? planet.guns : 0;
+	if (garrison.length === 0 && guns <= 0) return;
+	const incoming = travelersInside(world, planet, opponent(side));
+	if (incoming.length === 0) return;
+	const hit = absorbTravelers(
+		world,
+		incoming,
+		(garrison.length * CONFIG.shipDamage + guns * CONFIG.gunDamage) * dt,
+		lost,
+	);
+	for (const ship of garrison) spent.add(ship.id);
+	if (guns > 0) gunsSpent.add(planetId);
+	for (const ship of garrison)
+		recordHits(world, shots, pointOf(world, ship, time), hit, side, time);
+	if (guns > 0) recordHits(world, shots, planet, hit, side, time);
+};
+const preferTarget = function (
+	current: { entity: UnitEntity; dist: number } | undefined,
+	next: { entity: UnitEntity; dist: number },
+) {
+	if (!current) return next;
+	const currentShip = current.entity.components.unit.kind === 'ship';
+	const nextShip = next.entity.components.unit.kind === 'ship';
+	if (currentShip !== nextShip) return nextShip ? next : current;
+	if (next.dist < current.dist) return next;
+	if (next.dist === current.dist && next.entity.id < current.entity.id)
+		return next;
+	return current;
+};
+const firePasses = function (
+	world: Game,
+	spent: Set<number>,
+	lost: Set<number>,
+	shots: Engagement[],
+	time: number,
+	dt: number,
+) {
+	const shooters = units(world)
+		.filter(function (entity) {
+			const unit = entity.components.unit;
+			return unit.kind === 'ship' && unit.hp > 0 && !spent.has(entity.id);
+		})
+		.sort(function (a, b) {
+			return a.id - b.id;
+		});
+	const volley: {
+		target: UnitEntity;
+		damage: number;
+		from: { x: number; y: number };
+		to: { x: number; y: number };
+		owner: Side;
+	}[] = [];
+	for (const shooter of shooters) {
+		const from = pointOf(world, shooter, time);
+		const origin = shooter.components.unit;
+		let best: { entity: UnitEntity; dist: number } | undefined;
+		for (const target of units(world)) {
+			const unit = target.components.unit;
+			if (
+				target.id === shooter.id ||
+				unit.hp <= 0 ||
+				unit.owner === origin.owner
+			)
+				continue;
+			if (
+				origin.phase === 'orbit' &&
+				unit.phase === 'orbit' &&
+				origin.target === unit.target
+			)
+				continue;
+			// Arrival grace belongs to orbit combat. Passing fire must not skip it.
+			if (
+				unit.phase === 'orbit' &&
+				unit.kind === 'transport' &&
+				unit.age < CONFIG.arrivalGrace
+			)
+				continue;
+			const to = pointOf(world, target, time);
+			const dist = Math.hypot(from.x - to.x, from.y - to.y);
+			if (dist > CONFIG.engagementRange) continue;
+			best = preferTarget(best, { entity: target, dist });
+		}
+		if (!best) continue;
+		const to = pointOf(world, best.entity, time);
+		volley.push({
+			target: best.entity,
+			damage: CONFIG.shipDamage * dt,
+			from,
+			to,
+			owner: origin.owner,
+		});
+	}
+	for (const shot of volley) {
+		const before = shot.target.components.unit.hp;
+		hurt(world, shot.target, shot.damage, lost);
+		if (shot.target.components.unit.hp < before)
+			shots.push({
+				x1: shot.from.x,
+				y1: shot.from.y,
+				x2: shot.to.x,
+				y2: shot.to.y,
+				owner: shot.owner,
+			});
 	}
 };
 
@@ -392,7 +627,7 @@ export const createGame = async function (scenario: Scenario = 'skirmish') {
 				const dx = p.x - u.x,
 					dy = p.y - u.y;
 				const distance = Math.hypot(dx, dy);
-				if (distance <= p.radius + 22) {
+				if (distance <= p.radius + CONFIG.arrivalClearance) {
 					u.phase = 'orbit';
 					u.age = 0;
 					return;
@@ -410,18 +645,65 @@ export const createGame = async function (scenario: Scenario = 'skirmish') {
 		.addQuery('planets', { with: ['planet'], mutates: ['planet'] })
 		.setProcess(function ({ queries, dt, ecs }) {
 			if (!active()) return;
+			const match = ecs.getResource('match');
+			const shots: Engagement[] = [];
+			const lost = new Set<number>();
+			const spent = new Set<number>();
+			const gunsSpent = new Set<number>();
 			for (const {
 				id,
 				components: { planet: p },
 			} of queries.planets) {
+				if (orbitBusy(ecs, id, 'blue'))
+					for (const ship of shipsAt(ecs, id, 'blue')) spent.add(ship.id);
+				if (orbitBusy(ecs, id, 'red'))
+					for (const ship of shipsAt(ecs, id, 'red')) spent.add(ship.id);
+				if (p.owner !== 'neutral' && orbitBusy(ecs, id, p.owner))
+					gunsSpent.add(id);
 				const blueDamage =
 					shipsAt(ecs, id, 'blue').length * CONFIG.shipDamage +
 					(p.owner === 'blue' ? p.guns * CONFIG.gunDamage : 0);
 				const redDamage =
 					shipsAt(ecs, id, 'red').length * CONFIG.shipDamage +
 					(p.owner === 'red' ? p.guns * CONFIG.gunDamage : 0);
-				damageOrbit(ecs, id, 'blue', redDamage * dt);
-				damageOrbit(ecs, id, 'red', blueDamage * dt);
+				damageOrbit(ecs, id, 'blue', redDamage * dt, lost);
+				damageOrbit(ecs, id, 'red', blueDamage * dt, lost);
+			}
+			for (const {
+				id,
+				components: { planet: p },
+			} of queries.planets) {
+				fireEnvelope(
+					ecs,
+					id,
+					p,
+					'blue',
+					spent,
+					gunsSpent,
+					lost,
+					shots,
+					match.time,
+					dt,
+				);
+				fireEnvelope(
+					ecs,
+					id,
+					p,
+					'red',
+					spent,
+					gunsSpent,
+					lost,
+					shots,
+					match.time,
+					dt,
+				);
+			}
+			firePasses(ecs, spent, lost, shots, match.time, dt);
+			match.engagements = shots;
+			for (const {
+				id,
+				components: { planet: p },
+			} of queries.planets) {
 				for (const {
 					id: unitId,
 					components: { unit: u },

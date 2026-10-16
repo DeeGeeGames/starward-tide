@@ -9,6 +9,8 @@ export const CONFIG = {
 	shipDamage: 1.8,
 	gunHealth: 4,
 	gunDamage: 2.4,
+	arrivalClearance: 22,
+	engagementRange: 48,
 	arrivalGrace: 0.75,
 	productionRateMultiplier: 0.125,
 	cost: { troops: 1, ships: 6, guns: 5 },

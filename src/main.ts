@@ -9,6 +9,7 @@ import {
 	planets,
 	setProduction,
 	shipsAt,
+	unitPoint,
 	units,
 } from './game';
 import type { Game } from './game';
@@ -425,15 +426,7 @@ const draw = function () {
 		if (u.hp <= 0) continue;
 		const p = world.getComponent(u.target, 'planet');
 		if (!p) continue;
-		const orbitAngle =
-			match.time * (u.owner === 'blue' ? 0.45 : -0.45) + id * 2.399;
-		const radius = p.radius + (u.kind === 'ship' ? 20 : 32);
-		const x = u.phase === 'orbit' ? p.x + Math.cos(orbitAngle) * radius : u.x;
-		const y = u.phase === 'orbit' ? p.y + Math.sin(orbitAngle) * radius : u.y;
-		const angle =
-			u.phase === 'orbit'
-				? orbitAngle + Math.PI / 2
-				: Math.atan2(p.y - u.y, p.x - u.x);
+		const { x, y, angle } = unitPoint(u, p, match.time, id);
 		if (u.phase === 'travel') {
 			ctx.strokeStyle = `${COLORS[u.owner]}22`;
 			ctx.lineWidth = 1;
@@ -464,6 +457,21 @@ const draw = function () {
 			ctx.closePath();
 			ctx.stroke();
 		}
+		ctx.restore();
+	}
+	for (const shot of match.engagements) {
+		ctx.save();
+		ctx.strokeStyle = COLORS[shot.owner];
+		ctx.lineCap = 'round';
+		ctx.globalAlpha = 0.35;
+		ctx.lineWidth = 6;
+		ctx.beginPath();
+		ctx.moveTo(shot.x1, shot.y1);
+		ctx.lineTo(shot.x2, shot.y2);
+		ctx.stroke();
+		ctx.globalAlpha = 0.95;
+		ctx.lineWidth = 2;
+		ctx.stroke();
 		ctx.restore();
 	}
 };
