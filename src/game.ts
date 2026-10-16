@@ -40,6 +40,24 @@ export interface Unit {
 	cargo: number;
 	age: number;
 }
+interface Departure {
+	unitId: number;
+	source: number;
+	x: number;
+	y: number;
+	age: number;
+}
+export interface Order {
+	id: number;
+	owner: Side;
+	target: number;
+	state: 'pending' | 'outbound' | 'returning';
+	departures: Departure[];
+}
+interface OrderBook {
+	nextId: number;
+	active: Order[];
+}
 export interface Notice {
 	text: string;
 	time: number;
@@ -77,7 +95,7 @@ const spatialIndexPlugin = createSpatialIndexPlugin({
 type SpatialIndexConfig = NonNullable<typeof spatialIndexPlugin['_cfg']>;
 type GameConfig = WithResources<
 	WithComponents<SpatialIndexConfig, { planet: Planet; unit: Unit }>,
-	{ match: Match }
+	{ match: Match; orderBook: OrderBook }
 >;
 export type Game = ECSpresso<GameConfig>;
 type PlanetEntity = FilteredEntity<GameConfig['components'], 'planet'>;
@@ -117,10 +135,12 @@ const makeWorld = function (): Game {
 		notices: [],
 		engagements: [],
 	};
+	const orderBook: OrderBook = { nextId: 1, active: [] };
 	return ECSpresso.create()
 		.withPlugin(spatialIndexPlugin)
 		.withComponentTypes<{ planet: Planet; unit: Unit }>()
 		.withResource('match', match)
+		.withResource('orderBook', orderBook)
 		.withFixedTimestep(CONFIG.step)
 		.build();
 };
@@ -251,6 +271,7 @@ export const dispatch = function (
 	)
 		return 0;
 	let sent = 0;
+	const departures: Departure[] = [];
 	for (const id of new Set(sources)) {
 		const p = world.getComponent(id, 'planet');
 		if (!p || id === target) continue;
@@ -266,6 +287,18 @@ export const dispatch = function (
 				Math.ceil(available.length * fraction),
 			)) {
 				const unit = entity.components.unit;
+				departures.push({
+					unitId: entity.id,
+					source: id,
+					x: unit.x,
+					y: unit.y,
+					age: unit.age,
+				});
+				// A redirected escort belongs only to its newest order.
+				for (const order of world.getResource('orderBook').active)
+					order.departures = order.departures.filter(function (departure) {
+						return departure.unitId !== entity.id;
+					});
 				Object.assign(unit, {
 					target,
 					phase: 'travel',
@@ -283,7 +316,7 @@ export const dispatch = function (
 		p.troops -= cargo;
 		while (cargo > 0) {
 			const count = Math.min(cargo, CONFIG.dropshipCapacity);
-			world.spawn({
+			const transport = world.spawn({
 				localTransform: localTransformAt(
 					p.x + Math.cos(sent * 2.399) * 16,
 					p.y + Math.sin(sent * 2.399) * 16,
@@ -301,12 +334,141 @@ export const dispatch = function (
 					age: 0,
 				},
 			});
+			departures.push({
+				unitId: transport.id,
+				source: id,
+				x: p.x,
+				y: p.y,
+				age: 0,
+			});
 			cargo -= count;
 			sent++;
 		}
 	}
-	if (sent > 0 && side === 'blue') match.orders++;
+	if (sent > 0) {
+		const book = world.getResource('orderBook');
+		book.active.push({
+			id: book.nextId++,
+			owner: side,
+			target,
+			state: match.paused ? 'pending' : 'outbound',
+			departures,
+		});
+		if (side === 'blue') match.orders++;
+	}
+	pruneOrders(world);
 	return sent;
+};
+
+// Completed ships remain part of an escorted order while transports are waiting
+// to land. Once every surviving member has arrived, the order leaves the drawer.
+export const orderUnits = function (world: Game, order: Order): UnitEntity[] {
+	const departures = new Map(
+		order.departures.map(function (departure) {
+			return [departure.unitId, departure] as const;
+		}),
+	);
+	return units(world).filter(function ({ id, components: { unit } }) {
+		const departure = departures.get(id);
+		if (!departure) return false;
+		const target =
+			order.state === 'returning' ? departure.source : order.target;
+		return unit.hp > 0 && unit.owner === order.owner && unit.target === target;
+	});
+};
+export const activeOrders = function (
+	world: Game,
+	planetIds: readonly number[] = [],
+	side: Side = 'blue',
+): Order[] {
+	return world.getResource('orderBook').active.filter(function (order) {
+		if (order.owner !== side) return false;
+		const members = orderUnits(world, order);
+		const active = members.some(function ({ components: { unit } }) {
+			return unit.phase === 'travel' || unit.kind === 'transport';
+		});
+		return (
+			active &&
+			(planetIds.length === 0 ||
+				planetIds.includes(order.target) ||
+				order.departures.some(function (departure) {
+					return planetIds.includes(departure.source);
+				}))
+		);
+	});
+};
+const pruneOrders = function (world: Game): void {
+	const book = world.getResource('orderBook');
+	const live = new Set([
+		...activeOrders(world),
+		...activeOrders(world, [], 'red'),
+	]);
+	book.active = book.active.filter(function (order) {
+		return live.has(order);
+	});
+};
+export const cancelOrder = function (
+	world: Game,
+	orderId: number,
+	side: Side = 'blue',
+): boolean {
+	if (world.getResource('match').winner) return false;
+	const order = activeOrders(world, [], side).find(function (candidate) {
+		return candidate.id === orderId;
+	});
+	if (!order || order.state === 'returning') return false;
+	for (const entity of orderUnits(world, order)) {
+		const departure = order.departures.find(function (entry) {
+			return entry.unitId === entity.id;
+		});
+		if (!departure) continue;
+		const unit = entity.components.unit;
+		const source = world.getComponent(departure.source, 'planet');
+		if (!source) continue;
+		if (order.state === 'pending') {
+			if (unit.kind === 'transport') {
+				source.troops += unit.cargo;
+				world.removeEntity(entity.id);
+			} else {
+				Object.assign(unit, {
+					target: departure.source,
+					phase: 'orbit',
+					x: departure.x,
+					y: departure.y,
+					age: departure.age,
+				});
+				syncUnitPosition(world, entity.id, unit.x, unit.y);
+				world.removeComponent(entity.id, 'circleCollider');
+			}
+		} else {
+			// Orbit positions are rendered from time, rather than the stored arrival
+			// coordinates. Start a recalled waiting transport/escort at that point.
+			const destination = world.getComponent(unit.target, 'planet');
+			if (!destination) continue;
+			const point = unitPoint(
+				unit,
+				destination,
+				world.getResource('match').time,
+				entity.id,
+			);
+			Object.assign(unit, {
+				target: departure.source,
+				phase: 'travel',
+				x: point.x,
+				y: point.y,
+				age: 0,
+			});
+			syncUnitPosition(world, entity.id, unit.x, unit.y);
+			world.addComponent(entity.id, 'circleCollider', { radius: 0 });
+		}
+	}
+	if (order.state === 'pending') {
+		const book = world.getResource('orderBook');
+		book.active = book.active.filter(function (candidate) {
+			return candidate !== order;
+		});
+	} else order.state = 'returning';
+	return true;
 };
 
 const hurt = function (
@@ -551,9 +713,11 @@ export const createGame = async function (
 		.inPhase('fixedUpdate')
 		.withRef(economy)
 		.addQuery('planets', { with: ['planet'], mutates: ['planet'] })
-		.withResources(['match'])
-		.setProcess(function ({ queries, dt, ecs, resources: { match } }) {
+		.withResources(['match', 'orderBook'])
+		.setProcess(function ({ queries, dt, ecs, resources: { match, orderBook } }) {
 			if (!active()) return;
+			for (const order of orderBook.active)
+				if (order.state === 'pending') order.state = 'outbound';
 			match.time += dt;
 			for (const {
 				id,
@@ -686,6 +850,7 @@ export const createGame = async function (
 		.withResources(['match'])
 		.setProcess(function ({ ecs, dt, resources: { match } }) {
 			if (!active()) return;
+			pruneOrders(ecs);
 			const owners = new Set(
 				planets(ecs).map(function (e) {
 					return e.components.planet.owner;
@@ -706,7 +871,10 @@ export const createGame = async function (
 		.setProcessEach(
 			{ with: ['unit', 'circleCollider'] },
 			function ({ entity, ecs }) {
-				if (entity.components.unit.phase === 'orbit')
+				if (
+					entity.components.unit.phase === 'orbit' &&
+					entity.components.unit.hp > 0
+				)
 					ecs.commands.removeComponent(entity.id, 'circleCollider');
 			},
 		);
