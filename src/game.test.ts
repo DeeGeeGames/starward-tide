@@ -1,5 +1,8 @@
 import { expect, test } from 'bun:test';
 import {
+	activeOrders,
+	cancelOrder,
+	orderUnits,
 	createGame,
 	dispatch,
 	isBlockaded,
@@ -686,6 +689,217 @@ test('a lethal passing hit still leaves the traveler a return shot', async funct
 			})
 			.sort();
 		expect(owners).toEqual(['blue', 'red']);
+	} finally {
+		await world.dispose();
+	}
+});
+
+test('cancelling one paused dispatch restores exact stock, leaves other reservations, and never launches cancelled units', async function () {
+	const world = await quietWorld();
+	try {
+		const terra = named(world, 'Terra');
+		const luna = named(world, 'Luna');
+		const ceres = named(world, 'Ceres');
+		world.getResource('match').paused = true;
+		const initialShips = structuredClone(shipsAt(world, terra.id, 'blue'));
+		dispatch(world, [terra.id], luna.id, 0.5);
+		dispatch(world, [terra.id], ceres.id, 0.5);
+		const [first, second] = activeOrders(world);
+		if (!first || !second) throw new Error('Missing paused orders');
+		expect(activeOrders(world, [luna.id])).toEqual([first]);
+		expect(activeOrders(world, [terra.id])).toHaveLength(2);
+		expect(activeOrders(world, [named(world, 'Sol').id])).toHaveLength(0);
+		expect(cancelOrder(world, first.id, 'red')).toBe(false);
+		expect(cancelOrder(world, first.id)).toBe(true);
+		expect(cancelOrder(world, first.id)).toBe(false);
+		expect(terra.components.planet.troops).toBe(33);
+		expect(shipsAt(world, terra.id, 'blue')).toHaveLength(2);
+		for (const ship of shipsAt(world, terra.id, 'blue')) {
+			const original = initialShips.find(function (entry) {
+				return entry.id === ship.id;
+			});
+			if (!original) throw new Error('Missing original ship');
+			expect(ship.components.unit).toEqual(original.components.unit);
+			expect(world.getComponent(ship.id, 'circleCollider')).toBeUndefined();
+		}
+		expect(activeOrders(world)).toEqual([second]);
+		step(world, 50);
+		expect(second.state).toBe('pending');
+		expect(terra.components.planet.troops).toBe(33);
+		world.getResource('match').paused = false;
+		step(world, 1);
+		expect(second.state).toBe('outbound');
+		expect(
+			units(world).filter(function (entity) {
+				return entity.components.unit.target === luna.id;
+			}),
+		).toHaveLength(0);
+	} finally {
+		await world.dispose();
+	}
+});
+
+test('recall turns surviving ships and cargo around in place, freezes during pause, and lands them at home', async function () {
+	const world = await quietWorld();
+	try {
+		const terra = named(world, 'Terra');
+		const luna = named(world, 'Luna');
+		dispatch(world, [terra.id], luna.id, 0.5);
+		step(world, 100);
+		const [order] = activeOrders(world);
+		if (!order) throw new Error('Missing order');
+		const lost = orderUnits(world, order).find(function (entity) {
+			return entity.components.unit.kind === 'ship';
+		});
+		if (!lost) throw new Error('Missing escort');
+		world.removeEntity(lost.id);
+		const before = structuredClone(orderUnits(world, order));
+		const match = world.getResource('match');
+		match.paused = true;
+		expect(cancelOrder(world, order.id)).toBe(true);
+		expect(order.state).toBe('returning');
+		expect(cancelOrder(world, order.id)).toBe(false);
+		for (const entity of orderUnits(world, order)) {
+			const original = before.find(function (candidate) {
+				return candidate.id === entity.id;
+			});
+			if (!original) throw new Error('Missing survivor');
+			expect(entity.components.unit.x).toBe(original.components.unit.x);
+			expect(entity.components.unit.y).toBe(original.components.unit.y);
+			expect(entity.components.unit.hp).toBe(original.components.unit.hp);
+			expect(entity.components.unit.cargo).toBe(original.components.unit.cargo);
+			expect(entity.components.unit.target).toBe(terra.id);
+		}
+		expect(activeOrders(world, [luna.id])).toEqual([order]);
+		expect(activeOrders(world, [terra.id])).toEqual([order]);
+		const frozen = snapshot(world);
+		step(world, 100);
+		expect(snapshot(world)).toEqual(frozen);
+		match.paused = false;
+		step(world, 1);
+		const moving = orderUnits(world, order)[0];
+		const previous = before.find(function (entity) {
+			return entity.id === moving?.id;
+		});
+		if (!moving || !previous) throw new Error('Missing returning unit');
+		expect(moving.components.unit.y).toBeGreaterThan(
+			previous.components.unit.y,
+		);
+		step(world, 150);
+		expect(activeOrders(world)).toHaveLength(0);
+		expect(shipsAt(world, terra.id, 'blue')).toHaveLength(2);
+		expect(terra.components.planet.troops).toBeGreaterThanOrEqual(44);
+		expect(luna.components.planet.owner).toBe('neutral');
+	} finally {
+		await world.dispose();
+	}
+});
+
+test('multi-source recall returns each contingent to its own departure world', async function () {
+	const world = await quietWorld();
+	try {
+		const terra = named(world, 'Terra');
+		const luna = named(world, 'Luna');
+		const ceres = named(world, 'Ceres');
+		luna.components.planet.owner = 'blue';
+		luna.components.planet.troops = 20;
+		spawnShip(world, luna.id, 'blue');
+		dispatch(world, [terra.id, luna.id], ceres.id, 1);
+		step(world, 80);
+		const [order] = activeOrders(world);
+		if (!order) throw new Error('Missing multi-source order');
+		expect(cancelOrder(world, order.id)).toBe(true);
+		for (const departure of order.departures) {
+			expect(world.getComponent(departure.unitId, 'unit')?.target).toBe(
+				departure.source,
+			);
+		}
+		step(world, 150);
+		expect(activeOrders(world)).toHaveLength(0);
+		expect(shipsAt(world, terra.id, 'blue')).toHaveLength(3);
+		expect(shipsAt(world, luna.id, 'blue')).toHaveLength(1);
+		expect(terra.components.planet.troops).toBeGreaterThanOrEqual(44);
+		expect(luna.components.planet.troops).toBeGreaterThanOrEqual(20);
+	} finally {
+		await world.dispose();
+	}
+});
+
+test('arrived or destroyed orders disappear and redirected escorts cannot be recalled by an old order', async function () {
+	const world = await quietWorld();
+	try {
+		const terra = named(world, 'Terra');
+		const luna = named(world, 'Luna');
+		const ceres = named(world, 'Ceres');
+		dispatch(world, [terra.id], luna.id, 1, 'ships');
+		const [old] = activeOrders(world);
+		if (!old) throw new Error('Missing ships order');
+		step(world, 400);
+		expect(activeOrders(world)).toHaveLength(0);
+		expect(cancelOrder(world, old.id)).toBe(false);
+		dispatch(world, [luna.id], ceres.id, 1, 'ships');
+		const [next] = activeOrders(world);
+		if (!next) throw new Error('Missing redirected order');
+		expect(activeOrders(world, [terra.id])).toHaveLength(0);
+		for (const entity of orderUnits(world, next)) world.removeEntity(entity.id);
+		expect(activeOrders(world)).toHaveLength(0);
+		expect(cancelOrder(world, next.id)).toBe(false);
+	} finally {
+		await world.dispose();
+	}
+});
+
+test('recalling a waiting invasion starts at rendered orbit positions and leaves redirected escorts alone', async function () {
+	const world = await quietWorld();
+	try {
+		const terra = named(world, 'Terra');
+		const luna = named(world, 'Luna');
+		const ceres = named(world, 'Ceres');
+		dispatch(world, [terra.id], luna.id, 1);
+		const [invasion] = activeOrders(world);
+		if (!invasion) throw new Error('Missing invasion');
+		for (const entity of orderUnits(world, invasion)) entity.components.unit.phase = 'orbit';
+		expect(activeOrders(world)).toEqual([invasion]);
+		dispatch(world, [luna.id], ceres.id, 1, 'ships');
+		const redirected = activeOrders(world).find(function (order) { return order !== invasion; });
+		if (!redirected) throw new Error('Missing redirected order');
+		const expected = orderUnits(world, invasion).map(function (entity) {
+			return { id: entity.id, point: unitPoint(entity.components.unit, luna.components.planet, 0, entity.id) };
+		});
+		expect(cancelOrder(world, invasion.id)).toBe(true);
+		for (const entry of expected) {
+			const unit = world.getComponent(entry.id, 'unit');
+			if (!unit) throw new Error('Missing recalled transport');
+			expect(unit.x).toBe(entry.point.x);
+			expect(unit.y).toBe(entry.point.y);
+			expect(unit.target).toBe(terra.id);
+			expect(world.getComponent(entry.id, 'circleCollider')).toBeDefined();
+		}
+		for (const escort of orderUnits(world, redirected)) expect(escort.components.unit.target).toBe(ceres.id);
+	} finally {
+		await world.dispose();
+	}
+});
+
+test('recall to a captured departure planet uses normal combat instead of refunding cargo', async function () {
+	const world = await quietWorld();
+	try {
+		const terra = named(world, 'Terra');
+		const luna = named(world, 'Luna');
+		dispatch(world, [terra.id], luna.id, 1);
+		step(world, 100);
+		const [order] = activeOrders(world);
+		if (!order) throw new Error('Missing invasion');
+		terra.components.planet.owner = 'red';
+		terra.components.planet.troops = 100;
+		// Keep another owned world so the match continues after the departure falls.
+		named(world, 'Ceres').components.planet.owner = 'blue';
+		expect(cancelOrder(world, order.id)).toBe(true);
+		expect(terra.components.planet.troops).toBe(100);
+		step(world, 200);
+		expect(terra.components.planet.owner).toBe('red');
+		expect(terra.components.planet.troops).toBeLessThan(100);
+		expect(activeOrders(world)).toHaveLength(0);
 	} finally {
 		await world.dispose();
 	}

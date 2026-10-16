@@ -38,6 +38,13 @@
 					>
 						⛶
 					</button>
+					<button
+						id="orders-toggle"
+						aria-controls="orders-drawer"
+						aria-expanded="false"
+					>
+						Orders · 0
+					</button>
 					<button id="pause" aria-label="Pause game">Ⅱ</button
 					><button id="restart" aria-label="Restart scenario">↻</button
 					><button
@@ -96,6 +103,26 @@
 					</div>
 				</section>
 			</aside>
+			<aside
+				id="orders-drawer"
+				class="hud"
+				aria-labelledby="orders-title"
+				hidden
+			>
+				<div class="panel-title">
+					<h2 id="orders-title">Orders · All routes</h2>
+					<button id="close-orders" aria-label="Close orders">×</button>
+				</div>
+				<button id="show-all-orders" class="text-button" hidden>
+					Show all
+				</button>
+				<p class="orders-hint">
+					Select a route to highlight it. Recall returns units to their
+					departure worlds.
+				</p>
+				<p id="orders-empty">No active orders.</p>
+				<ul id="orders-list"></ul>
+			</aside>
 			<section id="field-guide" class="hud" aria-label="Field guide" hidden>
 				<div class="panel-title">
 					<span class="eyebrow">FIELD GUIDE</span
@@ -153,8 +180,11 @@
 					<p>
 						Pause freezes movement, production, combat, and the rival AI. You
 						can still select worlds, send units, and change production. Orders
-						take effect immediately; units move and production continues when
-						you resume.
+						reserve units immediately; units move and production continues when
+						you resume. Open Orders to cancel a launch before resuming, or
+						recall units already underway. Recalled units turn around from their
+						current positions. Selecting a planet filters incoming and outgoing
+						orders; Show all keeps the selection and displays every route.
 					</p>
 				</details>
 				<div class="map-key">

@@ -604,3 +604,136 @@ dialog p {
 		font-size: 15px;
 	}
 }
+
+.header-actions #orders-toggle {
+	width: auto;
+	padding: 0 10px;
+	font-size: 11px;
+	white-space: nowrap;
+}
+#orders-drawer {
+	position: absolute;
+	top: 112px;
+	right: max(20px, env(safe-area-inset-right));
+	width: 340px;
+	max-width: calc(100% - 40px);
+	max-height: calc(100dvh - 132px);
+	overflow: auto;
+	padding: 16px;
+}
+#app:has(#orders-drawer:not([hidden])) #planet-panel {
+	display: none;
+}
+#orders-title {
+	font-size: 18px;
+	overflow-wrap: anywhere;
+}
+#close-orders {
+	min-width: 44px;
+	font-size: 22px;
+}
+.orders-hint,
+#orders-empty {
+	font-size: 10px;
+	line-height: 1.6;
+	color: var(--muted);
+}
+#orders-list {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+.order-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 12px 0;
+	border-top: 1px solid var(--line);
+}
+.order-select {
+	flex: 1;
+	min-width: 0;
+	padding: 8px;
+	text-align: left;
+	background: transparent;
+	border-color: transparent;
+}
+.order-select strong,
+.order-select span {
+	display: block;
+	overflow-wrap: anywhere;
+}
+.order-select strong {
+	font-weight: 500;
+	font-size: 11px;
+}
+.order-select span {
+	color: var(--muted);
+	font-size: 10px;
+	margin-top: 4px;
+}
+.order-select .order-status {
+	color: var(--blue);
+}
+.order-action {
+	font-size: 10px;
+	padding: 0 8px;
+	min-width: 84px;
+}
+@media (max-width: 699px) {
+	/* Keep the existing header footprint even with Orders beside Pause. */
+	.brand {
+		min-width: 0;
+	}
+	.header-actions {
+		order: 1;
+		flex-basis: 100%;
+		justify-content: space-between;
+	}
+	.scorebar {
+		order: 0;
+		width: auto;
+		flex: 0 0 auto;
+		border: 0;
+		padding: 0;
+		gap: 6px;
+		letter-spacing: 0;
+	}
+	.scorebar .red,
+	.scorebar .blue {
+		font-size: 0;
+	}
+	.scorebar strong {
+		font-size: 13px;
+		margin: 0;
+	}
+	#clock {
+		font-size: 9px;
+	}
+	.header-actions button {
+		width: 44px;
+	}
+	.header-actions #orders-toggle {
+		font-size: 10px;
+		padding: 0 8px;
+	}
+	#orders-drawer {
+		top: auto;
+		bottom: max(10px, env(safe-area-inset-bottom));
+		left: 10px;
+		right: 10px;
+		width: auto;
+		max-width: none;
+		max-height: min(48dvh, calc(100dvh - 200px));
+	}
+	#app:has(#orders-drawer:not([hidden])) #banner {
+		top: 192px;
+		bottom: auto;
+	}
+}
+@media (max-height: 550px) and (min-width: 700px) {
+	#orders-drawer {
+		top: 100px;
+		max-height: calc(100dvh - 110px);
+	}
+}

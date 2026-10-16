@@ -1,3 +1,4 @@
+import { createOrdersDrawer } from './orders-drawer';
 import { zoomCamera } from './camera';
 import type { Camera, Point } from './camera';
 import { CONFIG, COLORS, MAP } from './config';
@@ -7,6 +8,7 @@ import {
 	dispatch,
 	isBlockaded,
 	planets,
+	orderUnits,
 	setProduction,
 	shipsAt,
 	unitPoint,
@@ -495,7 +497,33 @@ const refresh = function (): void {
 	}
 	metrics.textContent = `First capture: ${match.firstCapture === null ? '—' : `${match.firstCapture.toFixed(1)}s`} · Orders: ${match.orders} · Captures: ${match.captures} · Transports lost: ${match.transportsLost} (${match.troopsLost} troops, both sides)`;
 	aiInput.checked = match.ai;
+	drawer.update(
+		world,
+		selected.length > 0 ? selected : inspected === undefined ? [] : [inspected],
+	);
 };
+
+const ordersPanel = element('orders-drawer', HTMLElement);
+const drawer = createOrdersDrawer(
+	{
+		toggle: element('orders-toggle', HTMLButtonElement),
+		panel: ordersPanel,
+		close: element('close-orders', HTMLButtonElement),
+		title: element('orders-title', HTMLHeadingElement),
+		showAll: element('show-all-orders', HTMLButtonElement),
+		list: element('orders-list', HTMLUListElement),
+		empty: element('orders-empty', HTMLParagraphElement),
+	},
+	function () {
+		fieldGuide.hidden = true;
+		settings.setAttribute('aria-expanded', 'false');
+		settings.setAttribute('aria-label', 'Open field guide');
+	},
+	function (message) {
+		feedback(message);
+		refresh();
+	},
+);
 
 const draw = function (): void {
 	const { width, height } = MAP;
@@ -561,6 +589,29 @@ const draw = function (): void {
 			ctx.stroke();
 		}
 	}
+	const highlighted = drawer.highlighted();
+	if (highlighted) {
+		ctx.save();
+		ctx.strokeStyle = COLORS.blue;
+		ctx.lineWidth = 2 / camera.scale;
+		ctx.setLineDash(
+			highlighted.state === 'pending'
+				? [8 / camera.scale, 5 / camera.scale]
+				: [],
+		);
+		for (const entity of orderUnits(world, highlighted)) {
+			const u = entity.components.unit;
+			const target = world.getComponent(u.target, 'planet');
+			if (!target) continue;
+			const point = unitPoint(u, target, match.time, entity.id);
+			ctx.beginPath();
+			ctx.moveTo(point.x, point.y);
+			ctx.lineTo(target.x, target.y);
+			ctx.stroke();
+		}
+		ctx.restore();
+	}
+
 	for (const {
 		id,
 		components: { unit: u },
@@ -792,6 +843,7 @@ resizeObserver.observe(board);
 const fieldGuide = element('field-guide', HTMLElement);
 const settings = element('settings', HTMLButtonElement);
 const toggleGuide = function (): void {
+	if (fieldGuide.hidden && !ordersPanel.hidden) drawer.close();
 	fieldGuide.hidden = !fieldGuide.hidden;
 	settings.setAttribute('aria-expanded', String(!fieldGuide.hidden));
 	settings.setAttribute(
@@ -845,6 +897,7 @@ const restart = async function (next: Scenario = scenario): Promise<void> {
 		selected = [];
 		inspected = undefined;
 		multi = false;
+		drawer.reset();
 		noticeUntil = 0;
 		lastNoticeKey = '';
 		fitMap();
@@ -926,6 +979,10 @@ document.addEventListener('visibilitychange', function () {
 });
 window.addEventListener('keydown', function (event) {
 	if (event.key === 'Escape' && !welcome.open) {
+		if (!ordersPanel.hidden) {
+			drawer.close();
+			return;
+		}
 		if (!fieldGuide.hidden) toggleGuide();
 		selected = [];
 		inspected = undefined;
