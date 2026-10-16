@@ -12,7 +12,7 @@ import {
 } from './game';
 import { CONFIG } from './config';
 import type { Side } from './config';
-import type { Game } from './game';
+import type { Game, Unit } from './game';
 
 const snapshot = function (world: Game) {
 	return structuredClone({
@@ -103,6 +103,8 @@ const spawnTraveler = function (
 	cargo = 0,
 ) {
 	return world.spawn({
+		localTransform: { x, y, rotation: 0, scaleX: 1, scaleY: 1 },
+		circleCollider: { radius: 0 },
 		unit: {
 			owner,
 			kind,
@@ -116,6 +118,54 @@ const spawnTraveler = function (
 		},
 	});
 };
+
+test('a same-tick AI redispatch keeps an arriving ship in the spatial index', async function () {
+	const world = await createGame();
+	try {
+		for (const entity of units(world)) world.removeEntity(entity.id);
+		const vega = named(world, 'Vega');
+		const terra = named(world, 'Terra');
+		const red = spawnTraveler(
+			world,
+			'red',
+			'ship',
+			vega.components.planet.x,
+			vega.components.planet.y,
+			vega.id,
+		);
+		const blue = spawnTraveler(
+			world,
+			'blue',
+			'ship',
+			vega.components.planet.x + 20,
+			vega.components.planet.y,
+			terra.id,
+		);
+		const match = world.getResource('match');
+		match.ai = true;
+		match.aiClock = CONFIG.aiInterval - CONFIG.step;
+
+		world.update(CONFIG.step);
+
+		expect(red.components.unit.phase).toBe('travel');
+		expect(red.components.unit.target).not.toBe(vega.id);
+		expect(world.getComponent(red.id, 'circleCollider')).toBeDefined();
+		blue.components.unit.target = red.components.unit.target;
+		blue.components.unit.x = red.components.unit.x + 12;
+		blue.components.unit.y = red.components.unit.y;
+		const blueTransform = world.getComponent(blue.id, 'localTransform');
+		if (!blueTransform) throw new Error('Missing blue traveler transform');
+		blueTransform.x = blue.components.unit.x;
+		blueTransform.y = blue.components.unit.y;
+
+		world.update(CONFIG.step);
+
+		expect(red.components.unit.hp).toBeLessThan(CONFIG.shipHealth);
+	} finally {
+		await world.dispose();
+	}
+});
+
 const along = function (
 	from: { x: number; y: number },
 	to: { x: number; y: number },
@@ -370,7 +420,7 @@ test('a ship passing a planet does not join its orbit, blockade, or landing', as
 		expect(shipsAt(world, terra.id, 'red')).toHaveLength(0);
 		expect(shipsAt(world, terra.id, 'blue')).toHaveLength(blueShips);
 		expect(isBlockaded(world, terra.id)).toBe(false);
-		expect(passer.components.unit.hp).toBeLessThan(CONFIG.shipHealth);
+		expect(passer.components.unit.hp).toBe(CONFIG.shipHealth);
 
 		sol.components.planet.owner = 'red';
 		sol.components.planet.guns = 0;
@@ -399,43 +449,80 @@ test('a ship passing a planet does not join its orbit, blockade, or landing', as
 	}
 });
 
-test('a ship inside the arrival ring and weapon range takes each defender damage once', async function () {
+test('orbiting ships, transports, and guns are excluded from passing combat', async function () {
 	const world = await quietWorld();
 	try {
 		const sol = named(world, 'Sol');
 		const lyra = named(world, 'Lyra');
+		const planet = sol.components.planet;
+		planet.owner = 'blue';
+		planet.guns = 2;
 		const guard = spawnShip(world, sol.id, 'blue');
 		if (!guard) throw new Error('Missing guard');
-		const at = unitPoint(
-			guard.components.unit,
-			sol.components.planet,
-			CONFIG.step,
-			guard.id,
-		);
-		const inwardX = sol.components.planet.x - at.x;
-		const inwardY = sol.components.planet.y - at.y;
-		const inward = Math.hypot(inwardX, inwardY);
-		const passer = spawnTraveler(
-			world,
-			'red',
-			'ship',
-			at.x + (inwardX / inward) * 1,
-			at.y + (inwardY / inward) * 1,
-			lyra.id,
-		);
+		const passerFor = function (defender: {
+			id: number;
+			components: { unit: Unit };
+		}) {
+			const point = unitPoint(
+				defender.components.unit,
+				planet,
+				CONFIG.step,
+				defender.id,
+			);
+			const dx = point.x - planet.x;
+			const dy = point.y - planet.y;
+			const distance = Math.hypot(dx, dy);
+			const passerDistance = Math.min(
+				distance - 1,
+				planet.radius + CONFIG.arrivalClearance - 1,
+			);
+			return spawnTraveler(
+				world,
+				'red',
+				'ship',
+				planet.x + (dx / distance) * passerDistance,
+				planet.y + (dy / distance) * passerDistance,
+				lyra.id,
+			);
+		};
+		const passer = passerFor(guard);
 		world.update(CONFIG.step);
-		const tick = CONFIG.shipDamage * CONFIG.step;
-		expect(passer.components.unit.hp).toBeCloseTo(CONFIG.shipHealth - tick);
-		expect(guard.components.unit.hp).toBeCloseTo(CONFIG.shipHealth - tick);
+		expect(guard.components.unit.hp).toBe(CONFIG.shipHealth);
+		expect(passer.components.unit.hp).toBe(CONFIG.shipHealth);
+		expect(planet.guns).toBe(2);
 		expect(passer.components.unit.phase).toBe('travel');
 		expect(passer.components.unit.target).toBe(lyra.id);
-		expect(shipsAt(world, sol.id, 'red')).toHaveLength(0);
+		expect(world.getResource('match').engagements).toEqual([]);
+
+		world.removeEntity(guard.id);
+		planet.owner = 'red';
+		const transport = world.spawn({
+			unit: {
+				owner: 'blue',
+				kind: 'transport',
+				x: planet.x,
+				y: planet.y,
+				target: sol.id,
+				phase: 'orbit',
+				hp: CONFIG.transportHealth,
+				cargo: 3,
+				age: CONFIG.arrivalGrace,
+			},
+		});
+		const transportPasser = passerFor(transport);
+		world.update(CONFIG.step);
+		expect(transport.components.unit.hp).toBeCloseTo(
+			CONFIG.transportHealth - planet.guns * CONFIG.gunDamage * CONFIG.step,
+		);
+		expect(transportPasser.components.unit.hp).toBe(CONFIG.shipHealth);
+		expect(transportPasser.components.unit.phase).toBe('travel');
+		expect(world.getResource('match').engagements).toEqual([]);
 	} finally {
 		await world.dispose();
 	}
 });
 
-test('orbiting ships do not add passing fire on top of the orbit exchange', async function () {
+test('orbiting ships still exchange fire during orbital combat', async function () {
 	const world = await quietWorld();
 	try {
 		const sol = named(world, 'Sol');
@@ -448,101 +535,12 @@ test('orbiting ships do not add passing fire on top of the orbit exchange', asyn
 		const tick = CONFIG.shipDamage * CONFIG.step;
 		expect(blue.components.unit.hp).toBeCloseTo(CONFIG.shipHealth - tick);
 		expect(red.components.unit.hp).toBeCloseTo(CONFIG.shipHealth - tick);
-		expect(world.getResource('match').time).toBeCloseTo(align);
 	} finally {
 		await world.dispose();
 	}
 });
 
-test('guns fire inside the arrival ring and passing ships do not damage them', async function () {
-	const world = await quietWorld();
-	try {
-		const sol = named(world, 'Sol');
-		const lyra = named(world, 'Lyra');
-		sol.components.planet.owner = 'blue';
-		sol.components.planet.guns = 2;
-		const inside = spawnTraveler(
-			world,
-			'red',
-			'ship',
-			sol.components.planet.x,
-			sol.components.planet.y,
-			lyra.id,
-		);
-		world.update(CONFIG.step);
-		expect(inside.components.unit.hp).toBeCloseTo(
-			CONFIG.shipHealth - 2 * CONFIG.gunDamage * CONFIG.step,
-		);
-		expect(sol.components.planet.guns).toBe(2);
-		expect(inside.components.unit.phase).toBe('travel');
-		const outsideDist =
-			sol.components.planet.radius + CONFIG.arrivalClearance + 30;
-		const outside = spawnTraveler(
-			world,
-			'red',
-			'ship',
-			sol.components.planet.x + outsideDist,
-			sol.components.planet.y,
-			lyra.id,
-		);
-		const hp = outside.components.unit.hp;
-		world.update(CONFIG.step);
-		expect(outside.components.unit.hp).toBe(hp);
-		expect(sol.components.planet.guns).toBe(2);
-	} finally {
-		await world.dispose();
-	}
-});
-
-test('a garrison already fighting in orbit does not also shoot a passer', async function () {
-	const world = await quietWorld();
-	try {
-		const sol = named(world, 'Sol');
-		const lyra = named(world, 'Lyra');
-		const planet = sol.components.planet;
-		planet.owner = 'blue';
-		planet.guns = 2;
-		const blue = spawnShip(world, sol.id, 'blue');
-		const red = spawnShip(world, sol.id, 'red');
-		if (!blue || !red) throw new Error('Missing ships');
-		const combatTime = CONFIG.step;
-		const points = [blue, red].map(function (ship) {
-			return unitPoint(ship.components.unit, planet, combatTime, ship.id);
-		});
-		let best: { x: number; y: number; clearance: number } | undefined;
-		const dist = planet.radius + CONFIG.arrivalClearance - 10;
-		for (let i = 0; i < 72; i++) {
-			const angle = (i / 72) * Math.PI * 2;
-			const x = planet.x + Math.cos(angle) * dist;
-			const y = planet.y + Math.sin(angle) * dist;
-			let clearance = Infinity;
-			for (const point of points) {
-				const gap = Math.hypot(point.x - x, point.y - y);
-				if (gap < clearance) clearance = gap;
-			}
-			if (!best || clearance > best.clearance) best = { x, y, clearance };
-		}
-		if (
-			!best ||
-			best.clearance <= CONFIG.engagementRange + CONFIG.travelSpeed * CONFIG.step
-		)
-			throw new Error(`No safe passer slot (${best?.clearance ?? 'none'})`);
-		const passer = spawnTraveler(world, 'red', 'ship', best.x, best.y, lyra.id);
-		world.update(CONFIG.step);
-		const tick = CONFIG.shipDamage * CONFIG.step;
-		const gunTick = planet.guns * CONFIG.gunDamage * CONFIG.step;
-		expect(red.components.unit.hp).toBeCloseTo(CONFIG.shipHealth - tick - gunTick);
-		expect(blue.components.unit.hp).toBeCloseTo(CONFIG.shipHealth - tick);
-		expect(passer.components.unit.hp).toBe(CONFIG.shipHealth);
-		expect(passer.components.unit.phase).toBe('travel');
-		expect(passer.components.unit.target).toBe(lyra.id);
-		expect(shipsAt(world, sol.id, 'red')).toHaveLength(1);
-	} finally {
-		await world.dispose();
-	}
-});
-
-test('passing fire does not skip transport arrival grace', async function () {
+test('orbital combat preserves transport arrival grace', async function () {
 	const world = await quietWorld();
 	try {
 		const sol = named(world, 'Sol');
@@ -654,40 +652,18 @@ test('a transport that crosses into the arrival ring keeps its grace', async fun
 	}
 });
 
-test('a lethal arrival-ring hit still leaves the traveler a return shot', async function () {
+test('a lethal passing hit still leaves the traveler a return shot', async function () {
 	const world = await quietWorld();
 	try {
-		const sol = named(world, 'Sol');
 		const lyra = named(world, 'Lyra');
-		const planet = sol.components.planet;
-		planet.owner = 'blue';
-		const guard = spawnShip(world, sol.id, 'blue');
-		if (!guard) throw new Error('Missing guard');
-		guard.components.unit.hp = 0.05;
-		const at = unitPoint(guard.components.unit, planet, CONFIG.step, guard.id);
-		const inwardX = planet.x - at.x;
-		const inwardY = planet.y - at.y;
-		const inward = Math.hypot(inwardX, inwardY);
-		const startX = at.x + (inwardX / inward) * 1;
-		const startY = at.y + (inwardY / inward) * 1;
-		const dx = lyra.components.planet.x - startX;
-		const dy = lyra.components.planet.y - startY;
-		const distance = Math.hypot(dx, dy);
-		const travel = Math.min(distance, CONFIG.travelSpeed * CONFIG.step);
-		const combatX = startX + (dx / distance) * travel;
-		const combatY = startY + (dy / distance) * travel;
-		expect(
-			Math.hypot(combatX - planet.x, combatY - planet.y),
-		).toBeLessThanOrEqual(planet.radius + CONFIG.arrivalClearance);
-		expect(Math.hypot(combatX - at.x, combatY - at.y)).toBeLessThanOrEqual(
-			CONFIG.engagementRange,
-		);
-		const passer = spawnTraveler(world, 'red', 'ship', startX, startY, lyra.id);
-		passer.components.unit.hp = 0.05;
+		const blue = spawnTraveler(world, 'blue', 'ship', 600, 700, lyra.id);
+		const red = spawnTraveler(world, 'red', 'ship', 620, 700, lyra.id);
+		blue.components.unit.hp = 0.05;
+		red.components.unit.hp = 0.05;
 		world.update(CONFIG.step);
 		expect(
 			units(world).some(function (entity) {
-				return entity.id === guard.id || entity.id === passer.id;
+				return entity.id === blue.id || entity.id === red.id;
 			}),
 		).toBe(false);
 		const owners = world
