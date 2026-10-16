@@ -61,7 +61,6 @@
 			</main>
 			<header class="hud">
 				<div class="brand">
-					<span class="eyebrow">SECTOR 01 / TACTICAL COMMAND</span>
 					<h1>Galaxy Conquest</h1>
 				</div>
 				<div class="scorebar">
@@ -71,14 +70,6 @@
 				</div>
 				<div class="header-actions">
 					<button
-						id="fullscreen"
-						aria-label="Enter fullscreen"
-						aria-pressed="false"
-						title="Enter fullscreen"
-					>
-						⛶
-					</button>
-					<button
 						id="orders-toggle"
 						aria-controls="orders-drawer"
 						aria-expanded="false"
@@ -86,41 +77,39 @@
 						Orders · 0
 					</button>
 					<button id="pause" aria-label="Pause game">Ⅱ</button
-					><button id="restart" aria-label="Restart scenario">↻</button
 					><button
 						id="settings"
-						aria-label="Open field guide"
+						aria-label="Open game menu"
+						aria-controls="field-guide"
+						title="Game menu & help"
 						aria-expanded="false"
 					>
 						☰
 					</button>
 				</div>
 			</header>
-			<div class="map-heading hud">
-				<span class="eyebrow">TACTICAL VIEW</span
-				><span id="instruction">Select a blue planet or orbital ring</span
+			<div class="map-heading">
+				<span id="instruction">Select a blue planet or orbital ring</span
 				><button id="multi" aria-pressed="false">＋ Multi-select</button>
-			</div>
-			<div class="navigation-hint">
-				DRAG TO EXPLORE · SCROLL OR PINCH TO ZOOM
 			</div>
 			<div id="banner" role="status"></div>
 			<aside id="planet-panel" aria-label="Planet commands" hidden>
 				<section class="command-panel">
 					<div class="panel-title">
-						<span class="eyebrow">COMMAND</span
-						><button id="clear" class="text-button">Clear selection</button>
+						<h2 id="selection-name">No source selected</h2>
+						<button id="clear" aria-label="Clear selection" title="Clear selection">×</button>
 					</div>
-					<h2 id="selection-name">No source selected</h2>
 					<p id="selection-info">Tap or left-click a blue planet to select.</p>
 					<p id="orbital-info" hidden></p>
-					<div class="control-label">
-						Produce <span id="production-info">on selected worlds</span>
-					</div>
-					<div id="production" class="segments">
-						<button data-production="troops">▥ Troops</button
-						><button data-production="ships">◆ Ships</button
-						><button data-production="guns">✣ Defense Platform</button>
+					<div id="production-controls">
+						<div class="control-label">
+							Produce <span id="production-info">on selected worlds</span>
+						</div>
+						<div id="production" class="segments">
+							<button data-production="troops">▥ Troops</button
+							><button data-production="ships">◆ Ships</button
+							><button data-production="guns">✣ Defense Platform</button>
+						</div>
 					</div>
 					<div id="dispatch-controls">
 						<div class="control-label">
@@ -163,10 +152,14 @@
 				<p id="orders-empty">No active orders.</p>
 				<ul id="orders-list"></ul>
 			</aside>
-			<section id="field-guide" class="hud" aria-label="Field guide" hidden>
+			<section id="field-guide" class="hud" aria-label="Game menu" hidden>
 				<div class="panel-title">
-					<span class="eyebrow">FIELD GUIDE</span
-					><button id="close-guide" aria-label="Close field guide">×</button>
+					<span class="eyebrow">GALAXY CONQUEST / MENU</span
+					><button id="close-guide" aria-label="Close game menu">×</button>
+				</div>
+				<div class="menu-actions">
+					<button id="fullscreen" aria-label="Enter fullscreen" aria-pressed="false">Fullscreen</button>
+					<button id="restart">Restart scenario</button>
 				</div>
 				<details class="lab">
 					<summary>Prototype lab <span>scenarios & tuning</span></summary>
@@ -198,6 +191,7 @@
 				</details>
 				<details class="guide">
 					<summary>How to play</summary>
+					<p>Drag to explore. Scroll or pinch to zoom. Focus the map and use arrow keys to pan.</p>
 					<p>
 						Tap or left-click a world to select it. Hold a destination on touch,
 						or right-click it with a mouse, to send units. Select the source again

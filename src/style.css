@@ -8,6 +8,9 @@
 	--blue: #60d9ff;
 	--muted: #8e9cae;
 	--red: #ff867e;
+	--hud-top: max(10px, env(safe-area-inset-top));
+	--hud-side: max(10px, env(safe-area-inset-left), env(safe-area-inset-right));
+	--panel-top: calc(var(--hud-top) + 112px);
 }
 * {
 	box-sizing: border-box;
@@ -94,14 +97,14 @@ canvas,
 }
 header {
 	position: absolute;
-	top: max(20px, env(safe-area-inset-top));
-	left: max(20px, env(safe-area-inset-left));
-	right: max(20px, env(safe-area-inset-right));
+	top: var(--hud-top);
+	left: var(--hud-side);
+	right: var(--hud-side);
 	display: flex;
 	justify-content: space-between;
 	align-items: center;
-	gap: 20px;
-	padding: 12px 16px;
+	gap: 16px;
+	padding: 6px 10px;
 }
 .eyebrow {
 	font-size: 9px;
@@ -113,7 +116,7 @@ h1 {
 	font-size: 20px;
 	font-weight: 500;
 	letter-spacing: -0.5px;
-	margin: 5px 0 0;
+	margin: 0;
 }
 .header-actions {
 	display: flex;
@@ -146,39 +149,34 @@ h1 {
 }
 .map-heading {
 	position: absolute;
-	top: 112px;
-	left: 20px;
+	top: calc(var(--hud-top) + 62px);
+	left: var(--hud-side);
 	display: flex;
-	flex-direction: column;
-	align-items: flex-start;
-	gap: 10px;
-	padding: 14px;
-	max-width: 300px;
+	align-items: center;
+	gap: 12px;
+	max-width: calc(100% - 2 * var(--hud-side));
 	font-size: 11px;
+	pointer-events: none;
+}
+#instruction {
+	padding: 6px 8px;
+	background: #080f19d9;
+	border-radius: 5px;
 }
 .map-heading button {
-	padding: 0 12px;
-	width: 100%;
-}
-.navigation-hint {
-	position: absolute;
-	bottom: 42px;
-	left: max(20px, env(safe-area-inset-left));
-	color: #7b91a5;
-	font-size: 9px;
-	letter-spacing: 1px;
-	pointer-events: none;
+	padding: 0 10px;
+	pointer-events: auto;
 }
 #planet-panel {
 	position: absolute;
-	top: 112px;
-	right: max(20px, env(safe-area-inset-right));
+	top: var(--panel-top);
+	right: var(--hud-side);
 	width: 300px;
-	max-height: calc(100dvh - 200px);
+	max-height: calc(100dvh - var(--panel-top) - 10px - env(safe-area-inset-bottom));
 	overflow: auto;
 }
 .command-panel {
-	padding: 18px;
+	padding: 12px;
 }
 .panel-title {
 	display: flex;
@@ -204,7 +202,7 @@ h2 {
 	color: #9aafbf;
 	font-size: 10px;
 	line-height: 1.6;
-	margin: 0 0 16px;
+	margin: 4px 0 8px;
 }
 #selection-info:has(+ #orbital-info:not([hidden])) {
 	margin-bottom: 4px;
@@ -214,7 +212,7 @@ h2 {
 	justify-content: space-between;
 	color: #b3c3d1;
 	font-size: 10px;
-	margin: 16px 0 8px;
+	margin: 10px 0 6px;
 }
 .control-label span {
 	color: #71869b;
@@ -232,7 +230,7 @@ h2 {
 }
 #banner {
 	position: absolute;
-	bottom: 90px;
+	bottom: max(20px, env(safe-area-inset-bottom));
 	left: 50%;
 	transform: translateX(-50%);
 	width: max-content;
@@ -248,11 +246,11 @@ h2 {
 }
 #field-guide {
 	position: absolute;
-	top: 112px;
-	right: 20px;
+	top: var(--panel-top);
+	right: var(--hud-side);
 	width: 340px;
 	max-width: calc(100% - 40px);
-	max-height: calc(100dvh - 200px);
+	max-height: calc(100dvh - var(--panel-top) - 10px - env(safe-area-inset-bottom));
 	overflow: auto;
 	padding: 16px;
 }
@@ -473,139 +471,6 @@ dialog p {
 	margin-bottom: 0;
 }
 
-@media (max-width: 699px) {
-	header {
-		top: max(10px, env(safe-area-inset-top));
-		left: 10px;
-		right: 10px;
-		gap: 8px;
-		padding: 10px;
-		flex-wrap: wrap;
-	}
-	.brand {
-		flex: 1;
-	}
-	h1 {
-		font-size: 17px;
-	}
-	.eyebrow {
-		font-size: 8px;
-	}
-	.scorebar {
-		order: 3;
-		width: 100%;
-		justify-content: space-between;
-		gap: 10px;
-		border-top: 1px solid var(--line);
-		padding-top: 8px;
-	}
-	.scorebar strong {
-		font-size: 15px;
-	}
-	.header-actions {
-		gap: 4px;
-	}
-	.header-actions button {
-		width: 40px;
-	}
-	.map-heading {
-		top: 132px;
-		left: 10px;
-		right: 10px;
-		max-width: none;
-		flex-direction: row;
-		align-items: center;
-		gap: 10px;
-		padding: 6px 10px;
-		font-size: 9px;
-	}
-	.map-heading .eyebrow {
-		display: none;
-	}
-	#instruction {
-		flex: 1;
-	}
-	.map-heading button {
-		width: auto;
-		font-size: 9px;
-		padding: 0 8px;
-	}
-	#planet-panel {
-		top: auto;
-		left: 10px;
-		right: 10px;
-		bottom: max(10px, env(safe-area-inset-bottom));
-		width: auto;
-		max-height: calc(100dvh - 270px);
-	}
-	.command-panel {
-		padding: 10px 14px 14px;
-	}
-	h2 {
-		font-size: 22px;
-		margin: 0 0 4px;
-	}
-	#selection-info,
-	#orbital-info {
-		margin-bottom: 6px;
-	}
-	#selection-info:has(+ #orbital-info:not([hidden])) {
-		margin-bottom: 2px;
-	}
-	.control-label {
-		margin: 8px 0 5px;
-	}
-	.navigation-hint {
-		display: none;
-	}
-	#banner {
-		bottom: 80px;
-		font-size: 10px;
-	}
-	#app:has(#planet-panel:not([hidden])) #banner {
-		top: 192px;
-		bottom: auto;
-	}
-	#field-guide {
-		top: 132px;
-		right: 10px;
-		max-width: calc(100% - 20px);
-		max-height: calc(100dvh - 212px);
-	}
-}
-@media (max-height: 550px) and (min-width: 700px) {
-	#planet-panel,
-	#field-guide {
-		top: 100px;
-		max-height: calc(100dvh - 110px);
-	}
-	.command-panel {
-		padding: 10px 14px;
-	}
-	.control-label {
-		margin: 7px 0 4px;
-	}
-	#selection-info,
-	#orbital-info {
-		margin-bottom: 4px;
-	}
-	#selection-info:has(+ #orbital-info:not([hidden])) {
-		margin-bottom: 2px;
-	}
-}
-
-@media (max-width: 380px) {
-	.brand {
-		min-width: 0;
-	}
-	.brand .eyebrow {
-		display: none;
-	}
-	h1 {
-		font-size: 15px;
-	}
-}
-
 .header-actions #orders-toggle {
 	width: auto;
 	padding: 0 10px;
@@ -614,11 +479,11 @@ dialog p {
 }
 #orders-drawer {
 	position: absolute;
-	top: 112px;
-	right: max(20px, env(safe-area-inset-right));
+	top: var(--panel-top);
+	right: var(--hud-side);
 	width: 340px;
 	max-width: calc(100% - 40px);
-	max-height: calc(100dvh - 132px);
+	max-height: calc(100dvh - var(--panel-top) - 10px - env(safe-area-inset-bottom));
 	overflow: auto;
 	padding: 16px;
 }
@@ -681,63 +546,6 @@ dialog p {
 	padding: 0 8px;
 	min-width: 84px;
 }
-@media (max-width: 699px) {
-	/* Keep the existing header footprint even with Orders beside Pause. */
-	.brand {
-		min-width: 0;
-	}
-	.header-actions {
-		order: 1;
-		flex-basis: 100%;
-		justify-content: space-between;
-	}
-	.scorebar {
-		order: 0;
-		width: auto;
-		flex: 0 0 auto;
-		border: 0;
-		padding: 0;
-		gap: 6px;
-		letter-spacing: 0;
-	}
-	.scorebar .red,
-	.scorebar .blue {
-		font-size: 0;
-	}
-	.scorebar strong {
-		font-size: 13px;
-		margin: 0;
-	}
-	#clock {
-		font-size: 9px;
-	}
-	.header-actions button {
-		width: 44px;
-	}
-	.header-actions #orders-toggle {
-		font-size: 10px;
-		padding: 0 8px;
-	}
-	#orders-drawer {
-		top: auto;
-		bottom: max(10px, env(safe-area-inset-bottom));
-		left: 10px;
-		right: 10px;
-		width: auto;
-		max-width: none;
-		max-height: min(48dvh, calc(100dvh - 200px));
-	}
-	#app:has(#orders-drawer:not([hidden])) #banner {
-		top: 192px;
-		bottom: auto;
-	}
-}
-@media (max-height: 550px) and (min-width: 700px) {
-	#orders-drawer {
-		top: 100px;
-		max-height: calc(100dvh - 110px);
-	}
-}
 @media (max-height: 560px) {
 	dialog {
 		max-height: calc(100dvh - 16px);
@@ -754,5 +562,100 @@ dialog p {
 	}
 	.roles {
 		padding: 8px 0 12px;
+	}
+}
+
+#planet-panel h2 {
+	font-size: 22px;
+	margin: 0;
+}
+#clear {
+	min-width: 44px;
+	font-size: 22px;
+	background: transparent;
+}
+.menu-actions {
+	display: flex;
+	gap: 8px;
+	margin: 12px 0;
+}
+.menu-actions button {
+	flex: 1;
+}
+#app:has(#field-guide:not([hidden])) #planet-panel {
+	display: none;
+}
+@media (max-width: 699px) {
+	.brand {
+		display: none;
+	}
+	header {
+		gap: 8px;
+		padding: 6px;
+	}
+	.scorebar {
+		gap: 8px;
+		font-size: 9px;
+		letter-spacing: 0;
+	}
+	.scorebar strong {
+		font-size: 14px;
+		margin: 0 2px;
+	}
+	.header-actions {
+		gap: 4px;
+	}
+	.header-actions #orders-toggle {
+		padding: 0 6px;
+		font-size: 10px;
+	}
+	.map-heading {
+		right: var(--hud-side);
+		gap: 6px;
+		font-size: 10px;
+	}
+	#instruction {
+		flex: 1;
+	}
+	.map-heading button {
+		font-size: 10px;
+		padding: 0 8px;
+	}
+	#planet-panel,
+	#orders-drawer {
+		top: auto;
+		left: var(--hud-side);
+		right: var(--hud-side);
+		bottom: max(10px, env(safe-area-inset-bottom));
+		width: auto;
+		max-width: none;
+		max-height: min(48dvh, calc(100dvh - var(--panel-top) - 60px));
+	}
+	#field-guide {
+		width: 340px;
+		max-width: calc(100% - 2 * var(--hud-side));
+	}
+	#banner {
+		top: var(--panel-top);
+		bottom: auto;
+		font-size: 10px;
+		padding: 8px 12px;
+	}
+}
+@media (max-width: 359px) {
+	#clock {
+		display: none;
+	}
+}
+@media (max-height: 550px) and (min-width: 700px) {
+	:root {
+		--panel-top: calc(var(--hud-top) + 62px);
+	}
+	.map-heading {
+		max-width: calc(100% - 380px);
+	}
+	#banner {
+		top: auto;
+		bottom: 10px;
 	}
 }
