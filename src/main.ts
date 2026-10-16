@@ -50,6 +50,7 @@ const selectionName = element('selection-name', HTMLHeadingElement);
 const selectionInfo = element('selection-info', HTMLParagraphElement);
 const orbitalInfo = element('orbital-info', HTMLParagraphElement);
 const productionInfo = element('production-info', HTMLSpanElement);
+const productionControls = element('production-controls', HTMLDetailsElement);
 const banner = element('banner', HTMLDivElement);
 const events = element('events', HTMLDivElement);
 const metrics = element('metrics', HTMLDivElement);
@@ -265,6 +266,7 @@ const selectPlanet = function (id: number): void {
 		inspected = p.owner === 'blue' ? undefined : id;
 	}
 	refresh();
+	revealSelection(id);
 };
 const sendToPlanet = function (id: number): void {
 	if (busy || welcome.open || world.getResource('match').winner) return;
@@ -359,7 +361,7 @@ const refresh = function (): void {
 		const red = shipsAt(world, id, 'red').length;
 		const guns = Math.ceil(p.guns);
 		const blocked = isBlockaded(world, id);
-		const hitSize = Math.max(54, (p.radius + 32) * 2);
+		const hitSize = Math.max(Math.min(44 / camera.scale, 180), (p.radius + 32) * 2);
 		view.button.style.width = `${hitSize}px`;
 		view.button.style.height = `${hitSize}px`;
 		view.button.style.setProperty('--owner', COLORS[p.owner]);
@@ -426,9 +428,10 @@ const refresh = function (): void {
 		first === undefined
 			? ''
 			: `${shipsAt(world, first, 'blue').length} your orbiting ships · hold or right-click a destination to send`;
+	productionControls.hidden = ownedSelected.length === 0;
 	productionInfo.textContent =
 		p && p.owner === 'blue' && selected.length === 1
-			? `${(p.rate * CONFIG.productionRateMultiplier).toFixed(1)} work / sec`
+			? `${icons[p.production]} ${p.production === 'guns' ? 'Defense Platform' : p.production === 'ships' ? 'Ships' : 'Troops'}`
 			: 'on selected worlds';
 	for (const button of productionButtons) {
 		button.disabled = ownedSelected.length === 0 || Boolean(match.winner);
@@ -460,7 +463,7 @@ const refresh = function (): void {
 		}).length,
 	);
 	clock.textContent = timeLabel(match.time);
-	pause.textContent = match.paused ? '▷' : 'Ⅱ';
+	pause.textContent = match.paused ? '▷ Resume' : 'Ⅱ Pause';
 	pause.setAttribute('aria-label', match.paused ? 'Resume game' : 'Pause game');
 	pause.setAttribute('aria-pressed', String(match.paused));
 	pause.title = match.paused
@@ -659,6 +662,7 @@ const draw = function (): void {
 let camera: Camera = { x: 0, y: 0, scale: 1 };
 let fitScale = 1;
 const applyCamera = function (): void {
+	mapWorld.style.setProperty('--map-scale', String(camera.scale));
 	mapWorld.style.transform = `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})`;
 };
 const fitMap = function (): void {
@@ -677,10 +681,46 @@ const fitMap = function (): void {
 	};
 	applyCamera();
 };
+// Shift only when the newly opened command panel covers the inspected world.
+const revealSelection = function (id: number): void {
+	if (planetPanel.hidden || !ordersPanel.hidden || !fieldGuide.hidden) return;
+	const p = world.getComponent(id, 'planet');
+	if (!p) return;
+	const panel = planetPanel.getBoundingClientRect();
+	const x = camera.x + p.x * camera.scale;
+	const y = camera.y + p.y * camera.scale;
+	if (
+		x < panel.left - 30 || x > panel.right + 30 ||
+		y < panel.top - 30 || y > panel.bottom + 30
+	) return;
+	const heading = document.querySelector('.map-heading');
+	const top = Math.max(
+		heading?.getBoundingClientRect().bottom ?? 190,
+		board.clientWidth < 700 ? banner.getBoundingClientRect().bottom : 0,
+	);
+	if (board.clientWidth < 700) {
+		if (panel.top - top < 50) return;
+		camera = { ...camera, y: camera.y + (top + panel.top) / 2 - y };
+	} else {
+		camera = {
+			...camera,
+			x: camera.x + (panel.left + 20) / 2 - x,
+			y: camera.y + Math.min(board.clientHeight - 50, Math.max(y, top + 50)) - y,
+		};
+	}
+	applyCamera();
+};
 const zoomAt = function (anchor: Point, factor: number): void {
 	camera = zoomCamera(camera, anchor, factor, fitScale * 0.5, fitScale * 5);
 	applyCamera();
 };
+element('zoom-in', HTMLButtonElement).addEventListener('click', function () {
+	zoomAt({ x: board.clientWidth / 2, y: board.clientHeight / 2 }, 1.3);
+});
+element('zoom-out', HTMLButtonElement).addEventListener('click', function () {
+	zoomAt({ x: board.clientWidth / 2, y: board.clientHeight / 2 }, 1 / 1.3);
+});
+element('fit-map', HTMLButtonElement).addEventListener('click', fitMap);
 const localPoint = function (event: PointerEvent): Point {
 	const rect = board.getBoundingClientRect();
 	return { x: event.clientX - rect.left, y: event.clientY - rect.top };
@@ -851,6 +891,7 @@ const toggleGuide = function (): void {
 		fieldGuide.hidden ? 'Open field guide' : 'Close field guide',
 	);
 	if (fieldGuide.hidden) settings.focus();
+	else element('close-guide', HTMLButtonElement).focus();
 };
 settings.addEventListener('click', toggleGuide);
 element('close-guide', HTMLButtonElement).addEventListener(

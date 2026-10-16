@@ -65,9 +65,9 @@
 					<h1>Galaxy Conquest</h1>
 				</div>
 				<div class="scorebar">
-					<span class="blue">● <strong id="blue-count">1</strong> YOU</span>
+					<span class="blue" aria-label="Your worlds">YOU <strong id="blue-count">1</strong></span>
 					<div id="clock">00:00</div>
-					<span class="red">● <strong id="red-count">1</strong> RIVAL</span>
+					<span class="red" aria-label="Rival worlds">RIVAL <strong id="red-count">1</strong></span>
 				</div>
 				<div class="header-actions">
 					<button
@@ -85,14 +85,16 @@
 					>
 						Orders · 0
 					</button>
-					<button id="pause" aria-label="Pause game">Ⅱ</button
-					><button id="restart" aria-label="Restart scenario">↻</button
+					<button id="pause" aria-label="Pause game">Ⅱ Pause</button
+					><button id="restart" aria-label="Restart scenario" title="Restart scenario">↻</button
 					><button
 						id="settings"
 						aria-label="Open field guide"
+						aria-controls="field-guide"
+						title="Field guide and settings"
 						aria-expanded="false"
 					>
-						☰
+						Help
 					</button>
 				</div>
 			</header>
@@ -101,6 +103,11 @@
 				><span id="instruction">Select a blue planet or orbital ring</span
 				><button id="multi" aria-pressed="false">＋ Multi-select</button>
 			</div>
+			<nav class="map-navigation hud" aria-label="Map navigation">
+				<button id="zoom-out" aria-label="Zoom out" title="Zoom out">−</button>
+				<button id="fit-map" title="Show the whole map">Fit map</button>
+				<button id="zoom-in" aria-label="Zoom in" title="Zoom in">+</button>
+			</nav>
 			<div class="navigation-hint">
 				DRAG TO EXPLORE · SCROLL OR PINCH TO ZOOM
 			</div>
@@ -114,14 +121,6 @@
 					<h2 id="selection-name">No source selected</h2>
 					<p id="selection-info">Tap or left-click a blue planet to select.</p>
 					<p id="orbital-info" hidden></p>
-					<div class="control-label">
-						Produce <span id="production-info">on selected worlds</span>
-					</div>
-					<div id="production" class="segments">
-						<button data-production="troops">▥ Troops</button
-						><button data-production="ships">◆ Ships</button
-						><button data-production="guns">✣ Defense Platform</button>
-					</div>
 					<div id="dispatch-controls">
 						<div class="control-label">
 							Send amount <span id="dispatch-info">defense platforms stay behind</span>
@@ -132,15 +131,24 @@
 							><button data-amount="1">100%</button>
 						</div>
 						<div id="dispatch-filter-controls">
-							<div class="control-label">Dispatch</div>
+							<div class="control-label">Unit types</div>
 							<div id="filter" class="segments">
 								<button data-filter="combined" aria-pressed="true">
-									Combined</button
+									Troops + ships</button
 								><button data-filter="ships">Ships only</button
 								><button data-filter="troops">Troops only</button>
 							</div>
 						</div>
 					</div>
+					<details id="production-controls">
+						<summary>Production <span id="production-info"></span></summary>
+						<div id="production" class="segments">
+							<button data-production="troops">▥ Troops</button>
+							<button data-production="ships">◆ Ships</button>
+							<button data-production="guns">✣ Defense Platform</button>
+						</div>
+						<p class="control-hint">Switching production discards unfinished work. Defense platforms stay on this world.</p>
+					</details>
 				</section>
 			</aside>
 			<aside
@@ -235,15 +243,15 @@
 				<div id="events" aria-live="polite"></div>
 			</section>
 		</div>
-		<dialog id="welcome">
+		<dialog id="welcome" aria-labelledby="welcome-title">
 			<span class="eyebrow">GALAXY CONQUEST / FIRST CONTACT</span>
-			<h2>Win the orbit.<br />Take the world.</h2>
+			<h2 id="welcome-title">Win the orbit.<br />Take the world.</h2>
 			<p>
 				Drag to explore and scroll or pinch to zoom. Select your planet to open its
-				commands with a tap or left click. Hold or right-click a destination
-				to launch. Transports carry troops automatically.
+				commands with a tap or left click. Hold a destination for ½ second on touch, or right-click with a mouse,
+				to launch half your troops and ships. Transports carry troops automatically.
 			</p>
-			<p>Pause at any time to issue orders and change production, then resume.</p>
+			<p>Capture every rival world to win. Pause at any time to issue orders and change production, then resume.</p>
 			<div class="roles">
 				<span>▥<b>Troops</b>Capture</span><span>◆<b>Ships</b>Escort</span
 				><span>✣<b>Defense Platform</b>Defend</span>
