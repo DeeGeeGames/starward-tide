@@ -18,6 +18,7 @@
 body {
 	margin: 0;
 	overflow: hidden;
+	overscroll-behavior: none;
 }
 button,
 select {
@@ -735,5 +736,23 @@ dialog p {
 	#orders-drawer {
 		top: 100px;
 		max-height: calc(100dvh - 110px);
+	}
+}
+@media (max-height: 560px) {
+	dialog {
+		max-height: calc(100dvh - 16px);
+		overflow: auto;
+		padding: 16px 18px;
+	}
+	dialog h2 {
+		font-size: 28px;
+		margin: 8px 0;
+	}
+	dialog p {
+		line-height: 1.45;
+		margin: 8px 0;
+	}
+	.roles {
+		padding: 8px 0 12px;
 	}
 }
