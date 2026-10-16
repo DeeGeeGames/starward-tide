@@ -369,7 +369,7 @@ const refresh = function (): void {
 		view.button.setAttribute('aria-pressed', String(highlighted));
 		view.button.setAttribute(
 			'aria-label',
-			`${p.name}, ${p.owner === 'blue' ? 'your' : p.owner === 'red' ? 'rival' : 'neutral'} planet, ${p.troops} troops, ${blue} your ships, ${red} rival ships, ${guns} guns${blocked ? ', blockaded' : ''}`,
+			`${p.name}, ${p.owner === 'blue' ? 'your' : p.owner === 'red' ? 'rival' : 'neutral'} planet, ${p.troops} troops, ${blue} your ships, ${red} rival ships, ${guns} defense platforms${blocked ? ', blockaded' : ''}`,
 		);
 		view.count.textContent = String(p.troops);
 		view.orbit.replaceChildren();
@@ -397,7 +397,7 @@ const refresh = function (): void {
 	dispatchFilterControls.hidden = shipsOnly;
 	dispatchInfo.textContent = shipsOnly
 		? 'orbiting ships only'
-		: 'guns stay behind';
+		: 'defense platforms stay behind';
 	const first = selected[0] ?? inspected;
 	const p =
 		first === undefined ? undefined : world.getComponent(first, 'planet');
@@ -410,7 +410,7 @@ const refresh = function (): void {
 	selectionInfo.textContent =
 		selected.length === 0 || (selected.length === 1 && p?.owner !== 'blue')
 			? p
-				? `${p.owner === 'blue' ? 'Your' : p.owner === 'red' ? 'Rival' : 'Neutral'} world · ${p.troops} troops · ${first === undefined ? 0 : shipsAt(world, first, 'red').length} rival ships · ${Math.ceil(p.guns)} guns`
+				? `${p.owner === 'blue' ? 'Your' : p.owner === 'red' ? 'Rival' : 'Neutral'} world · ${p.troops} troops · ${first === undefined ? 0 : shipsAt(world, first, 'red').length} rival ships · ${Math.ceil(p.guns)} defense platforms`
 				: 'Tap or left-click a blue planet to select.'
 			: `${ownedSelected.reduce(function (sum, p) {
 					return sum + p.troops;
@@ -420,7 +420,7 @@ const refresh = function (): void {
 					ownedSelected.reduce(function (sum, p) {
 						return sum + p.guns;
 					}, 0),
-				)} guns${p && p.owner !== 'blue' ? ' · orbit only' : ''}`;
+				)} defense platforms${p && p.owner !== 'blue' ? ' · orbit only' : ''}`;
 	orbitalInfo.hidden = !(selected.length === 1 && shipsOnly);
 	orbitalInfo.textContent =
 		first === undefined
