@@ -182,96 +182,61 @@ test('a same-tick AI redispatch keeps an arriving ship in the spatial index', as
 	}
 });
 
-const along = function (
-	from: { x: number; y: number },
-	to: { x: number; y: number },
-	fraction: number,
-): { x: number; y: number } {
-	return {
-		x: from.x + (to.x - from.x) * fraction,
-		y: from.y + (to.y - from.y) * fraction,
-	};
-};
+test('traveling ships stop during combat and survivors resume their original route', async function () {
+	const world = await quietWorld();
+	try {
+		const lyra = named(world, 'Lyra');
+		const terra = named(world, 'Terra');
+		const blue = spawnTraveler(world, 'blue', 'ship', 600, 700, lyra.id);
+		const red = spawnTraveler(world, 'red', 'ship', 620, 700, terra.id);
+		red.components.unit.hp = CONFIG.shipDamage * CONFIG.step * 3;
+		for (let tick = 0; tick < 3; tick++) {
+			world.update(CONFIG.step);
+			for (const [entity, x] of [[blue, 600], [red, 620]] as const) {
+				expect(entity.components.unit.x).toBe(x);
+				expect(entity.components.unit.y).toBe(700);
+				if (entity.components.unit.hp > 0)
+					expect(world.getComponent(entity.id, 'localTransform')?.x).toBe(x);
+			}
+			expect(blue.components.unit.hp).toBeLessThan(CONFIG.shipHealth);
+			expect(world.getResource('match').engagements).toHaveLength(2);
+		}
+		expect(world.getComponent(red.id, 'unit')).toBeUndefined();
+		world.update(CONFIG.step);
+		expect(blue.components.unit.x).not.toBe(600);
+		expect(blue.components.unit.target).toBe(lyra.id);
+		expect(world.getResource('match').engagements).toEqual([]);
+		step(world, 800);
+		expect(blue.components.unit.phase).toBe('orbit');
+		expect(blue.components.unit.target).toBe(lyra.id);
+	} finally {
+		await world.dispose();
+	}
+});
 
-test('traveling ships exchange fire and still arrive at their original planets', async function () {
+test('opposing routes enter combat range and then hold position', async function () {
 	const world = await quietWorld();
 	try {
 		const altair = named(world, 'Altair');
 		const io = named(world, 'Io');
-		const blueAt = along(altair.components.planet, io.components.planet, 0.3);
-		const redAt = along(altair.components.planet, io.components.planet, 0.7);
-		const blue = spawnTraveler(
-			world,
-			'blue',
-			'ship',
-			blueAt.x,
-			blueAt.y,
-			io.id,
-		);
-		const red = spawnTraveler(
-			world,
-			'red',
-			'ship',
-			redAt.x,
-			redAt.y,
-			altair.id,
-		);
-		expect(
-			Math.hypot(blueAt.x - redAt.x, blueAt.y - redAt.y),
-		).toBeGreaterThan(CONFIG.engagementRange);
-		let sawShots = false;
-		let separated = false;
-		for (
-			let i = 0;
-			i < 400 &&
-			(blue.components.unit.phase !== 'orbit' ||
-				red.components.unit.phase !== 'orbit');
-			i++
-		) {
-			const beforeBlue = blue.components.unit.hp;
-			const beforeRed = red.components.unit.hp;
+		const from = altair.components.planet;
+		const to = io.components.planet;
+		const blue = spawnTraveler(world, 'blue', 'ship',
+			from.x + (to.x - from.x) * 0.3, from.y + (to.y - from.y) * 0.3, io.id);
+		const red = spawnTraveler(world, 'red', 'ship',
+			from.x + (to.x - from.x) * 0.7, from.y + (to.y - from.y) * 0.7, altair.id);
+		expect(Math.hypot(blue.components.unit.x - red.components.unit.x,
+			blue.components.unit.y - red.components.unit.y)).toBeGreaterThan(CONFIG.engagementRange);
+		for (let tick = 0; tick < 400 && world.getResource('match').engagements.length === 0; tick++)
 			world.update(CONFIG.step);
-			const gap = Math.hypot(
-				blue.components.unit.x - red.components.unit.x,
-				blue.components.unit.y - red.components.unit.y,
-			);
-			if (gap <= CONFIG.engagementRange && blue.components.unit.phase === 'travel') {
-				expect(blue.components.unit.hp).toBeLessThan(beforeBlue);
-				expect(red.components.unit.hp).toBeLessThan(beforeRed);
-				expect(blue.components.unit.target).toBe(io.id);
-				expect(red.components.unit.target).toBe(altair.id);
-				expect(world.getResource('match').engagements.length).toBeGreaterThan(0);
-				sawShots = true;
-			}
-			if (
-				sawShots &&
-				gap > CONFIG.engagementRange &&
-				blue.components.unit.phase === 'travel' &&
-				red.components.unit.phase === 'travel'
-			) {
-				expect(world.getResource('match').engagements).toEqual([]);
-				separated = true;
-				break;
-			}
-		}
-		expect(sawShots).toBe(true);
-		expect(separated).toBe(true);
-		expect(blue.components.unit.hp).toBeGreaterThan(0);
-		expect(blue.components.unit.hp).toBeLessThan(CONFIG.shipHealth);
-		for (
-			let i = 0;
-			i < 800 &&
-			(blue.components.unit.phase !== 'orbit' ||
-				red.components.unit.phase !== 'orbit');
-			i++
-		)
-			world.update(CONFIG.step);
-		expect(blue.components.unit.phase).toBe('orbit');
-		expect(red.components.unit.phase).toBe('orbit');
-		expect(blue.components.unit.target).toBe(io.id);
-		expect(red.components.unit.target).toBe(altair.id);
-		expect(shipsAt(world, altair.id, 'blue')).toHaveLength(0);
-		expect(shipsAt(world, io.id, 'red')).toHaveLength(0);
+		expect(world.getResource('match').engagements).toHaveLength(2);
+		const positions = [blue, red].map(function (entity) {
+			return { x: entity.components.unit.x, y: entity.components.unit.y };
+		});
+		step(world, 10);
+		expect([blue, red].map(function (entity) {
+			return { x: entity.components.unit.x, y: entity.components.unit.y };
+		})).toEqual(positions);
 	} finally {
 		await world.dispose();
 	}
@@ -337,12 +302,35 @@ test('transports take passing fire without shooting or leaving their route', asy
 		}
 		expect(movedCloser).toBe(true);
 		expect(transport.components.unit.hp).toBe(0);
+		expect(ship.components.unit.x).toBe(origin.x - (dx / len) * 12);
+		world.update(CONFIG.step);
+		expect(ship.components.unit.x).not.toBe(origin.x - (dx / len) * 12);
 		const match = world.getResource('match');
 		expect(match.transportsLost).toBe(1);
 		expect(match.troopsLost).toBe(7);
 		expect(units(world).some(function (entity) {
 			return entity.id === transport.id;
 		})).toBe(false);
+	} finally {
+		await world.dispose();
+	}
+});
+
+test('a ship resumes when a surviving transport escapes its range', async function () {
+	const world = await quietWorld();
+	try {
+		const lyra = named(world, 'Lyra');
+		const transport = spawnTraveler(world, 'blue', 'transport', 600, 700, lyra.id, 7);
+		transport.components.unit.hp = 1000;
+		const ship = spawnTraveler(world, 'red', 'ship', 600, 700, lyra.id);
+		world.update(CONFIG.step);
+		expect(ship.components.unit.x).toBe(600);
+		expect(ship.components.unit.y).toBe(700);
+		expect(transport.components.unit.hp).toBeLessThan(1000);
+		step(world, 100);
+		expect(transport.components.unit.hp).toBeGreaterThan(0);
+		expect(ship.components.unit.x).not.toBe(600);
+		expect(ship.components.unit.target).toBe(lyra.id);
 	} finally {
 		await world.dispose();
 	}
