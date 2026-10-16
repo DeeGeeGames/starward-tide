@@ -27,6 +27,11 @@ mapWorld.style.width = `${MAP.width}px`;
 mapWorld.style.height = `${MAP.height}px`;
 const planetPanel = element('planet-panel', HTMLElement);
 const dispatchControls = element('dispatch-controls', HTMLDivElement);
+const dispatchFilterControls = element(
+	'dispatch-filter-controls',
+	HTMLDivElement,
+);
+const dispatchInfo = element('dispatch-info', HTMLSpanElement);
 const canvas = element('space', HTMLCanvasElement);
 const context = canvas.getContext('2d');
 if (!context) throw new Error('Canvas 2D is required');
@@ -40,6 +45,7 @@ const speedSelect = element('speed', HTMLSelectElement);
 const instruction = element('instruction', HTMLSpanElement);
 const selectionName = element('selection-name', HTMLHeadingElement);
 const selectionInfo = element('selection-info', HTMLParagraphElement);
+const orbitalInfo = element('orbital-info', HTMLParagraphElement);
 const productionInfo = element('production-info', HTMLSpanElement);
 const banner = element('banner', HTMLDivElement);
 const events = element('events', HTMLDivElement);
@@ -102,18 +108,18 @@ const selectPlanet = function (id: number) {
 	if (!p) return;
 	const selectable =
 		p.owner === 'blue' || shipsAt(world, id, 'blue').length > 0;
-	if (selected.includes(id))
+	if (selected.includes(id)) {
 		selected = selected.filter(function (value) {
 			return value !== id;
 		});
-	else if (multi) {
+		inspected = undefined;
+	} else if (multi) {
 		if (selectable) selected = [...selected, id];
 		else feedback('Finish source selection before choosing a destination.');
 	} else {
 		selected = selectable ? [id] : [];
-		inspected = selectable ? undefined : id;
+		inspected = p.owner === 'blue' ? undefined : id;
 	}
-	if (selectable) inspected = undefined;
 	refresh();
 };
 const sendToPlanet = function (id: number) {
@@ -124,7 +130,16 @@ const sendToPlanet = function (id: number) {
 	else if (selected.length === 0)
 		feedback('Select a blue planet or orbital ring first.');
 	else {
-		const sent = dispatch(world, selected, id, fraction, filter);
+		const shipsOnly = selected.every(function (source) {
+			return world.getComponent(source, 'planet')?.owner !== 'blue';
+		});
+		const sent = dispatch(
+			world,
+			selected,
+			id,
+			fraction,
+			shipsOnly ? 'ships' : filter,
+		);
 		feedback(
 			sent > 0
 				? `${sent} ${sent === 1 ? 'unit' : 'units'} launched → ${p.name}`
@@ -183,6 +198,13 @@ const refresh = function () {
 			shipsAt(world, id, 'blue').length > 0
 		);
 	});
+	if (
+		selected.length === 0 &&
+		inspected !== undefined &&
+		shipsAt(world, inspected, 'blue').length > 0 &&
+		!multi
+	)
+		selected = [inspected];
 	for (const {
 		id,
 		components: { planet: p },
@@ -227,6 +249,11 @@ const refresh = function () {
 		const p = world.getComponent(id, 'planet');
 		return p?.owner === 'blue' ? [p] : [];
 	});
+	const shipsOnly = selected.length > 0 && ownedSelected.length === 0;
+	dispatchFilterControls.hidden = shipsOnly;
+	dispatchInfo.textContent = shipsOnly
+		? 'orbiting ships only'
+		: 'guns stay behind';
 	const first = selected[0] ?? inspected;
 	const p =
 		first === undefined ? undefined : world.getComponent(first, 'planet');
@@ -237,7 +264,7 @@ const refresh = function () {
 				? p.name
 				: 'No source selected';
 	selectionInfo.textContent =
-		selected.length === 0
+		selected.length === 0 || (selected.length === 1 && p?.owner !== 'blue')
 			? p
 				? `${p.owner === 'blue' ? 'Your' : p.owner === 'red' ? 'Rival' : 'Neutral'} world · ${p.troops} troops · ${first === undefined ? 0 : shipsAt(world, first, 'red').length} rival ships · ${Math.ceil(p.guns)} guns`
 				: 'Tap or left-click a blue planet to select.'
@@ -250,6 +277,11 @@ const refresh = function () {
 						return sum + p.guns;
 					}, 0),
 				)} guns${p && p.owner !== 'blue' ? ' · orbit only' : ''}`;
+	orbitalInfo.hidden = !(selected.length === 1 && shipsOnly);
+	orbitalInfo.textContent =
+		first === undefined
+			? ''
+			: `${shipsAt(world, first, 'blue').length} your orbiting ships · hold or right-click a destination to send`;
 	productionInfo.textContent =
 		p && p.owner === 'blue' && selected.length === 1
 			? `${(p.rate * CONFIG.productionRateMultiplier).toFixed(1)} work / sec`
