@@ -1,4 +1,8 @@
 import ECSpresso, { defineSystemRef } from 'ecspresso';
+import {
+	createSpatialIndexPlugin,
+	spatialIndexSystems,
+} from 'ecspresso/plugins/spatial/spatial-index';
 import { CONFIG } from './config';
 import type {
 	DispatchFilter,
@@ -36,6 +40,13 @@ export interface Notice {
 	time: number;
 	side: Owner;
 }
+export interface Engagement {
+	x1: number;
+	y1: number;
+	x2: number;
+	y2: number;
+	owner: Side;
+}
 interface Match {
 	time: number;
 	paused: boolean;
@@ -48,7 +59,33 @@ interface Match {
 	troopsLost: number;
 	firstCapture: number | null;
 	notices: Notice[];
+	engagements: Engagement[];
 }
+const movementSystem = defineSystemRef('movement');
+const combatSystem = defineSystemRef('combat');
+const strategySystem = defineSystemRef('strategy');
+const spatialIndexPlugin = createSpatialIndexPlugin({
+	cellSize: 64,
+	phases: ['fixedUpdate'],
+	ordering: { fixedUpdate: { after: [movementSystem] } },
+});
+const localTransformAt = function (x: number, y: number) {
+	return { x, y, rotation: 0, scaleX: 1, scaleY: 1 };
+};
+const syncUnitPosition = function (
+	world: Game,
+	unitId: number,
+	x: number,
+	y: number,
+) {
+	const localTransform = world.getComponent(unitId, 'localTransform');
+	if (localTransform) {
+		localTransform.x = x;
+		localTransform.y = y;
+		return;
+	}
+	world.addComponent(unitId, 'localTransform', localTransformAt(x, y));
+};
 const makeWorld = function () {
 	const match: Match = {
 		time: 0,
@@ -62,8 +99,10 @@ const makeWorld = function () {
 		troopsLost: 0,
 		firstCapture: null,
 		notices: [],
+		engagements: [],
 	};
 	return ECSpresso.create()
+		.withPlugin(spatialIndexPlugin)
 		.withComponentTypes<{ planet: Planet; unit: Unit }>()
 		.withResource('match', match)
 		.withFixedTimestep(CONFIG.step)
@@ -95,6 +134,28 @@ export const shipsAt = function (world: Game, planetId: number, side: Side) {
 		return entity.components.unit.kind === 'ship';
 	});
 };
+export const unitPoint = function (
+	unit: Unit,
+	planet: Planet,
+	time: number,
+	id: number,
+) {
+	if (unit.phase !== 'orbit') {
+		return {
+			x: unit.x,
+			y: unit.y,
+			angle: Math.atan2(planet.y - unit.y, planet.x - unit.x),
+		};
+	}
+	const orbitAngle =
+		time * (unit.owner === 'blue' ? 0.45 : -0.45) + id * 2.399;
+	const reach = planet.radius + (unit.kind === 'ship' ? 20 : 32);
+	return {
+		x: planet.x + Math.cos(orbitAngle) * reach,
+		y: planet.y + Math.sin(orbitAngle) * reach,
+		angle: orbitAngle + Math.PI / 2,
+	};
+};
 export const opponent = function (side: Side): Side {
 	return side === 'blue' ? 'red' : 'blue';
 };
@@ -122,6 +183,7 @@ export const spawnShip = function (world: Game, planetId: number, owner: Side) {
 	const p = world.getComponent(planetId, 'planet');
 	if (!p) return;
 	return world.spawn({
+		localTransform: localTransformAt(p.x, p.y),
 		unit: {
 			owner,
 			kind: 'ship',
@@ -180,13 +242,16 @@ export const dispatch = function (
 				0,
 				Math.ceil(available.length * fraction),
 			)) {
-				Object.assign(entity.components.unit, {
+				const unit = entity.components.unit;
+				Object.assign(unit, {
 					target,
 					phase: 'travel',
 					age: 0,
 					x: p.x + Math.cos(entity.id * 2.399) * 16,
 					y: p.y + Math.sin(entity.id * 2.399) * 16,
 				});
+				syncUnitPosition(world, entity.id, unit.x, unit.y);
+				world.addComponent(entity.id, 'circleCollider', { radius: 0 });
 				sent++;
 			}
 		}
@@ -196,6 +261,11 @@ export const dispatch = function (
 		while (cargo > 0) {
 			const count = Math.min(cargo, CONFIG.dropshipCapacity);
 			world.spawn({
+				localTransform: localTransformAt(
+					p.x + Math.cos(sent * 2.399) * 16,
+					p.y + Math.sin(sent * 2.399) * 16,
+				),
+				circleCollider: { radius: 0 },
 				unit: {
 					owner: side,
 					kind: 'transport',
@@ -216,49 +286,158 @@ export const dispatch = function (
 	return sent;
 };
 
+type UnitEntity = ReturnType<typeof units>[number];
+
+const hurt = function (
+	world: Game,
+	entity: UnitEntity,
+	damage: number,
+	lost: Set<number>,
+) {
+	const unit = entity.components.unit;
+	if (damage <= 0 || unit.hp <= 0) return damage;
+	const taken = Math.min(unit.hp, damage);
+	unit.hp -= taken;
+	if (unit.hp <= 0 && unit.kind === 'transport' && !lost.has(entity.id)) {
+		lost.add(entity.id);
+		const match = world.getResource('match');
+		match.transportsLost++;
+		match.troopsLost += unit.cargo;
+		const planet = world.getComponent(unit.target, 'planet');
+		const place = planet ? planet.name : 'Transit';
+		notify(
+			world,
+			`${place}: ${unit.cargo} ${unit.owner === 'blue' ? 'your' : 'enemy'} troops lost ${unit.phase === 'orbit' ? 'in orbit' : 'in transit'}`,
+			unit.owner,
+		);
+	}
+	return damage - taken;
+};
 const damageOrbit = function (
 	world: Game,
 	id: number,
 	side: Side,
 	damage: number,
+	lost: Set<number>,
 ) {
-	const p = world.getComponent(id, 'planet');
-	if (!p) return;
+	const planet = world.getComponent(id, 'planet');
+	if (!planet || damage <= 0) return;
 	// Ships absorb fire before fixed defenses and exposed transports.
 	const targets = orbitalUnits(world, id, side);
-	for (const entity of targets.filter(function (e) {
-		return e.components.unit.kind === 'ship';
-	})) {
-		const unit = entity.components.unit;
-		const taken = Math.min(unit.hp, damage);
-		unit.hp -= taken;
+	for (const entity of targets.filter(function (entry) {
+		return entry.components.unit.kind === 'ship';
+	}))
+		damage = hurt(world, entity, damage, lost);
+	if (planet.owner === side && planet.guns > 0) {
+		const taken = Math.min(planet.guns * CONFIG.gunHealth, damage);
+		planet.guns = Math.max(0, planet.guns - taken / CONFIG.gunHealth);
 		damage -= taken;
 	}
-	if (p.owner === side && p.guns > 0) {
-		const taken = Math.min(p.guns * CONFIG.gunHealth, damage);
-		p.guns = Math.max(0, p.guns - taken / CONFIG.gunHealth);
-		damage -= taken;
-	}
-	for (const entity of targets.filter(function (e) {
+	for (const entity of targets.filter(function (entry) {
 		return (
-			e.components.unit.kind === 'transport' &&
-			e.components.unit.age >= CONFIG.arrivalGrace
+			entry.components.unit.kind === 'transport' &&
+			entry.components.unit.age >= CONFIG.arrivalGrace
 		);
-	})) {
+	}))
+		damage = hurt(world, entity, damage, lost);
+};
+interface PassShot {
+	target: UnitEntity;
+	damage: number;
+	from: { x: number; y: number };
+	to: { x: number; y: number };
+	owner: Side;
+}
+const preferTarget = function (
+	current: { entity: UnitEntity; dist: number } | undefined,
+	next: { entity: UnitEntity; dist: number },
+) {
+	if (!current) return next;
+	const currentShip = current.entity.components.unit.kind === 'ship';
+	const nextShip = next.entity.components.unit.kind === 'ship';
+	if (currentShip !== nextShip) return nextShip ? next : current;
+	if (next.dist < current.dist) return next;
+	if (next.dist === current.dist && next.entity.id < current.entity.id)
+		return next;
+	return current;
+};
+const planPasses = function (
+	world: Game,
+	dt: number,
+) {
+	const travelers = units(world).filter(function (entity) {
 		const unit = entity.components.unit;
-		const taken = Math.min(unit.hp, damage);
-		unit.hp -= taken;
-		damage -= taken;
-		if (unit.hp <= 0) {
-			const match = world.getResource('match');
-			match.transportsLost++;
-			match.troopsLost += unit.cargo;
-			notify(
-				world,
-				`${p.name}: ${unit.cargo} ${side === 'blue' ? 'your' : 'enemy'} troops lost in orbit`,
-				side,
-			);
+		return unit.phase === 'travel' && unit.hp > 0;
+	});
+	const travelersById = new Map(
+		travelers.map(function (entity) {
+			return [entity.id, entity] as const;
+		}),
+	);
+	const shooters = travelers
+		.filter(function (entity) {
+			return entity.components.unit.kind === 'ship';
+		})
+		.sort(function (a, b) {
+			return a.id - b.id;
+		});
+	const spatialIndex = world.getResource('spatialIndex');
+	const candidates: number[] = [];
+	const volley: PassShot[] = [];
+	for (const shooter of shooters) {
+		const origin = shooter.components.unit;
+		const from = { x: origin.x, y: origin.y };
+		let best: { entity: UnitEntity; dist: number } | undefined;
+		candidates.length = 0;
+		spatialIndex.queryRadiusInto(
+			from.x,
+			from.y,
+			CONFIG.engagementRange,
+			candidates,
+		);
+		for (const targetId of candidates) {
+			const target = travelersById.get(targetId);
+			if (!target) continue;
+			const unit = target.components.unit;
+			if (
+				target.id === shooter.id ||
+				unit.hp <= 0 ||
+				unit.owner === origin.owner
+			)
+				continue;
+			const dist = Math.hypot(from.x - unit.x, from.y - unit.y);
+			if (dist > CONFIG.engagementRange) continue;
+			best = preferTarget(best, { entity: target, dist });
 		}
+		if (!best) continue;
+		const to = best.entity.components.unit;
+		volley.push({
+			target: best.entity,
+			damage: CONFIG.shipDamage * dt,
+			from,
+			to,
+			owner: origin.owner,
+		});
+	}
+	return volley;
+};
+const applyPassVolley = function (
+	world: Game,
+	volley: readonly PassShot[],
+	lost: Set<number>,
+	shots: Engagement[],
+) {
+	for (const shot of volley) {
+		const before = shot.target.components.unit.hp;
+		hurt(world, shot.target, shot.damage, lost);
+		if (shot.target.components.unit.hp < before)
+			shots.push({
+				x1: shot.from.x,
+				y1: shot.from.y,
+				x2: shot.to.x,
+				y2: shot.to.y,
+				owner: shot.owner,
+			});
 	}
 };
 
@@ -339,8 +518,6 @@ const runAI = function (world: Game) {
 export const createGame = async function (scenario: Scenario = 'skirmish') {
 	const world = makeWorld();
 	const economy = defineSystemRef('economy');
-	const movement = defineSystemRef('movement');
-	const combat = defineSystemRef('combat');
 	const active = function () {
 		const m = world.getResource('match');
 		return !m.paused && !m.winner;
@@ -373,7 +550,7 @@ export const createGame = async function (scenario: Scenario = 'skirmish') {
 	world
 		.addSystem('travel')
 		.inPhase('fixedUpdate')
-		.withRef(movement)
+		.withRef(movementSystem)
 		.after(economy)
 		.setProcessEach(
 			{ with: ['unit'], mutates: ['unit'] },
@@ -392,24 +569,33 @@ export const createGame = async function (scenario: Scenario = 'skirmish') {
 				const dx = p.x - u.x,
 					dy = p.y - u.y;
 				const distance = Math.hypot(dx, dy);
-				if (distance <= p.radius + 22) {
+				if (distance <= p.radius + CONFIG.arrivalClearance) {
 					u.phase = 'orbit';
 					u.age = 0;
 					return;
 				}
+				const reach = p.radius + CONFIG.arrivalClearance;
 				const travel = Math.min(distance, CONFIG.travelSpeed * dt);
 				u.x += (dx / distance) * travel;
 				u.y += (dy / distance) * travel;
+				syncUnitPosition(ecs, entity.id, u.x, u.y);
+				if (distance - travel <= reach) {
+					u.phase = 'orbit';
+					u.age = 0;
+				}
 			},
 		);
 	world
-		.addSystem('orbital-combat-and-landing')
+		.addSystem('combat-and-landing')
 		.inPhase('fixedUpdate')
-		.withRef(combat)
-		.after(movement)
+		.withRef(combatSystem)
+		.after(spatialIndexSystems.rebuild.fixedUpdate)
 		.addQuery('planets', { with: ['planet'], mutates: ['planet'] })
 		.setProcess(function ({ queries, dt, ecs }) {
 			if (!active()) return;
+			const match = ecs.getResource('match');
+			const shots: Engagement[] = [];
+			const lost = new Set<number>();
 			for (const {
 				id,
 				components: { planet: p },
@@ -420,8 +606,16 @@ export const createGame = async function (scenario: Scenario = 'skirmish') {
 				const redDamage =
 					shipsAt(ecs, id, 'red').length * CONFIG.shipDamage +
 					(p.owner === 'red' ? p.guns * CONFIG.gunDamage : 0);
-				damageOrbit(ecs, id, 'blue', redDamage * dt);
-				damageOrbit(ecs, id, 'red', blueDamage * dt);
+				damageOrbit(ecs, id, 'blue', redDamage * dt, lost);
+				damageOrbit(ecs, id, 'red', blueDamage * dt, lost);
+			}
+			const volley = planPasses(ecs, dt);
+			applyPassVolley(ecs, volley, lost, shots);
+			match.engagements = shots;
+			for (const {
+				id,
+				components: { planet: p },
+			} of queries.planets) {
 				for (const {
 					id: unitId,
 					components: { unit: u },
@@ -463,7 +657,8 @@ export const createGame = async function (scenario: Scenario = 'skirmish') {
 	world
 		.addSystem('strategy-and-victory')
 		.inPhase('fixedUpdate')
-		.after(combat)
+		.withRef(strategySystem)
+		.after(combatSystem)
 		.withResources(['match'])
 		.setProcess(function ({ ecs, dt, resources: { match } }) {
 			if (!active()) return;
@@ -480,6 +675,17 @@ export const createGame = async function (scenario: Scenario = 'skirmish') {
 				runAI(ecs);
 			}
 		});
+	world
+		.addSystem('traveler-spatial-cleanup')
+		.inPhase('fixedUpdate')
+		.after(strategySystem)
+		.setProcessEach(
+			{ with: ['unit', 'circleCollider'] },
+			function ({ entity, ecs }) {
+				if (entity.components.unit.phase === 'orbit')
+					ecs.commands.removeComponent(entity.id, 'circleCollider');
+			},
+		);
 	await world.initialize();
 	const layout: readonly [
 		string,
