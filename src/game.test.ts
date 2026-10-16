@@ -14,7 +14,17 @@ import { CONFIG } from './config';
 import type { Side } from './config';
 import type { Game, Unit } from './game';
 
-const snapshot = function (world: Game) {
+type MatchSnapshot = Game['getResource'] extends (
+	name: 'match',
+) => infer Resource
+	? Resource
+	: never;
+type GameSnapshot = {
+	match: MatchSnapshot;
+	planets: ReturnType<typeof planets>;
+	units: ReturnType<typeof units>;
+};
+const snapshot = function (world: Game): GameSnapshot {
 	return structuredClone({
 		match: world.getResource('match'),
 		planets: planets(world),
@@ -78,19 +88,22 @@ test('paused commands reserve units and change production while all action waits
 	}
 });
 
-const quietWorld = async function () {
+const quietWorld = async function (): Promise<Game> {
 	const world = await createGame();
 	world.getResource('match').ai = false;
 	return world;
 };
-const named = function (world: Game, name: string) {
+const named = function (
+	world: Game,
+	name: string,
+): ReturnType<typeof planets>[number] {
 	const found = planets(world).find(function (entity) {
 		return entity.components.planet.name === name;
 	});
 	if (!found) throw new Error(`Missing ${name}`);
 	return found;
 };
-const step = function (world: Game, count: number) {
+const step = function (world: Game, count: number): void {
 	for (let i = 0; i < count; i++) world.update(CONFIG.step);
 };
 const spawnTraveler = function (
@@ -101,7 +114,7 @@ const spawnTraveler = function (
 	y: number,
 	target: number,
 	cargo = 0,
-) {
+): ReturnType<typeof units>[number] {
 	return world.spawn({
 		localTransform: { x, y, rotation: 0, scaleX: 1, scaleY: 1 },
 		circleCollider: { radius: 0 },
@@ -170,7 +183,7 @@ const along = function (
 	from: { x: number; y: number },
 	to: { x: number; y: number },
 	fraction: number,
-) {
+): { x: number; y: number } {
 	return {
 		x: from.x + (to.x - from.x) * fraction,
 		y: from.y + (to.y - from.y) * fraction,
@@ -462,7 +475,7 @@ test('orbiting ships, transports, and guns are excluded from passing combat', as
 		const passerFor = function (defender: {
 			id: number;
 			components: { unit: Unit };
-		}) {
+	}): ReturnType<typeof spawnTraveler> {
 			const point = unitPoint(
 				defender.components.unit,
 				planet,
