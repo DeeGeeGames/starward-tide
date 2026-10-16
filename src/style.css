@@ -198,11 +198,15 @@ h2 {
 	font-weight: 500;
 	margin: 8px 0;
 }
-#selection-info {
+#selection-info,
+#orbital-info {
 	color: #9aafbf;
 	font-size: 10px;
 	line-height: 1.6;
 	margin: 0 0 16px;
+}
+#selection-info:has(+ #orbital-info:not([hidden])) {
+	margin-bottom: 4px;
 }
 .control-label {
 	display: flex;
@@ -540,8 +544,12 @@ dialog p {
 		font-size: 22px;
 		margin: 0 0 4px;
 	}
-	#selection-info {
+	#selection-info,
+	#orbital-info {
 		margin-bottom: 6px;
+	}
+	#selection-info:has(+ #orbital-info:not([hidden])) {
+		margin-bottom: 2px;
 	}
 	.control-label {
 		margin: 8px 0 5px;
@@ -576,8 +584,12 @@ dialog p {
 	.control-label {
 		margin: 7px 0 4px;
 	}
-	#selection-info {
+	#selection-info,
+	#orbital-info {
 		margin-bottom: 4px;
+	}
+	#selection-info:has(+ #orbital-info:not([hidden])) {
+		margin-bottom: 2px;
 	}
 }
 

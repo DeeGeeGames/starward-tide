@@ -66,6 +66,7 @@
 					</div>
 					<h2 id="selection-name">No source selected</h2>
 					<p id="selection-info">Tap or left-click a blue planet to select.</p>
+					<p id="orbital-info" hidden></p>
 					<div class="control-label">
 						Produce <span id="production-info">on selected worlds</span>
 					</div>
@@ -76,19 +77,21 @@
 					</div>
 					<div id="dispatch-controls">
 						<div class="control-label">
-							Send amount <span>guns stay behind</span>
+							Send amount <span id="dispatch-info">guns stay behind</span>
 						</div>
 						<div id="amount" class="segments">
 							<button data-amount="0.25">25%</button
 							><button data-amount="0.5" aria-pressed="true">50%</button
 							><button data-amount="1">100%</button>
 						</div>
-						<div class="control-label">Dispatch</div>
-						<div id="filter" class="segments">
-							<button data-filter="combined" aria-pressed="true">
-								Combined</button
-							><button data-filter="ships">Ships only</button
-							><button data-filter="troops">Troops only</button>
+						<div id="dispatch-filter-controls">
+							<div class="control-label">Dispatch</div>
+							<div id="filter" class="segments">
+								<button data-filter="combined" aria-pressed="true">
+									Combined</button
+								><button data-filter="ships">Ships only</button
+								><button data-filter="troops">Troops only</button>
+							</div>
 						</div>
 					</div>
 				</section>
