@@ -84,13 +84,14 @@ interface Match {
 	notices: Notice[];
 	engagements: Engagement[];
 }
+const economySystem = defineSystemRef('economy');
 const movementSystem = defineSystemRef('movement');
 const combatSystem = defineSystemRef('combat');
 const strategySystem = defineSystemRef('strategy');
 const spatialIndexPlugin = createSpatialIndexPlugin({
 	cellSize: 64,
 	phases: ['fixedUpdate'],
-	ordering: { fixedUpdate: { after: [movementSystem] } },
+	ordering: { fixedUpdate: { after: [economySystem], before: [movementSystem] } },
 });
 type SpatialIndexConfig = NonNullable<typeof spatialIndexPlugin['_cfg']>;
 type GameConfig = WithResources<
@@ -525,6 +526,7 @@ const damageOrbit = function (
 		damage = hurt(world, entity, damage, lost);
 };
 interface PassShot {
+	shooterId: number;
 	target: UnitEntity;
 	damage: number;
 	from: { x: number; y: number };
@@ -548,6 +550,7 @@ const preferTarget = function (
 const planPasses = function (
 	world: Game,
 	dt: number,
+	searchPadding = 0,
 ): PassShot[] {
 	const travelers = units(world).filter(function (entity) {
 		const unit = entity.components.unit;
@@ -576,7 +579,7 @@ const planPasses = function (
 		spatialIndex.queryRadiusInto(
 			from.x,
 			from.y,
-			CONFIG.engagementRange,
+			CONFIG.engagementRange + searchPadding,
 			candidates,
 		);
 		for (const targetId of candidates) {
@@ -596,6 +599,7 @@ const planPasses = function (
 		if (!best) continue;
 		const to = best.entity.components.unit;
 		volley.push({
+			shooterId: shooter.id,
 			target: best.entity,
 			damage: CONFIG.shipDamage * dt,
 			from,
@@ -703,7 +707,6 @@ export const createGame = async function (
 	scenario: Scenario = 'skirmish',
 ): Promise<Game> {
 	const world = makeWorld();
-	const economy = defineSystemRef('economy');
 	const active = function (): boolean {
 		const m = world.getResource('match');
 		return !m.paused && !m.winner;
@@ -711,7 +714,7 @@ export const createGame = async function (
 	world
 		.addSystem('production')
 		.inPhase('fixedUpdate')
-		.withRef(economy)
+		.withRef(economySystem)
 		.addQuery('planets', { with: ['planet'], mutates: ['planet'] })
 		.withResources(['match', 'orderBook'])
 		.setProcess(function ({ queries, dt, ecs, resources: { match, orderBook } }) {
@@ -739,20 +742,24 @@ export const createGame = async function (
 		.addSystem('travel')
 		.inPhase('fixedUpdate')
 		.withRef(movementSystem)
-		.after(economy)
-		.setProcessEach(
-			{ with: ['unit'], mutates: ['unit'] },
-			function ({ entity, dt, ecs }) {
-				if (!active()) return false;
+		.after(spatialIndexSystems.rebuild.fixedUpdate)
+		.addQuery('units', { with: ['unit'], mutates: ['unit'] })
+		.setProcess(function ({ queries, dt, ecs }) {
+			if (!active()) return;
+			// Decide from one position snapshot so iteration order cannot release a ship.
+			const fighting = new Set(planPasses(ecs, 0).map(function (shot) {
+				return shot.shooterId;
+			}));
+			for (const entity of queries.units) {
 				const u = entity.components.unit;
 				const p = ecs.getComponent(u.target, 'planet');
 				if (!p) {
 					ecs.commands.removeEntity(entity.id);
-					return;
+					continue;
 				}
 				if (u.phase === 'orbit') {
 					u.age += dt;
-					return;
+					continue;
 				}
 				const dx = p.x - u.x,
 					dy = p.y - u.y;
@@ -760,8 +767,9 @@ export const createGame = async function (
 				if (distance <= p.radius + CONFIG.arrivalClearance) {
 					u.phase = 'orbit';
 					u.age = 0;
-					return;
+					continue;
 				}
+				if (fighting.has(entity.id)) continue;
 				const reach = p.radius + CONFIG.arrivalClearance;
 				const travel = Math.min(distance, CONFIG.travelSpeed * dt);
 				u.x += (dx / distance) * travel;
@@ -771,13 +779,13 @@ export const createGame = async function (
 					u.phase = 'orbit';
 					u.age = 0;
 				}
-			},
-		);
+			}
+		});
 	world
 		.addSystem('combat-and-landing')
 		.inPhase('fixedUpdate')
 		.withRef(combatSystem)
-		.after(spatialIndexSystems.rebuild.fixedUpdate)
+		.after(movementSystem)
 		.addQuery('planets', { with: ['planet'], mutates: ['planet'] })
 		.setProcess(function ({ queries, dt, ecs }) {
 			if (!active()) return;
@@ -797,7 +805,8 @@ export const createGame = async function (
 				damageOrbit(ecs, id, 'blue', redDamage * dt, lost);
 				damageOrbit(ecs, id, 'red', blueDamage * dt, lost);
 			}
-			const volley = planPasses(ecs, dt);
+			// The index holds pre-movement positions; include one step of target travel.
+			const volley = planPasses(ecs, dt, CONFIG.travelSpeed * dt);
 			applyPassVolley(ecs, volley, lost, shots);
 			match.engagements = shots;
 			for (const {
