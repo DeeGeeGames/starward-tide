@@ -17,7 +17,7 @@ interface RendererState {
 	highlighted: Order | undefined;
 }
 interface RendererInspection {
-	ships: number; textures: number; entities: number; tickerStarted: boolean; width: number; height: number; resolution: number;
+	ships: number; travelLines: number; textures: number; entities: number; tickerStarted: boolean; width: number; height: number; resolution: number;
 }
 interface RendererDependencies {
 	canvas: HTMLCanvasElement;
@@ -47,7 +47,7 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 }> {
 	const app = new Application();
 	await app.init({ canvas: dependencies.canvas, width: 1, height: 1,
-		preference: 'webgl', backgroundAlpha: 0, antialias: true,
+		preference: 'webgl', backgroundAlpha: 0, antialias: false,
 		autoStart: false, sharedTicker: false, autoDensity: false, eventMode: 'none',
 		eventFeatures: { move: false, click: false, wheel: false, globalMove: false } });
 	const root = new Container();
@@ -60,8 +60,9 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 	const background = new Graphics();
 	const routes = new Graphics();
 	const effects = new Graphics();
+	const travelLines = new Container();
 	const textures = new Map<string, Texture>();
-	const fleet = new Map<number, { entityId: number; display: Container; hull: Sprite; badge: Sprite | undefined }>();
+	const fleet = new Map<number, { entityId: number; display: Container; hull: Sprite; badge: Sprite | undefined; route: Sprite | undefined }>();
 	let currentWorld: Game | undefined;
 	let currentMap: StarMap | undefined;
 	let disposal: Promise<void> | undefined;
@@ -71,9 +72,11 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 		for (const [graphics, renderLayer] of [[background, 'background'], [routes, 'routes'], [effects, 'effects']] as const) {
 			presentation.spawn({ graphics, renderLayer });
 		}
+		presentation.spawn({ container: travelLines, renderLayer: 'routes' });
 	} catch (error) {
 		await presentation.dispose().finally(function () {
 			for (const graphics of [background, routes, effects]) graphics.destroy();
+			travelLines.destroy({ children: true });
 			app.destroy(false, { children: true });
 		});
 		throw error;
@@ -88,6 +91,23 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			else painter.transport(owner, detail === 3 ? 2.5 : detail === 2 ? 1.75 : 1);
 		});
 		textures.set(key, created);
+		return created;
+	};
+	// A one-world-unit stroke with transparent shoulders. Mipmaps preserve its
+	// coverage when zoomed out, without full-frame multisample antialiasing.
+	const travelTexture = function (): Texture {
+		const cached = textures.get('travel-line');
+		if (cached) return cached;
+		const canvas = document.createElement('canvas');
+		canvas.width = 8;
+		canvas.height = 32;
+		const context = canvas.getContext('2d');
+		if (!context) throw new Error('Canvas 2D is required to prepare route textures');
+		context.fillStyle = '#ffffff';
+		context.fillRect(0, 12, 8, 8);
+		const created = new Texture({ source: new CanvasSource({ resource: canvas,
+			resolution: 8, autoGenerateMipmaps: true, scaleMode: 'linear' }) });
+		textures.set('travel-line', created);
 		return created;
 	};
 	const cargoTextures = new Map<string, Texture>();
@@ -115,9 +135,10 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 		return created;
 	};
 	const clearFleet = function (): void {
-		for (const { entityId, display } of fleet.values()) {
+		for (const { entityId, display, route } of fleet.values()) {
 			presentation.removeEntity(entityId);
 			display.destroy({ children: true });
+			route?.destroy();
 		}
 		fleet.clear();
 		for (const shared of cargoTextures.values()) shared.destroy(true);
@@ -192,16 +213,6 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			routes.stroke({ color: COLORS.blue, width: 2 / camera.scale });
 		}
 		const allUnits = units(world);
-		for (const owner of ['blue', 'red'] as const) {
-			for (const { id, components: { unit: u } } of allUnits) {
-				if (u.hp <= 0 || u.owner !== owner || u.phase !== 'travel') continue;
-				const target = world.getComponent(u.target, 'planet');
-				if (!target) continue;
-				const point = unitPoint(u, target, match.time, id);
-				routes.moveTo(point.x, point.y).lineTo(target.x, target.y);
-			}
-			routes.stroke({ color: COLORS[owner], alpha: 0x22 / 255, width: 1 });
-		}
 		const live = new Set<number>();
 		for (const { id, components: { unit: u } } of allUnits) {
 			if (u.hp <= 0) continue;
@@ -214,8 +225,26 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			if (!view) {
 				const hull = new Sprite(); hull.anchor.set(0.5);
 				const entity = presentation.spawn({ ...createSpriteComponents(hull), renderLayer: 'ships' });
-				view = { entityId: entity.id, display: hull, hull, badge: undefined };
+				view = { entityId: entity.id, display: hull, hull, badge: undefined, route: undefined };
 				fleet.set(id, view);
+			}
+			if (u.phase === 'travel') {
+				if (!view.route) {
+					view.route = new Sprite(travelTexture());
+					view.route.anchor.set(0, 0.5);
+					view.route.alpha = 0x22 / 255;
+					travelLines.addChild(view.route);
+				}
+				const dx = target.x - point.x;
+				const dy = target.y - point.y;
+				view.route.position.set(point.x, point.y);
+				view.route.rotation = Math.atan2(dy, dx);
+				view.route.width = Math.hypot(dx, dy);
+				view.route.height = 4;
+				view.route.tint = COLORS[u.owner];
+			} else if (view.route) {
+				view.route.destroy();
+				view.route = undefined;
 			}
 			view.hull.texture = texture(u.owner, u.kind, shipDetailZoom(zoom));
 			const showCargo = u.kind === 'transport' && zoom >= 3.5;
@@ -228,8 +257,14 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 				const container = new Container();
 				view.badge = new Sprite();
 				view.badge.anchor.set(0.5);
+				view.hull.position.set(0);
+				view.hull.rotation = 0;
+				view.hull.scale.set(1);
 				container.addChild(view.hull, view.badge);
 				presentation.addComponent(view.entityId, 'container', container);
+				// renderer2D gates sync on changed worldTransform, even for a newly
+				// attached display component. Paused promotion needs an initial sync.
+				presentation.markChanged(view.entityId, 'worldTransform');
 				if (parent && index !== undefined) parent.setChildIndex(container, index);
 				view.display = container;
 			}
@@ -249,6 +284,7 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			if (live.has(id)) continue;
 			presentation.removeEntity(view.entityId);
 			view.display.destroy({ children: true });
+			view.route?.destroy();
 			fleet.delete(id);
 		}
 		for (const shot of match.engagements) {
@@ -266,6 +302,7 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 		disposal = presentation.dispose().finally(function () {
 			// The plugin detaches display components; the adapter owns destruction.
 			for (const graphics of [background, routes, effects]) graphics.destroy();
+			travelLines.destroy({ children: true });
 			app.destroy(false, { children: true });
 			for (const shared of textures.values()) shared.destroy(true);
 			textures.clear();
@@ -273,7 +310,7 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 		return disposal;
 	};
 	const inspect = function (): RendererInspection {
-		return { ships: fleet.size, textures: textures.size + cargoTextures.size, entities: presentation.entityCount,
+		return { ships: fleet.size, travelLines: travelLines.children.length, textures: textures.size + cargoTextures.size, entities: presentation.entityCount,
 			tickerStarted: app.ticker.started, width: app.screen.width, height: app.screen.height, resolution: app.renderer.resolution };
 	};
 	return { draw, reset, inspect, dispose };
