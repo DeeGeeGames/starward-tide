@@ -600,30 +600,66 @@ element('close-guide', HTMLButtonElement).addEventListener(
 	toggleGuide,
 );
 
-const fullscreen = element('fullscreen', HTMLButtonElement);
+const helpDialog = element('help-dialog', HTMLDialogElement);
+const howToPlay = element('how-to-play', HTMLButtonElement);
+// The title and in-game menu share one authored set of instructions.
+element('title-instructions', HTMLElement).replaceChildren(
+	...Array.from(element('play-instructions', HTMLElement).children, function (node) {
+		return node.cloneNode(true);
+	}),
+);
+howToPlay.addEventListener('click', function () {
+	helpDialog.showModal();
+	helpDialog.scrollTop = 0;
+});
+element('close-help', HTMLButtonElement).addEventListener('click', function () {
+	helpDialog.close();
+});
+helpDialog.addEventListener('close', function () {
+	howToPlay.focus();
+});
+
+const fullscreenButtons = [
+	element('fullscreen', HTMLButtonElement),
+	element('title-fullscreen', HTMLButtonElement),
+];
+const titleFullscreenStatus = element('title-fullscreen-status', HTMLElement);
+let fullscreenPending = false;
 const syncFullscreen = function (): void {
 	const active = Boolean(document.fullscreenElement);
 	const label = active ? 'Exit fullscreen' : 'Enter fullscreen';
-	fullscreen.setAttribute('aria-pressed', String(active));
-	fullscreen.setAttribute('aria-label', label);
-	fullscreen.textContent = active ? 'Exit fullscreen' : 'Fullscreen';
-	fullscreen.disabled = !document.fullscreenEnabled;
-	fullscreen.title = document.fullscreenEnabled
-		? label
-		: 'Fullscreen unavailable in this browser';
+	for (const button of fullscreenButtons) {
+		button.setAttribute('aria-pressed', String(active));
+		button.setAttribute('aria-label', label);
+		button.textContent = active ? 'Exit fullscreen' : 'Fullscreen';
+		button.disabled = fullscreenPending || !document.fullscreenEnabled;
+		button.title = document.fullscreenEnabled
+			? label
+			: 'Fullscreen unavailable in this browser';
+	}
 };
-fullscreen.addEventListener('click', async function () {
-	fullscreen.disabled = true;
+const toggleFullscreen = async function (): Promise<void> {
+	if (fullscreenPending) return;
+	fullscreenPending = true;
+	titleFullscreenStatus.textContent = '';
+	syncFullscreen();
 	try {
 		if (document.fullscreenElement) await document.exitFullscreen();
 		else await document.documentElement.requestFullscreen();
 	} catch {
-		feedback('Fullscreen could not open. Check browser permissions.');
-		refresh();
+		const message = 'Fullscreen could not change. Check browser permissions.';
+		if (app.hidden) titleFullscreenStatus.textContent = message;
+		else {
+			feedback(message);
+			refresh();
+		}
 	} finally {
+		fullscreenPending = false;
 		syncFullscreen();
 	}
-});
+};
+for (const button of fullscreenButtons)
+	button.addEventListener('click', toggleFullscreen);
 document.addEventListener('fullscreenchange', syncFullscreen);
 syncFullscreen();
 
