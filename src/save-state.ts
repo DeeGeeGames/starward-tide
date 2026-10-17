@@ -1,3 +1,4 @@
+import * as z from 'zod/mini';
 import type { Owner, Production, Scenario, Side } from './config';
 import type {
 	Departure,
@@ -38,175 +39,110 @@ export interface ConquestSave {
 const isRecord = function (value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 };
-const isFiniteNumber = function (value: unknown): value is number {
-	return typeof value === 'number' && Number.isFinite(value);
-};
-const isNonnegativeNumber = function (value: unknown): value is number {
-	return isFiniteNumber(value) && value >= 0;
-};
-const isBoundedCoordinate = function (value: unknown): value is number {
-	return isFiniteNumber(value) && Math.abs(value) <= MAX_SAVED_COORDINATE;
-};
-const isBoundedInteger = function (value: unknown, maximum: number): value is number {
-	return (
-		typeof value === 'number' &&
-		Number.isSafeInteger(value) &&
-		value >= 0 &&
-		value <= maximum
-	);
-};
-const isId = function (value: unknown): value is number {
-	return Number.isSafeInteger(value) && typeof value === 'number' && value > 0;
-};
-const isSide = function (value: unknown): value is Side {
-	return value === 'blue' || value === 'red';
-};
-const isOwner = function (value: unknown): value is Owner {
-	return value === 'blue' || value === 'red' || value === 'neutral';
-};
-const isProduction = function (value: unknown): value is Production {
-	return value === 'troops' || value === 'ships' || value === 'guns';
-};
-const isScenario = function (value: unknown): value is Scenario {
-	return value === 'skirmish' || value === 'blockade' || value === 'invasion';
-};
-const isPlanetSeed = function (value: unknown): value is PlanetSeed {
-	return (
-		Array.isArray(value) &&
-		value.length === 7 &&
-		typeof value[0] === 'string' &&
-		isNonnegativeNumber(value[1]) &&
-		isNonnegativeNumber(value[2]) &&
-		isFiniteNumber(value[3]) &&
-		value[3] > 0 &&
-		value[3] <= MAX_SAVED_PLANET_RADIUS &&
-		isOwner(value[4]) &&
-		isBoundedInteger(value[5], MAX_SAVED_STOCK) &&
-		isFiniteNumber(value[6]) &&
-		value[6] >= 0 &&
-		value[6] <= MAX_SAVED_PRODUCTION_RATE
-	);
-};
-const isMap = function (value: unknown): value is StarMap {
-	if (!isRecord(value)) return false;
-	const width = value.width;
-	const height = value.height;
-	if (
-		!isFiniteNumber(width) ||
-		width <= 0 ||
-		width > 10000 ||
-		!isFiniteNumber(height) ||
-		height <= 0 ||
-		height > 10000 ||
-		!Array.isArray(value.planets) ||
-		value.planets.length < 2 ||
-		value.planets.length > 100
-	)
-		return false;
-	return value.planets.every(function (seed: unknown) {
-		return isPlanetSeed(seed) && seed[1] <= width && seed[2] <= height;
+// Validate array elements with the original every() semantics: skip holes, but
+// reject explicit undefined. Keep the input so array/tuple extension fields survive.
+const savedArray = function <T extends z.ZodMiniType>(element: T): z.ZodMiniCustom<z.output<T>[]> {
+	return z.custom<z.output<T>[]>(function (value) {
+		return Array.isArray(value) && value.every(function (item: unknown) {
+			return element.safeParse(item).success;
+		});
 	});
 };
-const isPlanet = function (value: unknown): value is Planet {
-	return (
-		isRecord(value) &&
-		typeof value.name === 'string' &&
-		isNonnegativeNumber(value.x) &&
-		isNonnegativeNumber(value.y) &&
-		isFiniteNumber(value.radius) &&
-		value.radius > 0 &&
-		value.radius <= MAX_SAVED_PLANET_RADIUS &&
-		isOwner(value.owner) &&
-		isBoundedInteger(value.troops, MAX_SAVED_STOCK) &&
-		isFiniteNumber(value.guns) &&
-		value.guns >= 0 &&
-		value.guns <= MAX_SAVED_STOCK &&
-		isFiniteNumber(value.rate) &&
-		value.rate >= 0 &&
-		value.rate <= MAX_SAVED_PRODUCTION_RATE &&
-		isProduction(value.production) &&
-		isNonnegativeNumber(value.progress) &&
-		value.progress < MAX_SAVED_PRODUCTION_PROGRESS
-	);
+// Schema validation proves the output type without replacing the accepted input.
+// This preserves all extension properties, including own enumerable __proto__.
+const unchanged = function <T extends z.ZodMiniType>(schema: T): z.ZodMiniCustom<z.output<T>> {
+	return z.custom<z.output<T>>(function (value) {
+		return schema.safeParse(value).success;
+	});
 };
-const isUnit = function (value: unknown): value is Unit {
-	return (
-		isRecord(value) &&
-		isSide(value.owner) &&
-		(value.kind === 'ship' || value.kind === 'transport') &&
-		isBoundedCoordinate(value.x) &&
-		isBoundedCoordinate(value.y) &&
-		isId(value.target) &&
-		(value.phase === 'travel' || value.phase === 'orbit') &&
-		isFiniteNumber(value.hp) &&
-		value.hp > 0 &&
-		value.hp <= 10000 &&
-		isBoundedInteger(value.cargo, MAX_SAVED_CARGO) &&
-		(value.kind === 'transport' || value.cargo === 0) &&
-		isNonnegativeNumber(value.age)
-	);
-};
-const isNotice = function (value: unknown): value is Notice {
-	return (
-		isRecord(value) &&
-		typeof value.text === 'string' &&
-		isNonnegativeNumber(value.time) &&
-		isOwner(value.side)
-	);
-};
-const isMatchSnapshot = function (
-	value: unknown,
-): value is Omit<Match, 'engagements'> {
-	return (
-		isRecord(value) &&
-		isNonnegativeNumber(value.time) &&
-		typeof value.paused === 'boolean' &&
-		(value.winner === null || isSide(value.winner)) &&
-		typeof value.ai === 'boolean' &&
-		isNonnegativeNumber(value.aiClock) &&
-		Number.isSafeInteger(value.orders) &&
-		typeof value.orders === 'number' &&
-		value.orders >= 0 &&
-		Number.isSafeInteger(value.captures) &&
-		typeof value.captures === 'number' &&
-		value.captures >= 0 &&
-		Number.isSafeInteger(value.transportsLost) &&
-		typeof value.transportsLost === 'number' &&
-		value.transportsLost >= 0 &&
-		Number.isSafeInteger(value.troopsLost) &&
-		typeof value.troopsLost === 'number' &&
-		value.troopsLost >= 0 &&
-		(value.firstCapture === null ||
-			(isNonnegativeNumber(value.firstCapture) && value.firstCapture <= value.time)) &&
-		Array.isArray(value.notices) &&
-		value.notices.length <= 100 &&
-		value.notices.every(isNotice)
-	);
-};
-const isDeparture = function (value: unknown): value is Departure {
-	return (
-		isRecord(value) &&
-		isId(value.unitId) &&
-		isId(value.source) &&
-		isBoundedCoordinate(value.x) &&
-		isBoundedCoordinate(value.y) &&
-		isNonnegativeNumber(value.age)
-	);
-};
-const isOrder = function (value: unknown): value is Order {
-	return (
-		isRecord(value) &&
-		isId(value.id) &&
-		isSide(value.owner) &&
-		isId(value.target) &&
-		(value.state === 'pending' ||
-			value.state === 'outbound' ||
-			value.state === 'returning') &&
-		Array.isArray(value.departures) &&
-		value.departures.length <= 10000 &&
-		value.departures.every(isDeparture)
-	);
-};
+// Loose objects accept additional save fields.
+// Schemas are checked against simulation types rather than defining a second model.
+const nonnegativeNumber = z.number().check(z.gte(0));
+const safeInteger = nonnegativeNumber.check(z.refine(Number.isSafeInteger));
+const idSchema = safeInteger.check(z.gt(0));
+const stockSchema = safeInteger.check(z.lte(MAX_SAVED_STOCK));
+const coordinateSchema = z.number().check(z.gte(-MAX_SAVED_COORDINATE), z.lte(MAX_SAVED_COORDINATE));
+const radiusSchema = z.number().check(z.gt(0), z.lte(MAX_SAVED_PLANET_RADIUS));
+const rateSchema = nonnegativeNumber.check(z.lte(MAX_SAVED_PRODUCTION_RATE));
+const sideSchema = z.enum(['blue', 'red']) satisfies z.ZodMiniType<Side>;
+const ownerSchema = z.enum(['blue', 'red', 'neutral']) satisfies z.ZodMiniType<Owner>;
+const productionSchema = z.enum(['troops', 'ships', 'guns']) satisfies z.ZodMiniType<Production>;
+const scenarioSchema = z.enum(['skirmish', 'blockade', 'invasion']) satisfies z.ZodMiniType<Scenario>;
+const planetSeedSchema = z.tuple([
+	z.string(), nonnegativeNumber, nonnegativeNumber, radiusSchema,
+	ownerSchema, stockSchema, rateSchema,
+]) satisfies z.ZodMiniType<PlanetSeed>;
+const mapSchema = z.looseObject({
+	width: z.number().check(z.gt(0), z.lte(10000)),
+	height: z.number().check(z.gt(0), z.lte(10000)),
+	planets: savedArray(planetSeedSchema).check(z.minLength(2), z.maxLength(100)),
+}).check(z.refine(function (map) {
+	return map.planets.every(function (seed) {
+		return seed[1] <= map.width && seed[2] <= map.height;
+	});
+})) satisfies z.ZodMiniType<StarMap>;
+const planetSchema = z.looseObject({
+	name: z.string(),
+	x: nonnegativeNumber,
+	y: nonnegativeNumber,
+	radius: radiusSchema,
+	owner: ownerSchema,
+	troops: stockSchema,
+	guns: nonnegativeNumber.check(z.lte(MAX_SAVED_STOCK)),
+	rate: rateSchema,
+	production: productionSchema,
+	progress: nonnegativeNumber.check(z.lt(MAX_SAVED_PRODUCTION_PROGRESS)),
+}) satisfies z.ZodMiniType<Planet>;
+const unitSchema = z.looseObject({
+	owner: sideSchema,
+	kind: z.enum(['ship', 'transport']),
+	x: coordinateSchema,
+	y: coordinateSchema,
+	target: idSchema,
+	phase: z.enum(['travel', 'orbit']),
+	hp: z.number().check(z.gt(0), z.lte(10000)),
+	cargo: safeInteger.check(z.lte(MAX_SAVED_CARGO)),
+	age: nonnegativeNumber,
+}).check(z.refine(function (unit) {
+	return unit.kind === 'transport' || unit.cargo === 0;
+})) satisfies z.ZodMiniType<Unit>;
+const noticeSchema = z.looseObject({
+	text: z.string(), time: nonnegativeNumber, side: ownerSchema,
+}) satisfies z.ZodMiniType<Notice>;
+const matchSchema = z.looseObject({
+	time: nonnegativeNumber,
+	paused: z.boolean(),
+	winner: z.nullable(sideSchema),
+	ai: z.boolean(),
+	aiClock: nonnegativeNumber,
+	orders: safeInteger,
+	captures: safeInteger,
+	transportsLost: safeInteger,
+	troopsLost: safeInteger,
+	firstCapture: z.nullable(nonnegativeNumber),
+	notices: savedArray(noticeSchema).check(z.maxLength(100)),
+}).check(z.refine(function (match) {
+	return match.firstCapture === null || match.firstCapture <= match.time;
+})) satisfies z.ZodMiniType<Omit<Match, 'engagements'>>;
+const departureSchema = z.looseObject({
+	unitId: idSchema,
+	source: idSchema,
+	x: coordinateSchema,
+	y: coordinateSchema,
+	age: nonnegativeNumber,
+}) satisfies z.ZodMiniType<Departure>;
+const orderSchema = z.looseObject({
+	id: idSchema,
+	owner: sideSchema,
+	target: idSchema,
+	state: z.enum(['pending', 'outbound', 'returning']),
+	departures: savedArray(departureSchema).check(z.maxLength(10000)),
+}) satisfies z.ZodMiniType<Order>;
+const orderBookSchema = z.looseObject({
+	nextId: idSchema,
+	active: savedArray(orderSchema).check(z.maxLength(10000)),
+}) satisfies z.ZodMiniType<OrderBook>;
+
 const sameSeedGeometry = function (planet: Planet, seed: PlanetSeed): boolean {
 	return (
 		planet.name === seed[0] &&
@@ -221,46 +157,16 @@ const hasUniqueIds = function (
 	seen: Set<number>,
 ): boolean {
 	for (const item of items) {
-		if (!isId(item.id) || seen.has(item.id)) return false;
+		if (seen.has(item.id)) return false;
 		seen.add(item.id);
 	}
 	return true;
 };
-const isGameSnapshot = function (value: unknown): value is GameSnapshot {
-	if (
-		!isRecord(value) ||
-		!isMap(value.map) ||
-		!isScenario(value.scenario) ||
-		(value.pace !== 0.5 && value.pace !== 1 && value.pace !== 2) ||
-		!isMatchSnapshot(value.match) ||
-		!isRecord(value.orderBook) ||
-		!isId(value.orderBook.nextId) ||
-		!Array.isArray(value.planets) ||
-		value.planets.length !== value.map.planets.length ||
-		value.planets.some(function (entry) {
-			return !isRecord(entry) || !isId(entry.id) || !isPlanet(entry.planet);
-		}) ||
-		!Array.isArray(value.units) ||
-		value.units.length > 10000 ||
-		value.units.some(function (entry) {
-			return !isRecord(entry) || !isId(entry.id) || !isUnit(entry.unit);
-		}) ||
-		!Array.isArray(value.orderBook.active) ||
-		value.orderBook.active.length > 10000 ||
-		!value.orderBook.active.every(isOrder)
-	)
-		return false;
-
-	const planetRows = value.planets.filter(function (
-		entry,
-	): entry is { id: number; planet: Planet } {
-		return isRecord(entry) && isId(entry.id) && isPlanet(entry.planet);
-	});
-	const unitRows = value.units.filter(function (
-		entry,
-	): entry is { id: number; unit: Unit } {
-		return isRecord(entry) && isId(entry.id) && isUnit(entry.unit);
-	});
+const hasSnapshotIntegrity = function (value: GameSnapshot): boolean {
+	if (value.planets.length !== value.map.planets.length) return false;
+	// filter() skips holes, as the original parser's narrowing pass did.
+	const planetRows = value.planets.filter(function () { return true; });
+	const unitRows = value.units.filter(function () { return true; });
 	const allIds = new Set<number>();
 	if (!hasUniqueIds(planetRows, allIds) || !hasUniqueIds(unitRows, allIds)) return false;
 	const planetsByName = new Map(
@@ -280,14 +186,8 @@ const isGameSnapshot = function (value: unknown): value is GameSnapshot {
 		return entry.id;
 	}));
 	const orderBook = value.orderBook;
-	if (
-		!isRecord(orderBook) ||
-		!isId(orderBook.nextId) ||
-		!Array.isArray(orderBook.active)
-	)
-		return false;
 	const nextOrderId = orderBook.nextId;
-	const activeOrders = orderBook.active.filter(isOrder);
+	const activeOrders = orderBook.active;
 	const unitsById = new Map(unitRows.map(function (entry) {
 		return [entry.id, entry.unit] as const;
 	}));
@@ -334,21 +234,23 @@ export class InvalidSaveError extends Error {
 	}
 }
 
-const isConquestSave = function (
-	value: unknown,
-	expectedProfileId?: string,
-): value is ConquestSave {
-	return (
-		isRecord(value) &&
-		value.schemaVersion === SAVE_SCHEMA_VERSION &&
-		typeof value.profileId === 'string' &&
-		value.profileId.length > 0 &&
-		(expectedProfileId === undefined || value.profileId === expectedProfileId) &&
-		isFiniteNumber(value.savedAt) &&
-		value.savedAt > 0 &&
-		isGameSnapshot(value.game)
-	);
-};
+const gameSnapshotSchema = z.looseObject({
+	map: mapSchema,
+	scenario: scenarioSchema,
+	pace: z.union([z.literal(0.5), z.literal(1), z.literal(2)]),
+	match: matchSchema,
+	planets: savedArray(z.looseObject({ id: idSchema, planet: planetSchema })),
+	units: savedArray(z.looseObject({ id: idSchema, unit: unitSchema })).check(z.maxLength(10000)),
+	orderBook: orderBookSchema,
+}).check(z.refine(hasSnapshotIntegrity)) satisfies z.ZodMiniType<GameSnapshot>;
+const conquestSaveSchema = z.looseObject({
+	schemaVersion: z.literal(SAVE_SCHEMA_VERSION),
+	profileId: z.string().check(z.minLength(1)),
+	savedAt: z.number().check(z.gt(0)),
+	game: gameSnapshotSchema,
+}) satisfies z.ZodMiniType<ConquestSave>;
+
+const validatedSaveSchema = unchanged(conquestSaveSchema);
 
 const migrateSave = function (value: unknown): unknown {
 	if (!isRecord(value) || typeof value.schemaVersion !== 'number')
@@ -376,11 +278,13 @@ export const parseConquestSave = function (
 	expectedProfileId?: string,
 ): ConquestSave {
 	const value = migrateSave(input);
-	if (!isConquestSave(value, expectedProfileId))
+	const result = validatedSaveSchema.safeParse(value);
+	if (!result.success ||
+		(expectedProfileId !== undefined && result.data.profileId !== expectedProfileId))
 		throw new InvalidSaveError(
 			'Could not validate this saved conquest. Its profile data was kept unchanged.',
 		);
-	return value;
+	return result.data;
 };
 
 export const isSupportedConquestSave = function (
