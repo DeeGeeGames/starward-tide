@@ -104,6 +104,11 @@
 						<path d="M-136 70l-6 6 10-2z M-146 78l-6 6 10-2z" fill="#60d9ff" />
 					</g>
 				</svg>
+				<button type="button" id="profile-badge" class="profile-badge" aria-haspopup="dialog" aria-controls="profile-dialog">
+					<span id="profile-badge-orb" class="profile-badge-orb" aria-hidden="true">P</span>
+					<span class="profile-badge-copy"><strong id="profile-badge-name">Player</strong><small>Profiles</small></span>
+					<span aria-hidden="true">☰</span>
+				</button>
 				<div class="brand">
 					<span class="brand-mark">✧</span
 					><span class="eyebrow">A GALAXY. YOUR COMMAND.</span>
@@ -115,10 +120,11 @@
 						New game <span aria-hidden="true">→</span>
 					</button>
 				</div>
-				<section class="profile-panel" aria-label="Local player profiles">
+				<dialog id="profile-dialog" class="profile-panel" aria-labelledby="profile-dialog-title">
 					<div class="profile-panel-heading">
-						<span class="label">LOCAL PROFILES</span>
+						<h2 id="profile-dialog-title" class="label">LOCAL PROFILES</h2>
 						<span id="profile-count" class="mono"></span>
+						<button type="button" id="close-profiles" aria-label="Close profiles" autofocus>Close</button>
 					</div>
 					<div id="profile-list" class="profile-list"></div>
 					<form id="profile-create-form" class="profile-create-form">
@@ -128,16 +134,17 @@
 							<button id="create-profile" type="submit">Create</button>
 						</div>
 					</form>
-					<div class="profile-continue-row">
-						<button id="continue-conquest" class="primary" disabled>Continue</button>
-						<span id="profile-save-time" class="mono"></span>
-					</div>
 					<p id="profile-status" class="status" role="status" aria-live="polite"></p>
 					<p class="profile-storage-note">
 						Profiles stay in this browser and site. Clearing site data may erase them.
 						Some embedded browsers block storage; open the standalone game if saving is unavailable.
 					</p>
-				</section>
+				</dialog>
+				<div class="profile-continue-row">
+					<button id="continue-conquest" class="primary" disabled>Continue</button>
+					<span id="profile-save-time" class="mono"></span>
+				</div>
+				<p id="menu-profile-status" class="status" role="status" aria-live="polite"></p>
 				<div class="footer">
 					<span>SINGLE PLAYER · REAL-TIME STRATEGY</span><span>v0.1</span>
 				</div>
