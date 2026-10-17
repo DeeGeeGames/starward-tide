@@ -1,7 +1,10 @@
 import { createOrdersDrawer } from './orders-drawer';
 import { zoomCamera } from './camera';
 import type { Camera, Point } from './camera';
-import { CONFIG, COLORS, MAP } from './config';
+import { CONFIG, COLORS } from './config';
+import { LAB_MAP } from './maps';
+import type { StarMap } from './maps';
+import { createFrontMenu } from './front-menu';
 import type { DispatchFilter, Production, Scenario, Side } from './config';
 import {
 	createGame,
@@ -26,8 +29,6 @@ const element = function <T extends HTMLElement>(
 };
 const board = element('board', HTMLElement);
 const mapWorld = element('map-world', HTMLDivElement);
-mapWorld.style.width = `${MAP.width}px`;
-mapWorld.style.height = `${MAP.height}px`;
 const planetPanel = element('planet-panel', HTMLElement);
 const productionControls = element('production-controls', HTMLDivElement);
 const dispatchControls = element('dispatch-controls', HTMLDivElement);
@@ -41,7 +42,6 @@ const context = canvas.getContext('2d');
 if (!context) throw new Error('Canvas 2D is required');
 const ctx = context;
 const planetLayer = element('planets', HTMLDivElement);
-const welcome = element('welcome', HTMLDialogElement);
 const pause = element('pause', HTMLButtonElement);
 const scenarioSelect = element('scenario', HTMLSelectElement);
 const aiInput = element('ai', HTMLInputElement);
@@ -75,6 +75,7 @@ interface PlanetView {
 	progress: HTMLElement;
 }
 const views = new Map<number, PlanetView>();
+let activeMap: StarMap = LAB_MAP;
 let world: Game = await createGame();
 let selected: number[] = [];
 let inspected: number | undefined;
@@ -248,7 +249,12 @@ const feedback = function (text: string): void {
 	noticeUntil = performance.now() + 2600;
 };
 const selectPlanet = function (id: number): void {
-	if (busy || welcome.open || world.getResource('match').winner) return;
+	if (
+		busy ||
+		frontMenu.getCurrentScreen() !== 'playing' ||
+		world.getResource('match').winner
+	)
+		return;
 	const p = world.getComponent(id, 'planet');
 	if (!p) return;
 	const selectable =
@@ -268,7 +274,12 @@ const selectPlanet = function (id: number): void {
 	refresh();
 };
 const sendToPlanet = function (id: number): void {
-	if (busy || welcome.open || world.getResource('match').winner) return;
+	if (
+		busy ||
+		frontMenu.getCurrentScreen() !== 'playing' ||
+		world.getResource('match').winner
+	)
+		return;
 	const p = world.getComponent(id, 'planet');
 	if (!p) return;
 	if (multi) feedback('Finish source selection before sending units.');
@@ -477,7 +488,7 @@ const refresh = function (): void {
 		result ||
 		(performance.now() < noticeUntil
 			? orderMessage
-			: match.paused && !welcome.open
+			: match.paused
 				? 'Paused · commands remain available'
 				: '');
 	banner.style.display = banner.textContent ? 'block' : 'none';
@@ -528,7 +539,7 @@ const drawer = createOrdersDrawer(
 );
 
 const draw = function (): void {
-	const { width, height } = MAP;
+	const { width, height } = activeMap;
 	const dpr = Math.min((devicePixelRatio || 1) * Math.max(1, camera.scale), 3);
 	if (
 		canvas.width !== Math.round(width * dpr) ||
@@ -666,15 +677,19 @@ const applyCamera = function (): void {
 const fitMap = function (): void {
 	const width = board.clientWidth;
 	const height = board.clientHeight;
+	if (width === 0 || height === 0) return;
 	const top = width < 700 ? 200 : 130;
 	const bottom = 85;
 	fitScale = Math.max(
 		0.1,
-		Math.min((width - 48) / MAP.width, (height - top - bottom) / MAP.height),
+		Math.min(
+			(width - 48) / activeMap.width,
+			(height - top - bottom) / activeMap.height,
+		),
 	);
 	camera = {
-		x: (width - MAP.width * fitScale) / 2,
-		y: top + (height - top - bottom - MAP.height * fitScale) / 2,
+		x: (width - activeMap.width * fitScale) / 2,
+		y: top + (height - top - bottom - activeMap.height * fitScale) / 2,
 		scale: fitScale,
 	};
 	applyCamera();
@@ -888,15 +903,28 @@ fullscreen.addEventListener('click', async function () {
 document.addEventListener('fullscreenchange', syncFullscreen);
 syncFullscreen();
 
-const restart = async function (next: Scenario = scenario): Promise<void> {
+const restart = async function (
+	next: Scenario = scenario,
+	map: StarMap = activeMap,
+): Promise<void> {
 	if (busy) return;
 	busy = true;
 	cancelGesture();
 	try {
-		const replacement = await createGame(next);
+		const replacement = await createGame(next, map);
 		await world.dispose();
+		if (disposed) {
+			await replacement.dispose();
+			return;
+		}
 		world = replacement;
+		activeMap = map;
+		mapWorld.style.width = `${map.width}px`;
+		mapWorld.style.height = `${map.height}px`;
+		hiddenPause = document.hidden;
+		world.getResource('match').paused = document.hidden;
 		scenario = next;
+		scenarioSelect.value = map === LAB_MAP ? next : 'generated';
 		selected = [];
 		inspected = undefined;
 		multi = false;
@@ -949,12 +977,16 @@ pause.addEventListener('click', function () {
 	refresh();
 });
 element('restart', HTMLButtonElement).addEventListener('click', function () {
-	void restart();
+	void restart().catch(function () {
+		feedback('Could not restart map. Please try again.');
+	});
 });
 scenarioSelect.addEventListener('change', function () {
 	const next = scenarioSelect.value;
 	if (next === 'skirmish' || next === 'blockade' || next === 'invasion')
-		void restart(next);
+		void restart(next, LAB_MAP).catch(function () {
+			feedback('Could not load scenario. Please try again.');
+		});
 });
 speedSelect.addEventListener('change', function () {
 	speed = Number(speedSelect.value);
@@ -962,26 +994,20 @@ speedSelect.addEventListener('change', function () {
 aiInput.addEventListener('change', function () {
 	world.getResource('match').ai = aiInput.checked;
 });
-element('start', HTMLButtonElement).addEventListener('click', function () {
-	welcome.close();
-	world.getResource('match').paused = false;
-	refresh();
-});
-welcome.addEventListener('cancel', function () {
-	world.getResource('match').paused = false;
-});
 document.addEventListener('visibilitychange', function () {
+	if (frontMenu.getCurrentScreen() !== 'playing') return;
 	if (document.hidden) {
 		cancelGesture();
 		hiddenPause = !world.getResource('match').paused;
 		world.getResource('match').paused = true;
-	} else if (hiddenPause && !welcome.open) {
+	} else if (hiddenPause) {
 		world.getResource('match').paused = false;
 		hiddenPause = false;
 	}
 });
 window.addEventListener('keydown', function (event) {
-	if (event.key === 'Escape' && !welcome.open) {
+	if (frontMenu.getCurrentScreen() !== 'playing' || busy) return;
+	if (event.key === 'Escape') {
 		if (!ordersPanel.hidden) {
 			drawer.close();
 			return;
@@ -992,11 +1018,7 @@ window.addEventListener('keydown', function (event) {
 		multi = false;
 		refresh();
 	}
-	if (
-		event.code === 'Space' &&
-		event.target === document.body &&
-		!welcome.open
-	) {
+	if (event.code === 'Space' && event.target === document.body) {
 		event.preventDefault();
 		pause.click();
 	}
@@ -1007,7 +1029,7 @@ const frame = function (now: number): void {
 	if (disposed) return;
 	const dt = Math.min(Math.max((now - previous) / 1000, 0), 0.1);
 	previous = now;
-	if (!busy) {
+	if (!busy && frontMenu.getCurrentScreen() === 'playing') {
 		// Keep rendering and command input live while simulation time is frozen.
 		if (!world.getResource('match').paused) world.update(dt * speed);
 		draw();
@@ -1019,10 +1041,29 @@ const frame = function (now: number): void {
 	raf = requestAnimationFrame(frame);
 };
 world.getResource('match').paused = true;
-fitMap();
-mountPlanets();
-refresh();
-welcome.showModal();
+const frontMenu = await createFrontMenu({
+	start: function (map) {
+		return restart('skirmish', map);
+	},
+	onMenu: function () {
+		cancelGesture();
+		world.getResource('match').paused = true;
+		hiddenPause = false;
+	},
+	onPlaying: function () {
+		fitMap();
+		refresh();
+		board.focus();
+	},
+});
+element('setup-game', HTMLButtonElement).addEventListener('click', function () {
+	if (busy) return;
+	drawer.reset();
+	fieldGuide.hidden = true;
+	settings.setAttribute('aria-expanded', 'false');
+	settings.setAttribute('aria-label', 'Open game menu');
+	void frontMenu.setScreen('setup', {});
+});
 raf = requestAnimationFrame(frame);
 window.addEventListener('pagehide', function (event) {
 	if (event.persisted) return;
@@ -1031,4 +1072,5 @@ window.addEventListener('pagehide', function (event) {
 	cancelAnimationFrame(raf);
 	resizeObserver.disconnect();
 	void world.dispose();
+	void frontMenu.dispose();
 });
