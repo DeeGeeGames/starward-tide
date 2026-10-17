@@ -115,6 +115,29 @@
 						New game <span aria-hidden="true">→</span>
 					</button>
 				</div>
+				<section class="profile-panel" aria-label="Local player profiles">
+					<div class="profile-panel-heading">
+						<span class="label">LOCAL PROFILES</span>
+						<span id="profile-count" class="mono"></span>
+					</div>
+					<div id="profile-list" class="profile-list"></div>
+					<form id="profile-create-form" class="profile-create-form">
+						<label for="profile-name">Create profile</label>
+						<div class="profile-create-row">
+							<input id="profile-name" name="profile-name" maxlength="32" value="Player" autocomplete="off" />
+							<button id="create-profile" type="submit">Create</button>
+						</div>
+					</form>
+					<div class="profile-continue-row">
+						<button id="continue-conquest" class="primary" disabled>Continue</button>
+						<span id="profile-save-time" class="mono"></span>
+					</div>
+					<p id="profile-status" class="status" role="status" aria-live="polite"></p>
+					<p class="profile-storage-note">
+						Profiles stay in this browser and site. Clearing site data may erase them.
+						Some embedded browsers block storage; open the standalone game if saving is unavailable.
+					</p>
+				</section>
 				<div class="footer">
 					<span>SINGLE PLAYER · REAL-TIME STRATEGY</span><span>v0.1</span>
 				</div>
@@ -209,7 +232,9 @@
 					<div id="clock">00:00</div>
 					<span class="red">● <strong id="red-count">1</strong> RIVAL</span>
 				</div>
+				<span id="save-status" role="status" aria-live="polite">Not saved</span>
 				<div class="header-actions">
+					<button id="save-game" aria-label="Save conquest" title="Save conquest">Save</button>
 					<button
 						id="orders-toggle"
 						aria-controls="orders-drawer"
@@ -302,7 +327,9 @@
 					<button id="fullscreen" aria-label="Enter fullscreen" aria-pressed="false">Fullscreen</button>
 					<button id="restart">Restart map</button>
 					<button id="setup-game">New game</button>
+					<button id="profiles-game">Profiles</button>
 				</div>
+				<p id="save-status-menu" role="status" aria-live="polite">Not saved</p>
 				<details class="lab">
 					<summary>Prototype lab <span>scenarios & tuning</span></summary>
 					<div class="lab-content">

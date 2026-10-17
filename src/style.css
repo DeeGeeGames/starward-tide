@@ -126,6 +126,26 @@ h1 {
 	width: 44px;
 	font-size: 20px;
 }
+.header-actions #save-game {
+	width: auto;
+	padding: 0 10px;
+	font-size: 10px;
+}
+#save-status {
+	max-width: 120px;
+	overflow: hidden;
+	color: #8fa5b7;
+	font-size: 9px;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+#save-status-menu {
+	margin: 8px 0;
+	color: #9aafbf;
+	font-size: 10px;
+	line-height: 1.5;
+	overflow-wrap: anywhere;
+}
 .scorebar {
 	display: flex;
 	gap: 24px;
@@ -536,6 +556,9 @@ input {
 	.header-actions #orders-toggle {
 		padding: 0 6px;
 		font-size: 10px;
+	}
+	#save-status {
+		display: none;
 	}
 	.map-heading {
 		right: var(--hud-side);

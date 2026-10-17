@@ -18,6 +18,7 @@ import type {
 	Scenario,
 	Side,
 } from './config';
+import type { GameSnapshot } from './save-state';
 
 export interface Planet {
 	name: string;
@@ -42,7 +43,7 @@ export interface Unit {
 	cargo: number;
 	age: number;
 }
-interface Departure {
+export interface Departure {
 	unitId: number;
 	source: number;
 	x: number;
@@ -56,7 +57,7 @@ export interface Order {
 	state: 'pending' | 'outbound' | 'returning';
 	departures: Departure[];
 }
-interface OrderBook {
+export interface OrderBook {
 	nextId: number;
 	active: Order[];
 }
@@ -72,7 +73,7 @@ export interface Engagement {
 	y2: number;
 	owner: Side;
 }
-interface Match {
+export interface Match {
 	time: number;
 	paused: boolean;
 	winner: Side | null;
@@ -146,6 +147,51 @@ const makeWorld = function (): Game {
 		.withResource('orderBook', orderBook)
 		.withFixedTimestep(CONFIG.step)
 		.build();
+};
+const restoreSnapshot = function (world: Game, snapshot: GameSnapshot): void {
+	const planetIds = new Map<number, number>();
+	const entityIds = new Map<number, number>();
+	for (const saved of snapshot.planets) {
+		const restored = world.spawn({ planet: structuredClone(saved.planet) });
+		planetIds.set(saved.id, restored.id);
+		entityIds.set(saved.id, restored.id);
+	}
+	for (const saved of snapshot.units) {
+		const target = planetIds.get(saved.unit.target);
+		if (target === undefined) throw new Error('Saved unit target is missing');
+		const unit = structuredClone(saved.unit);
+		unit.target = target;
+		const restored = world.spawn({
+			unit,
+			localTransform: localTransformAt(unit.x, unit.y),
+			...(unit.phase === 'travel' ? { circleCollider: { radius: 0 } } : {}),
+		});
+		entityIds.set(saved.id, restored.id);
+	}
+	const match = world.getResource('match');
+	Object.assign(match, structuredClone(snapshot.match), {
+		paused: true,
+		engagements: [],
+	});
+	const orderBook = world.getResource('orderBook');
+	orderBook.nextId = snapshot.orderBook.nextId;
+	orderBook.active = snapshot.orderBook.active.map(function (savedOrder) {
+		const target = planetIds.get(savedOrder.target);
+		if (target === undefined) throw new Error('Saved order target is missing');
+		return {
+			...structuredClone(savedOrder),
+			target,
+			departures: savedOrder.departures.map(function (savedDeparture) {
+				const source = planetIds.get(savedDeparture.source);
+				const unitId = entityIds.get(savedDeparture.unitId);
+				if (source === undefined || unitId === undefined)
+					throw new Error('Saved order reference is missing');
+				return { ...savedDeparture, source, unitId };
+			}),
+		};
+	});
+	// Rebuild the plugin's derived spatial data with gameplay paused.
+	world.update(CONFIG.step);
 };
 export const planets = function (world: Game): PlanetEntity[] {
 	return world.getEntitiesWithQuery(['planet']);
@@ -708,6 +754,7 @@ const runAI = function (world: Game): void {
 export const createGame = async function (
 	scenario: Scenario = 'skirmish',
 	map: StarMap = LAB_MAP,
+	snapshot?: GameSnapshot,
 ): Promise<Game> {
 	const world = makeWorld();
 	const active = function (): boolean {
@@ -891,6 +938,10 @@ export const createGame = async function (
 			},
 		);
 	await world.initialize();
+	if (snapshot) {
+		restoreSnapshot(world, snapshot);
+		return world;
+	}
 	for (const [name, x, y, radius, owner, troops, rate] of map.planets) {
 		const p = world.spawn({
 			planet: {
