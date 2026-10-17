@@ -110,6 +110,21 @@
 		text-align: left;
 		background: #0b1723e6;
 	}
+	.title-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 10px;
+		margin-top: 14px;
+	}
+	.title-actions button,
+	.help-panel button {
+		padding: 0 16px;
+	}
+	.help-panel p {
+		color: var(--menu-muted);
+		font-size: 14px;
+		line-height: 1.8;
+	}
 	.profile-badge-orb {
 		display: grid;
 		place-items: center;
