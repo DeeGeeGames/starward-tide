@@ -106,7 +106,7 @@ const NEUTRAL_NAMES = [
 	'Hyperion',
 ] as const;
 
-// Paired jittered cells guarantee spacing and equal expansion opportunities.
+// Start with spaced pairs, then scatter them while preserving clearance and symmetry.
 // A seed reproduces the exact preview; starting a game never rolls another map.
 export const generateMap = function (size: MapSize, seed: number): StarMap {
 	const { width, height, columns, rows, count } = MAP_SIZES[size];
@@ -131,13 +131,35 @@ export const generateMap = function (size: MapSize, seed: number): StarMap {
 		.sort(function (a, b) {
 			return a.rank - b.rank;
 		})
-		.slice(0, count / 2)
-		.sort(function (a, b) {
-			return (
-				Math.hypot(b.x - width / 2, b.y - height / 2) -
-				Math.hypot(a.x - width / 2, a.y - height / 2)
-			);
-		});
+		.slice(0, count / 2);
+	// Repeated local moves break up rows and columns without risking a failed fill.
+	// Check both halves of each pair, including the pair's own mirrored position.
+	for (let pass = 0; pass < 24; pass++) {
+		for (const point of cells) {
+			const x = point.x + ((random() - 0.5) * width) / columns;
+			const y = point.y + ((random() - 0.5) * height) / rows;
+			if (x < 100 || x > width - 100 || y < 100 || y > height - 100)
+				continue;
+			if (Math.hypot(width - 2 * x, height - 2 * y) < 216) continue;
+			const clear = cells.every(function (other) {
+				return (
+					other === point ||
+					(Math.hypot(x - other.x, y - other.y) >= 216 &&
+						Math.hypot(x - (width - other.x), y - (height - other.y)) >= 216)
+				);
+			});
+			if (clear) {
+				point.x = x;
+				point.y = y;
+			}
+		}
+	}
+	cells.sort(function (a, b) {
+		return (
+			Math.hypot(b.x - width / 2, b.y - height / 2) -
+			Math.hypot(a.x - width / 2, a.y - height / 2)
+		);
+	});
 	const layout = cells.flatMap(function (point, index): PlanetSeed[] {
 		const tier = random();
 		const radius = tier < 0.55 ? 25 : tier < 0.9 ? 28 : 36;
