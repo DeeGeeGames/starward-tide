@@ -5,6 +5,18 @@ import { generateMap, MAP_SIZES } from './maps';
 import type { PlanetSeed } from './maps';
 
 for (const size of ['small', 'medium', 'large'] as const) {
+	test(`${size} scatters most worlds beyond the original grid jitter`, function () {
+		const { width, height, columns, rows } = MAP_SIZES[size];
+		const map = generateMap(size, 8041);
+		const scattered = map.planets.filter(function ([, x, y]) {
+			const cellWidth = width / columns;
+			const cellHeight = height / rows;
+			const columnCenter = (Math.floor(x / cellWidth) + 0.5) * cellWidth;
+			const rowCenter = (Math.floor(y / cellHeight) + 0.5) * cellHeight;
+			return Math.abs(x - columnCenter) > 40 || Math.abs(y - rowCenter) > 40;
+		});
+		expect(scattered.length).toBeGreaterThan(map.planets.length / 2);
+	});
 	test(`${size} maps have the requested count, spacing, bounds, and fair paired starts across seeds`, function () {
 		for (let seed = 0; seed < 200; seed++) {
 			const map = generateMap(size, seed);
