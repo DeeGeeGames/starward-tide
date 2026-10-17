@@ -418,59 +418,6 @@ input {
 .planet .production-progress {
 	bottom: calc(50% - var(--diameter) / 2 - 4px);
 }
-dialog {
-	width: min(440px, calc(100% - 32px));
-	border: 1px solid #365063;
-	border-radius: 16px;
-	padding: 30px;
-	background: #101b2a;
-	color: #dce6ed;
-	box-shadow: 0 24px 100px #0008;
-}
-dialog::backdrop {
-	background: #040a13ba;
-	backdrop-filter: blur(5px);
-}
-dialog h2 {
-	font-size: 46px;
-	line-height: 1.05;
-	margin: 20px 0;
-}
-dialog p {
-	color: #9fb0bf;
-	line-height: 1.8;
-	font-size: 12px;
-}
-.roles {
-	display: flex;
-	justify-content: space-between;
-	padding: 15px 0 25px;
-	color: var(--blue);
-}
-.roles span {
-	display: flex;
-	flex-direction: column;
-	gap: 7px;
-	font-size: 10px;
-}
-.roles b {
-	color: #dce6ed;
-	font-weight: 400;
-	font-size: 12px;
-}
-.primary {
-	width: 100%;
-	background: #60d9ff;
-	color: #061421;
-	border: 0;
-	font-weight: 600;
-	font-size: 12px;
-}
-.small {
-	font-size: 10px !important;
-	margin-bottom: 0;
-}
-
 .header-actions #orders-toggle {
 	width: auto;
 	padding: 0 10px;
@@ -546,25 +493,6 @@ dialog p {
 	padding: 0 8px;
 	min-width: 84px;
 }
-@media (max-height: 560px) {
-	dialog {
-		max-height: calc(100dvh - 16px);
-		overflow: auto;
-		padding: 16px 18px;
-	}
-	dialog h2 {
-		font-size: 28px;
-		margin: 8px 0;
-	}
-	dialog p {
-		line-height: 1.45;
-		margin: 8px 0;
-	}
-	.roles {
-		padding: 8px 0 12px;
-	}
-}
-
 #planet-panel h2 {
 	font-size: 22px;
 	margin: 0;

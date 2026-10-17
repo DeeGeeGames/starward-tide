@@ -9,6 +9,8 @@ import {
 	spatialIndexSystems,
 } from 'ecspresso/plugins/spatial/spatial-index';
 import { CONFIG } from './config';
+import { LAB_MAP } from './maps';
+import type { StarMap } from './maps';
 import type {
 	DispatchFilter,
 	Owner,
@@ -705,6 +707,7 @@ const runAI = function (world: Game): void {
 
 export const createGame = async function (
 	scenario: Scenario = 'skirmish',
+	map: StarMap = LAB_MAP,
 ): Promise<Game> {
 	const world = makeWorld();
 	const active = function (): boolean {
@@ -888,35 +891,7 @@ export const createGame = async function (
 			},
 		);
 	await world.initialize();
-	const layout: readonly [
-		string,
-		number,
-		number,
-		number,
-		Owner,
-		number,
-		number,
-	][] = [
-		['Polaris', 234, 180, 25, 'neutral', 8, 1.7],
-		['Vega', 521, 198, 31, 'red', 44, 2.6],
-		['Altair', 942, 165, 25, 'neutral', 8, 1.7],
-		['Rhea', 277, 414, 25, 'neutral', 8, 1.7],
-		['Deneb', 668, 418, 28, 'neutral', 14, 2.2],
-		['Io', 930, 389, 25, 'neutral', 8, 1.7],
-		['Nyx', 98, 600, 28, 'neutral', 14, 2.2],
-		['Sol', 514, 570, 36, 'neutral', 24, 3.4],
-		['Eris', 1077, 617, 28, 'neutral', 14, 2.2],
-		['Tethys', 214, 801, 28, 'neutral', 14, 2.2],
-		['Atlas', 535, 831, 36, 'neutral', 24, 3.4],
-		['Dione', 1084, 841, 28, 'neutral', 14, 2.2],
-		['Luna', 337, 991, 25, 'neutral', 8, 1.7],
-		['Astra', 638, 1032, 28, 'neutral', 14, 2.2],
-		['Ceres', 866, 1024, 25, 'neutral', 8, 1.7],
-		['Mira', 244, 1192, 25, 'neutral', 8, 1.7],
-		['Terra', 532, 1229, 31, 'blue', 44, 2.6],
-		['Lyra', 1069, 1186, 25, 'neutral', 8, 1.7],
-	];
-	for (const [name, x, y, radius, owner, troops, rate] of layout) {
+	for (const [name, x, y, radius, owner, troops, rate] of map.planets) {
 		const p = world.spawn({
 			planet: {
 				name,
