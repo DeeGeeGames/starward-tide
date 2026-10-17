@@ -1,3 +1,5 @@
+import { createCanvasRenderer } from './canvas-renderer';
+import { createMapInput } from './map-input';
 import { createOrdersDrawer } from './orders-drawer';
 import { zoomCamera } from './camera';
 import type { Camera, Point } from './camera';
@@ -5,18 +7,15 @@ import { CONFIG, COLORS } from './config';
 import { LAB_MAP } from './maps';
 import type { StarMap } from './maps';
 import { createFrontMenu } from './front-menu';
-import type { DispatchFilter, Production, Scenario, Side } from './config';
+import type { DispatchFilter, Production, Scenario } from './config';
 import { captureConquestSave } from './game-save';
 import {
 	createGame,
 	dispatch,
 	isBlockaded,
 	planets,
-	orderUnits,
 	setProduction,
 	shipsAt,
-	unitPoint,
-	units,
 } from './game';
 import type { Game } from './game';
 import { openProfileRepository } from './profile-storage';
@@ -42,9 +41,6 @@ const dispatchFilterControls = element(
 );
 const dispatchInfo = element('dispatch-info', HTMLSpanElement);
 const canvas = element('space', HTMLCanvasElement);
-const context = canvas.getContext('2d');
-if (!context) throw new Error('Canvas 2D is required');
-const ctx = context;
 const planetLayer = element('planets', HTMLDivElement);
 const pause = element('pause', HTMLButtonElement);
 const scenarioSelect = element('scenario', HTMLSelectElement);
@@ -81,6 +77,17 @@ interface PlanetView {
 	mark: HTMLSpanElement;
 	progress: HTMLElement;
 }
+type GamePace = 0.5 | 1 | 2;
+interface GameInstallation {
+	game: Game;
+	map: StarMap;
+	scenario: Scenario;
+	profileId: string;
+	pace: GamePace;
+	paused: boolean;
+	hiddenPause: boolean;
+	savedAt: number;
+}
 const views = new Map<number, PlanetView>();
 let activeMap: StarMap = LAB_MAP;
 let profileRepository: ProfileRepository | undefined;
@@ -114,7 +121,7 @@ let fraction = 0.5;
 let filter: DispatchFilter = 'combined';
 let multi = false;
 let scenario: Scenario = 'skirmish';
-let speed: 0.5 | 1 | 2 = 1;
+let speed: GamePace = 1;
 let busy = false;
 let disposed = false;
 let raf = 0;
@@ -126,147 +133,6 @@ const icons: Record<Production, string> = {
 	troops: '▥',
 	ships: '◆',
 	guns: '✣',
-};
-const WARSHIP_HULL = new Path2D();
-WARSHIP_HULL.moveTo(12, -1.5);
-WARSHIP_HULL.lineTo(12, 1.5);
-WARSHIP_HULL.lineTo(9, 4.5);
-WARSHIP_HULL.lineTo(6, 5.5);
-WARSHIP_HULL.lineTo(3, 7);
-WARSHIP_HULL.lineTo(-6, 7);
-WARSHIP_HULL.lineTo(-8, 5);
-WARSHIP_HULL.lineTo(-11, 5);
-WARSHIP_HULL.lineTo(-13, 3.5);
-WARSHIP_HULL.lineTo(-13, -3.5);
-WARSHIP_HULL.lineTo(-11, -5);
-WARSHIP_HULL.lineTo(-8, -5);
-WARSHIP_HULL.lineTo(-6, -7);
-WARSHIP_HULL.lineTo(3, -7);
-WARSHIP_HULL.lineTo(6, -5.5);
-WARSHIP_HULL.lineTo(9, -4.5);
-WARSHIP_HULL.closePath();
-const TRANSPORT_HULL = new Path2D();
-TRANSPORT_HULL.moveTo(10, -2.5);
-TRANSPORT_HULL.lineTo(10, 2.5);
-TRANSPORT_HULL.lineTo(7, 5);
-TRANSPORT_HULL.lineTo(2, 5);
-TRANSPORT_HULL.lineTo(2, 10);
-TRANSPORT_HULL.lineTo(-7, 10);
-TRANSPORT_HULL.lineTo(-8.5, 8.5);
-TRANSPORT_HULL.lineTo(-8.5, 4);
-TRANSPORT_HULL.lineTo(-10.5, 4);
-TRANSPORT_HULL.lineTo(-10.5, -4);
-TRANSPORT_HULL.lineTo(-8.5, -4);
-TRANSPORT_HULL.lineTo(-8.5, -8.5);
-TRANSPORT_HULL.lineTo(-7, -10);
-TRANSPORT_HULL.lineTo(2, -10);
-TRANSPORT_HULL.lineTo(2, -5);
-TRANSPORT_HULL.lineTo(7, -5);
-TRANSPORT_HULL.closePath();
-const UNIT_SHADE: Record<Side, string> = {
-	blue: '#17485b',
-	red: '#753f42',
-};
-const UNIT_HIGHLIGHT: Record<Side, string> = {
-	blue: '#dcf7ff',
-	red: '#ffebe5',
-};
-const drawWarship = function (owner: Side, zoom: number): void {
-	ctx.fillStyle = COLORS[owner];
-	ctx.strokeStyle = '#142a38';
-	ctx.lineWidth = 1;
-	ctx.fill(WARSHIP_HULL);
-	ctx.stroke(WARSHIP_HULL);
-	if (zoom >= 1.75) {
-		ctx.fillStyle = UNIT_SHADE[owner];
-		ctx.fillRect(-2, -2.5, 6, 5);
-		ctx.fillRect(1, -1.3, 4.5, 2.6);
-		for (const x of [-5.5, 5.5]) {
-			ctx.beginPath();
-			ctx.arc(x, 0, 2.1, 0, Math.PI * 2);
-			ctx.fill();
-		}
-		ctx.strokeStyle = UNIT_HIGHLIGHT[owner];
-		ctx.lineWidth = 0.7;
-		ctx.beginPath();
-		ctx.moveTo(-1, -1.6);
-		ctx.lineTo(3.5, -1.6);
-		ctx.moveTo(-1, 1.6);
-		ctx.lineTo(3.5, 1.6);
-		ctx.stroke();
-	}
-	if (zoom >= 2.5) {
-		ctx.strokeStyle = UNIT_SHADE[owner];
-		ctx.lineWidth = 1.2;
-		ctx.lineCap = 'round';
-		ctx.beginPath();
-		ctx.moveTo(5.5, -0.5);
-		ctx.lineTo(9.3, -0.5);
-		ctx.moveTo(5.5, 0.5);
-		ctx.lineTo(9.3, 0.5);
-		ctx.moveTo(-5.5, -0.5);
-		ctx.lineTo(-8.8, -0.5);
-		ctx.moveTo(-5.5, 0.5);
-		ctx.lineTo(-8.8, 0.5);
-		ctx.stroke();
-		ctx.fillStyle = UNIT_HIGHLIGHT[owner];
-		ctx.fillRect(-13, -3, 1.5, 2);
-		ctx.fillRect(-13, 1, 1.5, 2);
-	}
-};
-const drawTroopTransport = function (
-	owner: Side,
-	cargo: number,
-	zoom: number,
-	scale: number,
-	angle: number,
-): void {
-	ctx.fillStyle = COLORS[owner];
-	ctx.strokeStyle = '#142a38';
-	ctx.lineWidth = 1;
-	ctx.fill(TRANSPORT_HULL);
-	ctx.stroke(TRANSPORT_HULL);
-	if (zoom >= 1.75) {
-		ctx.fillStyle = UNIT_SHADE[owner];
-		ctx.fillRect(-5.5, -8.5, 6, 5.5);
-		ctx.fillRect(-5.5, 3, 6, 5.5);
-		ctx.strokeStyle = UNIT_HIGHLIGHT[owner];
-		ctx.lineWidth = 0.7;
-		ctx.beginPath();
-		ctx.moveTo(-7.5, -8.5);
-		ctx.lineTo(1, -8.5);
-		ctx.moveTo(-7.5, 8.5);
-		ctx.lineTo(1, 8.5);
-		ctx.stroke();
-	}
-	if (zoom >= 2.5) {
-		ctx.fillStyle = UNIT_HIGHLIGHT[owner];
-		for (const x of [-5, -3.5, -2]) {
-			ctx.fillRect(x, -8, 0.75, 2.4);
-			ctx.fillRect(x, 5.6, 0.75, 2.4);
-		}
-		ctx.fillStyle = UNIT_SHADE[owner];
-		ctx.fillRect(4.5, -1.2, 2, 2.4);
-		ctx.fillRect(3.8, -0.5, 3.4, 1);
-	}
-	if (zoom >= 3.5) {
-		ctx.save();
-		ctx.rotate(-angle);
-		const radius = 8 / scale;
-		ctx.fillStyle = '#10202b';
-		ctx.beginPath();
-		ctx.arc(0, 0, radius, 0, Math.PI * 2);
-		ctx.fill();
-		ctx.strokeStyle = COLORS[owner];
-		ctx.lineWidth = 1 / scale;
-		ctx.stroke();
-		ctx.fillStyle = UNIT_HIGHLIGHT[owner];
-		ctx.font = `bold ${10 / scale}px ui-monospace, monospace`;
-		ctx.textAlign = 'center';
-		ctx.textBaseline = 'middle';
-		ctx.fillText(String(cargo), 0, 0);
-		ctx.restore();
-	}
 };
 const timeLabel = function (seconds: number): string {
 	return `${Math.floor(seconds / 60)
@@ -353,7 +219,7 @@ const saveBeforeLeavingGame = async function (): Promise<boolean> {
 	}
 	const match = world.getResource('match');
 	const wasPaused = match.paused;
-	cancelGesture();
+	mapInput.cancel();
 	match.paused = true;
 	try {
 		await saveCurrentProfile();
@@ -452,15 +318,6 @@ const mountPlanets = function (): void {
 		)
 			throw new Error('Planet template incomplete');
 		name.textContent = p.name;
-		button.addEventListener('pointerdown', function (event) {
-			if (event.pointerType === 'mouse' && event.button === 2) {
-				event.preventDefault();
-				sendToPlanet(id);
-			}
-		});
-		button.addEventListener('click', function () {
-			selectPlanet(id);
-		});
 		planetLayer.append(button);
 		views.set(id, { button, count, orbit, mark, progress });
 	}
@@ -659,136 +516,6 @@ const drawer = createOrdersDrawer(
 	},
 );
 
-const draw = function (): void {
-	const { width, height } = activeMap;
-	const dpr = Math.min((devicePixelRatio || 1) * Math.max(1, camera.scale), 3);
-	if (
-		canvas.width !== Math.round(width * dpr) ||
-		canvas.height !== Math.round(height * dpr)
-	) {
-		canvas.width = Math.round(width * dpr);
-		canvas.height = Math.round(height * dpr);
-	}
-	ctx.setTransform(canvas.width / width, 0, 0, canvas.height / height, 0, 0);
-	ctx.clearRect(0, 0, width, height);
-	for (let i = 0; i < 460; i++) {
-		ctx.fillStyle = i % 4 === 0 ? '#738ea45c' : '#42627b55';
-		ctx.fillRect(
-			(i * 137.57) % width,
-			(i * 83.37) % height,
-			i % 5 === 0 ? 1.8 : 1,
-			i % 5 === 0 ? 1.8 : 1,
-		);
-	}
-	const match = world.getResource('match');
-	const zoom = camera.scale / fitScale;
-	const all = planets(world);
-	for (const {
-		id,
-		components: { planet: p },
-	} of all) {
-		ctx.strokeStyle = '#4d739517';
-		ctx.lineWidth = 1;
-		ctx.beginPath();
-		ctx.arc(p.x, p.y, p.radius + 20, 0, Math.PI * 2);
-		ctx.stroke();
-		const blue = shipsAt(world, id, 'blue').length;
-		const red = shipsAt(world, id, 'red').length;
-		if ((blue > 0 && p.owner !== 'blue') || (red > 0 && p.owner !== 'red')) {
-			ctx.strokeStyle =
-				blue > 0 && p.owner !== 'blue' ? COLORS.blue : COLORS.red;
-			ctx.lineWidth = isBlockaded(world, id) ? 2 : 1;
-			ctx.setLineDash(isBlockaded(world, id) ? [6, 6] : []);
-			ctx.lineDashOffset = -match.time * 10;
-			ctx.beginPath();
-			ctx.arc(p.x, p.y, p.radius + 17, 0, Math.PI * 2);
-			ctx.stroke();
-			ctx.setLineDash([]);
-		}
-		const hasBlue = blue > 0 || (p.owner === 'blue' && p.guns > 0);
-		const hasRed = red > 0 || (p.owner === 'red' && p.guns > 0);
-		if (hasBlue && hasRed) {
-			const angle = match.time * 4;
-			ctx.strokeStyle = '#ffe3a9';
-			ctx.lineWidth = 1.7;
-			ctx.beginPath();
-			ctx.moveTo(
-				p.x + Math.cos(angle) * (p.radius + 19),
-				p.y + Math.sin(angle) * (p.radius + 19),
-			);
-			ctx.lineTo(
-				p.x - Math.cos(angle) * (p.radius + 19),
-				p.y - Math.sin(angle) * (p.radius + 19),
-			);
-			ctx.stroke();
-		}
-	}
-	const highlighted = drawer.highlighted();
-	if (highlighted) {
-		ctx.save();
-		ctx.strokeStyle = COLORS.blue;
-		ctx.lineWidth = 2 / camera.scale;
-		ctx.setLineDash(
-			highlighted.state === 'pending'
-				? [8 / camera.scale, 5 / camera.scale]
-				: [],
-		);
-		for (const entity of orderUnits(world, highlighted)) {
-			const u = entity.components.unit;
-			const target = world.getComponent(u.target, 'planet');
-			if (!target) continue;
-			const point = unitPoint(u, target, match.time, entity.id);
-			ctx.beginPath();
-			ctx.moveTo(point.x, point.y);
-			ctx.lineTo(target.x, target.y);
-			ctx.stroke();
-		}
-		ctx.restore();
-	}
-
-	for (const {
-		id,
-		components: { unit: u },
-	} of units(world)) {
-		if (u.hp <= 0) continue;
-		const p = world.getComponent(u.target, 'planet');
-		if (!p) continue;
-		const { x, y, angle } = unitPoint(u, p, match.time, id);
-		if (u.phase === 'travel') {
-			ctx.strokeStyle = `${COLORS[u.owner]}22`;
-			ctx.lineWidth = 1;
-			ctx.beginPath();
-			ctx.moveTo(x, y);
-			ctx.lineTo(p.x, p.y);
-			ctx.stroke();
-		}
-		ctx.save();
-		ctx.translate(x, y);
-		ctx.rotate(angle);
-		if (u.kind === 'ship') {
-			drawWarship(u.owner, zoom);
-		} else {
-			drawTroopTransport(u.owner, u.cargo, zoom, camera.scale, angle);
-		}
-		ctx.restore();
-	}
-	for (const shot of match.engagements) {
-		ctx.save();
-		ctx.strokeStyle = COLORS[shot.owner];
-		ctx.lineCap = 'round';
-		ctx.globalAlpha = 0.35;
-		ctx.lineWidth = 6;
-		ctx.beginPath();
-		ctx.moveTo(shot.x1, shot.y1);
-		ctx.lineTo(shot.x2, shot.y2);
-		ctx.stroke();
-		ctx.globalAlpha = 0.95;
-		ctx.lineWidth = 2;
-		ctx.stroke();
-		ctx.restore();
-	}
-};
-
 // The simulation and both render layers share one world-space transform.
 let camera: Camera = { x: 0, y: 0, scale: 1 };
 let fitScale = 1;
@@ -819,162 +546,38 @@ const zoomAt = function (anchor: Point, factor: number): void {
 	camera = zoomCamera(camera, anchor, factor, fitScale * 0.5, fitScale * 5);
 	applyCamera();
 };
-const localPoint = function (event: PointerEvent): Point {
-	const rect = board.getBoundingClientRect();
-	return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-};
-const pointers = new Map<number, Point>();
-let gestureMoved = false;
-let holdHandled = false;
-let holdTimer: ReturnType<typeof setTimeout> | undefined;
-const cancelHold = function (): void {
-	clearTimeout(holdTimer);
-	holdTimer = undefined;
-};
-let gestureStart: Point | undefined;
-const midpoint = function (a: Point, b: Point): Point {
-	return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-};
-board.addEventListener('pointerdown', function (event) {
-	if (event.button !== 0) return;
-	if (pointers.size === 0) {
-		gestureMoved = false;
-		holdHandled = false;
-		gestureStart = localPoint(event);
-	}
-	pointers.set(event.pointerId, localPoint(event));
-	if (pointers.size > 1) {
-		gestureMoved = true;
-		cancelHold();
-	} else if (event.pointerType === 'touch' || event.pointerType === 'pen') {
-		const target =
-			event.target instanceof Element
-				? event.target.closest('button.planet')
-				: null;
-		const id = [...views].find(function ([, view]) {
-			return view.button === target;
+const mapInput = createMapInput({
+	board,
+	events: window,
+	getPlanetId: function (target): number | undefined {
+		const button =
+			target instanceof Element ? target.closest('button.planet') : null;
+		return [...views].find(function ([, view]) {
+			return view.button === button;
 		})?.[0];
-		if (id !== undefined) {
-			holdTimer = setTimeout(function () {
-				holdTimer = undefined;
-				holdHandled = true;
-				sendToPlanet(id);
-			}, 500);
-		}
-	}
-});
-board.addEventListener('pointermove', function (event) {
-	const previous = pointers.get(event.pointerId);
-	if (!previous) return;
-	const current = localPoint(event);
-	if (
-		gestureStart &&
-		Math.hypot(current.x - gestureStart.x, current.y - gestureStart.y) > 6
-	)
-		gestureMoved = true;
-	if (gestureMoved) {
-		cancelHold();
-		board.setPointerCapture(event.pointerId);
-		const other = [...pointers.entries()].find(function ([id]) {
-			return id !== event.pointerId;
-		})?.[1];
-		if (other) {
-			const before = midpoint(previous, other);
-			const after = midpoint(current, other);
-			const distance = Math.hypot(previous.x - other.x, previous.y - other.y);
-			if (distance > 0)
-				zoomAt(
-					before,
-					Math.hypot(current.x - other.x, current.y - other.y) / distance,
-				);
-			camera = {
-				...camera,
-				x: camera.x + after.x - before.x,
-				y: camera.y + after.y - before.y,
-			};
-		} else
-			camera = {
-				...camera,
-				x: camera.x + current.x - previous.x,
-				y: camera.y + current.y - previous.y,
-			};
+	},
+	selectPlanet,
+	dispatchPlanet: sendToPlanet,
+	panBy: function (delta): void {
+		camera = { ...camera, x: camera.x + delta.x, y: camera.y + delta.y };
 		applyCamera();
-		board.classList.add('dragging');
-	}
-	pointers.set(event.pointerId, current);
-});
-const endPointer = function (event: PointerEvent): void {
-	if (!pointers.has(event.pointerId)) return;
-	cancelHold();
-	if (event.type !== 'pointerup') gestureMoved = true;
-	pointers.delete(event.pointerId);
-	if (pointers.size === 0) board.classList.remove('dragging');
-};
-window.addEventListener('pointerup', endPointer);
-window.addEventListener('pointercancel', endPointer);
-board.addEventListener('lostpointercapture', function (event) {
-	if (event.target === board && !board.hasPointerCapture(event.pointerId))
-		endPointer(event);
-});
-board.addEventListener(
-	'click',
-	function (event) {
-		if ((gestureMoved || holdHandled) && event.detail !== 0) {
-			event.stopImmediatePropagation();
-			event.preventDefault();
-		}
 	},
-	true,
-);
-board.addEventListener('contextmenu', function (event) {
-	event.preventDefault();
+	zoomAt,
 });
-const cancelGesture = function (): void {
-	cancelHold();
-	pointers.clear();
-	gestureMoved = true;
-	board.classList.remove('dragging');
-};
-window.addEventListener('blur', cancelGesture);
-board.addEventListener(
-	'wheel',
-	function (event) {
-		event.preventDefault();
-		const multiplier =
-			event.deltaMode === 1
-				? 16
-				: event.deltaMode === 2
-					? board.clientHeight
-					: 1;
-		if (event.deltaY !== 0) {
-			const rect = board.getBoundingClientRect();
-			const sensitivity = event.ctrlKey || event.metaKey ? 0.01 : 0.002;
-			zoomAt(
-				{ x: event.clientX - rect.left, y: event.clientY - rect.top },
-				Math.exp(-event.deltaY * multiplier * sensitivity),
-			);
-		} else {
-			camera = {
-				...camera,
-				x: camera.x - event.deltaX * multiplier,
-			};
-			applyCamera();
-		}
+const renderer = createCanvasRenderer({
+	canvas,
+	getPixelRatio: function (): number {
+		return devicePixelRatio;
 	},
-	{ passive: false },
-);
-board.addEventListener('keydown', function (event) {
-	const deltas: Record<string, Point> = {
-		ArrowLeft: { x: 50, y: 0 },
-		ArrowRight: { x: -50, y: 0 },
-		ArrowUp: { x: 0, y: 50 },
-		ArrowDown: { x: 0, y: -50 },
-	};
-	const delta = deltas[event.key];
-	if (!delta) return;
-	event.preventDefault();
-	camera = { ...camera, x: camera.x + delta.x, y: camera.y + delta.y };
-	applyCamera();
+	getState: function () {
+		return {
+			world,
+			map: activeMap,
+			camera,
+			fitScale,
+			highlighted: drawer.highlighted(),
+		};
+	},
 });
 const resizeObserver = new ResizeObserver(fitMap);
 resizeObserver.observe(board);
@@ -1024,6 +627,44 @@ fullscreen.addEventListener('click', async function () {
 document.addEventListener('fullscreenchange', syncFullscreen);
 syncFullscreen();
 
+const installGame = async function (
+	installation: GameInstallation,
+): Promise<void> {
+	if (disposed) {
+		await installation.game.dispose();
+		return;
+	}
+	mapInput.cancel();
+	const previousWorld = world;
+	world = installation.game;
+	try {
+		world.getResource('match').paused = installation.paused;
+		activeProfileId = installation.profileId;
+		activeMap = installation.map;
+		mapWorld.style.width = `${activeMap.width}px`;
+		mapWorld.style.height = `${activeMap.height}px`;
+		hiddenPause = installation.hiddenPause;
+		hasActiveConquest = true;
+		scenario = installation.scenario;
+		speed = installation.pace;
+		speedSelect.value = String(speed);
+		scenarioSelect.value = activeMap === LAB_MAP ? scenario : 'generated';
+		selected = [];
+		inspected = undefined;
+		multi = false;
+		drawer.reset();
+		noticeUntil = 0;
+		lastNoticeKey = '';
+		fitMap();
+		mountPlanets();
+		refresh();
+		updateSaveStatus(savedStatus(installation.savedAt));
+		saveGameButton.disabled = false;
+	} finally {
+		await previousWorld.dispose();
+	}
+};
+
 const restart = async function (
 	next: Scenario = scenario,
 	map: StarMap = activeMap,
@@ -1036,9 +677,8 @@ const restart = async function (
 		window.clearTimeout(queuedAutosave);
 		queuedAutosave = undefined;
 	}
-	cancelGesture();
+	mapInput.cancel();
 	let replacement: Game | undefined;
-	let installed = false;
 	try {
 		if (hasActiveConquest && !replacementConfirmed) {
 			if (!profileRepository || activeProfileId === null)
@@ -1059,14 +699,15 @@ const restart = async function (
 		}
 		replacement = await createGame(next, map);
 		replacement.getResource('match').paused = document.hidden;
-		if (!profileRepository || activeProfileId === null)
+		const profileId = activeProfileId;
+		if (!profileRepository || profileId === null)
 			throw new Error('Local profile storage is unavailable. The previous conquest was kept.');
 		const nextSave = captureConquestSave(
 			replacement,
 			map,
 			next,
 			speed,
-			activeProfileId,
+			profileId,
 		);
 		try {
 			await profileRepository.saveProfile(nextSave);
@@ -1078,34 +719,20 @@ const restart = async function (
 				{ cause: error },
 			);
 		}
-		if (disposed) {
-			await replacement.dispose();
-			return;
-		}
-		const previousWorld = world;
-		world = replacement;
-		installed = true;
-		activeMap = map;
-		mapWorld.style.width = `${map.width}px`;
-		mapWorld.style.height = `${map.height}px`;
-		hiddenPause = document.hidden;
-		hasActiveConquest = true;
-		scenario = next;
-		scenarioSelect.value = map === LAB_MAP ? next : 'generated';
-		selected = [];
-		inspected = undefined;
-		multi = false;
-		drawer.reset();
-		noticeUntil = 0;
-		lastNoticeKey = '';
-		fitMap();
-		mountPlanets();
-		refresh();
-		updateSaveStatus(savedStatus(nextSave.savedAt));
-		saveGameButton.disabled = false;
-		await previousWorld.dispose();
+		const gameToInstall = replacement;
+		replacement = undefined;
+		await installGame({
+			game: gameToInstall,
+			map,
+			scenario: next,
+			profileId,
+			pace: speed,
+			paused: document.hidden,
+			hiddenPause: document.hidden,
+			savedAt: nextSave.savedAt,
+		});
 	} catch (error) {
-		if (replacement && !installed) await replacement.dispose();
+		if (replacement) await replacement.dispose();
 		throw error;
 	} finally {
 		busy = false;
@@ -1184,7 +811,7 @@ const frame = function (now: number): void {
 	if (!busy && frontMenu.getCurrentScreen() === 'playing') {
 		// Keep rendering and command input live while simulation time is frozen.
 		if (!world.getResource('match').paused) world.update(dt * speed);
-		draw();
+		renderer.draw();
 		if (now - lastRefresh > 100) {
 			refresh();
 			lastRefresh = now;
@@ -1199,7 +826,6 @@ const continueProfile = async function (profileId: string): Promise<void> {
 	const save = await profileRepository.loadSave(profileId);
 	if (!save) throw new Error('This profile has no saved conquest to continue.');
 	let replacement: Game | undefined;
-	let installed = false;
 	try {
 		replacement = await createGame(
 			save.game.scenario,
@@ -1207,39 +833,23 @@ const continueProfile = async function (profileId: string): Promise<void> {
 			save.game,
 		);
 		replacement.getResource('match').paused = true;
-		if (disposed) {
-			await replacement.dispose();
-			return;
-		}
-		const previousWorld = world;
-		world = replacement;
-		installed = true;
-		activeProfileId = profileId;
-		hasActiveConquest = true;
-		activeMap = sameMap(save.game.map, LAB_MAP)
+		const restoredMap = sameMap(save.game.map, LAB_MAP)
 			? LAB_MAP
 			: structuredClone(save.game.map);
-		mapWorld.style.width = `${activeMap.width}px`;
-		mapWorld.style.height = `${activeMap.height}px`;
-		scenario = save.game.scenario;
-		speed = save.game.pace;
-		speedSelect.value = String(speed);
-		scenarioSelect.value = activeMap === LAB_MAP ? scenario : 'generated';
-		hiddenPause = false;
-		selected = [];
-		inspected = undefined;
-		multi = false;
-		drawer.reset();
-		noticeUntil = 0;
-		lastNoticeKey = '';
-		fitMap();
-		mountPlanets();
-		refresh();
-		updateSaveStatus(savedStatus(save.savedAt));
-		saveGameButton.disabled = false;
-		await previousWorld.dispose();
+		const gameToInstall = replacement;
+		replacement = undefined;
+		await installGame({
+			game: gameToInstall,
+			map: restoredMap,
+			scenario: save.game.scenario,
+			profileId,
+			pace: save.game.pace,
+			paused: true,
+			hiddenPause: false,
+			savedAt: save.savedAt,
+		});
 	} catch (error) {
-		if (replacement && !installed) await replacement.dispose();
+		if (replacement) await replacement.dispose();
 		throw error;
 	}
 };
@@ -1262,7 +872,7 @@ const frontMenu = await createFrontMenu({
 		saveGameButton.disabled = true;
 	},
 	onMenu: function () {
-		cancelGesture();
+		mapInput.cancel();
 		world.getResource('match').paused = true;
 		hiddenPause = false;
 	},
@@ -1302,7 +912,7 @@ element('setup-game', HTMLButtonElement).addEventListener('click', async functio
 document.addEventListener('visibilitychange', function () {
 	if (frontMenu.getCurrentScreen() !== 'playing') return;
 	if (document.hidden) {
-		cancelGesture();
+		mapInput.cancel();
 		hiddenPause = !world.getResource('match').paused;
 		world.getResource('match').paused = true;
 	} else if (hiddenPause) {
@@ -1332,7 +942,8 @@ raf = requestAnimationFrame(frame);
 window.addEventListener('pagehide', function (event) {
 	if (event.persisted) return;
 	disposed = true;
-	cancelGesture();
+	mapInput.dispose();
+	renderer.dispose();
 	cancelAnimationFrame(raf);
 	if (autosaveTimer !== undefined) window.clearInterval(autosaveTimer);
 	if (queuedAutosave !== undefined) window.clearTimeout(queuedAutosave);
