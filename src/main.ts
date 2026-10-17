@@ -29,6 +29,7 @@ const mapWorld = element('map-world', HTMLDivElement);
 mapWorld.style.width = `${MAP.width}px`;
 mapWorld.style.height = `${MAP.height}px`;
 const planetPanel = element('planet-panel', HTMLElement);
+const productionControls = element('production-controls', HTMLDivElement);
 const dispatchControls = element('dispatch-controls', HTMLDivElement);
 const dispatchFilterControls = element(
 	'dispatch-filter-controls',
@@ -393,6 +394,7 @@ const refresh = function (): void {
 		const p = world.getComponent(id, 'planet');
 		return p?.owner === 'blue' ? [p] : [];
 	});
+	productionControls.hidden = ownedSelected.length === 0;
 	const shipsOnly = selected.length > 0 && ownedSelected.length === 0;
 	dispatchFilterControls.hidden = shipsOnly;
 	dispatchInfo.textContent = shipsOnly
@@ -476,7 +478,7 @@ const refresh = function (): void {
 		(performance.now() < noticeUntil
 			? orderMessage
 			: match.paused && !welcome.open
-				? 'Paused · issue orders and change production · resume to continue'
+				? 'Paused · commands remain available'
 				: '');
 	banner.style.display = banner.textContent ? 'block' : 'none';
 	const key = match.notices
@@ -517,7 +519,7 @@ const drawer = createOrdersDrawer(
 	function () {
 		fieldGuide.hidden = true;
 		settings.setAttribute('aria-expanded', 'false');
-		settings.setAttribute('aria-label', 'Open field guide');
+		settings.setAttribute('aria-label', 'Open game menu');
 	},
 	function (message) {
 		feedback(message);
@@ -848,9 +850,10 @@ const toggleGuide = function (): void {
 	settings.setAttribute('aria-expanded', String(!fieldGuide.hidden));
 	settings.setAttribute(
 		'aria-label',
-		fieldGuide.hidden ? 'Open field guide' : 'Close field guide',
+		fieldGuide.hidden ? 'Open game menu' : 'Close game menu',
 	);
 	if (fieldGuide.hidden) settings.focus();
+	else element('close-guide', HTMLButtonElement).focus();
 };
 settings.addEventListener('click', toggleGuide);
 element('close-guide', HTMLButtonElement).addEventListener(
@@ -864,7 +867,7 @@ const syncFullscreen = function (): void {
 	const label = active ? 'Exit fullscreen' : 'Enter fullscreen';
 	fullscreen.setAttribute('aria-pressed', String(active));
 	fullscreen.setAttribute('aria-label', label);
-	fullscreen.textContent = active ? '⊡' : '⛶';
+	fullscreen.textContent = active ? 'Exit fullscreen' : 'Fullscreen';
 	fullscreen.disabled = !document.fullscreenEnabled;
 	fullscreen.title = document.fullscreenEnabled
 		? label
