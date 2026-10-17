@@ -15,6 +15,18 @@ export const canvasViewport = function (camera: Camera, width: number, height: n
 		width: width / camera.scale, height: height / camera.scale };
 };
 
+// Allocate only the map/viewport intersection, rounded outward to device-neutral
+// CSS pixels. Keep DPR unchanged; the existing clip removes the fractional rim.
+export const visibleMapViewport = function (camera: Camera, width: number, height: number, mapWidth: number, mapHeight: number): {
+	x: number; y: number; width: number; height: number;
+} {
+	const x = Math.floor(Math.max(0, Math.min(width, camera.x)));
+	const y = Math.floor(Math.max(0, Math.min(height, camera.y)));
+	const right = Math.ceil(Math.max(0, Math.min(width, camera.x + mapWidth * camera.scale)));
+	const bottom = Math.ceil(Math.max(0, Math.min(height, camera.y + mapHeight * camera.scale)));
+	return { x, y, width: Math.max(1, right - x), height: Math.max(1, bottom - y) };
+};
+
 export const dashedLine = function (
 	from: Point,
 	to: Point,

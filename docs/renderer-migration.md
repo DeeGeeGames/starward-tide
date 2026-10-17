@@ -6,7 +6,7 @@ The original hull paths, owner palettes, and detail thresholds are preserved in 
 
 The existing RAF in `main.ts` is the only loop owner. `startLoop: false`, `autoStart: false`, and a private, stopped Pixi ticker prevent a second simulation or render loop. Each draw synchronizes the presentation world with `unitPoint()`, runs transform propagation with `presentation.update(0)`, and calls `app.render()`. Rendering and camera controls continue while gameplay is paused. Pixi pointer processing is disabled; DOM planet buttons and the existing map input still own selection, pan, pinch, zoom, and dispatch.
 
-The single backing canvas is viewport-sized at the device pixel ratio (capped at 3), rather than rasterizing the whole map at every zoom. Its CSS box cancels the enclosing DOM map transform, while the Pixi root applies the same camera in logical coordinates. CSS clipping preserves the old logical map boundary without a GPU stencil pass. Planets and HUD remain DOM overlays. Regression checks cover viewport alignment, map-edge clipping, detail thresholds, and dashed routes with offscreen endpoints.
+The single backing canvas covers the visible map/viewport intersection at the device pixel ratio (capped at 3), rather than allocating transparent viewport margins or rasterizing the whole map at every zoom. Its bounds round outward to CSS pixels; the existing clip trims fractional map edges, and an entirely offscreen map uses a clipped 1×1 surface. Its CSS box cancels the enclosing DOM map transform, while the Pixi root applies the same camera in logical coordinates. CSS clipping preserves the old logical map boundary without a GPU stencil pass. Planets and HUD remain DOM overlays. Regression checks cover viewport alignment, map-edge clipping, detail thresholds, and dashed routes with offscreen endpoints.
 
 No render spatial index is introduced. The existing combat index excludes orbiting ships and remains unchanged. Pixi clips rasterization to the viewport, but CPU synchronization still processes every unit. Issue #43's candidate-query work is still separate; this migration neither implements it nor maintains a competing render index.
 
@@ -16,7 +16,7 @@ Ownership: the adapter owns one Application, its presentation world, Graphics, s
 
 See `performance/renderer/` for identical paused mixed-fleet saves before and after migration at distant (0.5× fit), normal (fit), and close (5× fit) zoom, desktop 1280×800 and mobile-layout 390×844, DPR 2. The visual fixture is recorded alongside those screenshots. It includes both owners, both silhouettes, orbital ships, travelers, and cargo. Additional screenshots cover mobile pending-order highlighting and resumed combat. These are Chromium automation with a desktop user agent, not physical phone/touch testing or owner acceptance.
 
-The renderer migration remains open for owner presentation/feel acceptance. The original SwiftShader comparison below regressed; a subsequent revision and repeated assessment are recorded at the end. No physical-GPU speedup or resolution of late-game hitches is claimed.
+Canvas performance parity is the minimum acceptance criterion; a speedup is optional because standardizing fleet presentation on ECSpresso/PixiJS also provides value. The original SwiftShader comparison below regressed; subsequent revisions and repeated assessments are recorded chronologically below. No physical-GPU speedup or resolution of late-game simulation/autosave hitches is claimed.
 
 ## Initial crowded production comparison (before revision)
 
@@ -65,3 +65,22 @@ The revised median interval is 17–33% lower than initial Pixi. It matches Canv
 Current visual evidence: [distant](performance/renderer/revised-distant.png), [normal](performance/renderer/revised-normal.png), [close](performance/renderer/revised-close.png), [mobile close](performance/renderer/revised-mobile.png), and [mobile resumed combat](performance/renderer/revised-combat-mobile.png). Earlier `after-*` screenshots describe the initial version. The current close captures include the paused-container repair.
 
 Lifecycle checks on the revision: arrival of a warship and transport removed both route sprites, retained the orbiting warship, and removed the landed transport (ships 3→2, routes 2→0, presentation entities 7→6). Repeated crowded baseline replacement retained 1,500 ship views, 300 route sprites, four shared textures, 1,504 presentation entities, the same canvas/context and a stopped ticker. Page disposal released that context (`isContextLost() === true`) and removed diagnostics. `bun run check` passed lint, all 63 tests, typechecking and production build after the paused-container repair.
+
+## Final cleanup and accepted parity result
+
+Final cleanup limits the backing canvas to the visible map/viewport intersection. At the crowded desktop fit view, this is 532×585 CSS pixels at unchanged DPR 2, instead of 1280×800. The backing color image falls from about 16.4 MB to 5.0 MB RGBA (excluding other surfaces and driver allocations). Camera translation is adjusted by the surface origin, with the existing clip preserving fractional map edges. This avoids transparent margins without reducing resolution or adding unit culling. Geometry tests cover fit, partial pan, viewport coverage and a completely offscreen map.
+
+The [four complete cleanup captures](performance/renderer/parity.json) compare the final implementation with Canvas on current main `8a99247`, which adds the fullscreen icons. The method remains one serial tab, 1280×800/DPR 2, Chromium/SwiftShader, the same #42 1,500-unit fit fixture, one-second warmup, 31-second capture, two autosaves each, no interactions. Run order is Pixi / Canvas / Pixi / Canvas.
+
+| Build / repeat | RAF p50 / p95 / p99 / max, ms | Draw p50 / p95, ms | RAF intervals |
+| --- | --- | --- | --- |
+| Final Pixi 1 | 50.0 / 66.7 / 66.8 / 66.8 | 2.6 / 4.0 | 555 |
+| Canvas 1 | 66.7 / 83.4 / 83.4 / 83.5 | 2.0 / 2.5 | 456 |
+| Final Pixi 2 | 66.7 / 83.4 / 100.1 / 100.1 | 3.4 / 5.1 | 457 |
+| Canvas 2 | 66.7 / 83.4 / 83.4 / 83.4 | 2.0 / 2.5 | 452 |
+
+Median and p95 match or improve Canvas in both pairs. The second Pixi p99 remains one refresh interval worse. The owner explicitly accepted this tail difference and authorized merge after checks on 2026-10-17; exact p99 equality is not a remaining gate. Standardizing rendering provides value without requiring a speedup. No hardware-GPU or physical-phone performance is claimed, and simulation/autosave costs remain separately recorded.
+
+Additional [exploratory batching and atlas trials](performance/renderer/cleanup-experiments.json) did not establish a repeatable improvement and were removed. All completed trial reports are retained; the final atlas Canvas repeat did not start because the temporary origin reached its profile limit, so it has no measurement. No experimental batching or atlas code remains.
+
+Final crop evidence: [normal](performance/renderer/cleanup-normal.png), [distant](performance/renderer/cleanup-distant.png), [close](performance/renderer/cleanup-close.png), [mobile close](performance/renderer/cleanup-mobile.png). Staged paused zoom preserves upright cargo labels and aligned DOM planets; selection, keyboard pan and resize were exercised. World replacement reused the same canvas/context and resized back to the fit map bounds; disposal released the context. `bun run check` passes lint, 64 tests, strict typechecking and production build. Current main's fullscreen changes are included.

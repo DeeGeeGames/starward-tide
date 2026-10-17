@@ -7,7 +7,7 @@ import type { StarMap } from './maps';
 import { isBlockaded, planets, shipsAt, orderUnits, unitPoint, units } from './game';
 import type { Game, Order } from './game';
 import { createShipPainter } from './ship-art';
-import { canvasViewport, mapClipInsets, dashedLine, shipDetailZoom } from './render-geometry';
+import { canvasViewport, visibleMapViewport, mapClipInsets, dashedLine, shipDetailZoom } from './render-geometry';
 
 interface RendererState {
 	world: Game;
@@ -151,18 +151,20 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 		if (world !== currentWorld) { clearFleet(); currentWorld = world; }
 		const viewport = dependencies.getViewport();
 		if (viewport.width <= 0 || viewport.height <= 0) return;
+		const frame = visibleMapViewport(camera, viewport.width, viewport.height, map.width, map.height);
+		const frameCamera = { ...camera, x: camera.x - frame.x, y: camera.y - frame.y };
 		const resolution = Math.min(dependencies.getPixelRatio() || 1, 3);
-		if (app.screen.width !== viewport.width || app.screen.height !== viewport.height || app.renderer.resolution !== resolution) {
-			app.renderer.resize(viewport.width, viewport.height, resolution);
+		if (app.screen.width !== frame.width || app.screen.height !== frame.height || app.renderer.resolution !== resolution) {
+			app.renderer.resize(frame.width, frame.height, resolution);
 		}
-		const box = canvasViewport(camera, viewport.width, viewport.height);
+		const box = canvasViewport(frameCamera, frame.width, frame.height);
 		const style = dependencies.canvas.style;
 		style.left = `${box.left}px`; style.top = `${box.top}px`;
 		style.width = `${box.width}px`; style.height = `${box.height}px`;
 		// Preserve the old map-canvas clip without a full-frame GPU stencil pass.
-		const clip = mapClipInsets(camera, viewport.width, viewport.height, map.width, map.height);
+		const clip = mapClipInsets(frameCamera, frame.width, frame.height, map.width, map.height);
 		style.clipPath = `inset(${clip.top}px ${clip.right}px ${clip.bottom}px ${clip.left}px)`;
-		root.position.set(camera.x, camera.y);
+		root.position.set(frameCamera.x, frameCamera.y);
 		root.scale.set(camera.scale);
 		if (map !== currentMap) {
 			background.clear();
