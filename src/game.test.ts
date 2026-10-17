@@ -14,6 +14,7 @@ import {
 	units,
 } from './game';
 import { CONFIG } from './config';
+import { LAB_MAP, generateMap } from './maps';
 import type { Side } from './config';
 import type { Game, Unit } from './game';
 
@@ -106,6 +107,161 @@ const named = function (
 	if (!found) throw new Error(`Missing ${name}`);
 	return found;
 };
+
+test('generated maps seed their exact planets and starting fleets', async function () {
+	const map = generateMap('small', 301);
+	const world = await createGame('skirmish', map);
+	try {
+		expect(
+			planets(world).map(function (entity) {
+				return entity.components.planet;
+			}),
+		).toEqual(
+			map.planets.map(function (
+				[name, x, y, radius, owner, troops, rate],
+			) {
+				return {
+					name,
+					x,
+					y,
+					radius,
+					owner,
+					troops,
+					rate,
+					guns: 0,
+					production: 'troops',
+					progress: 0,
+				};
+			}),
+		);
+		for (const { id, components: { planet } } of planets(world)) {
+			const expectedShips = planet.owner === 'neutral' ? 0 : 3;
+			const blueShips = shipsAt(world, id, 'blue');
+			const redShips = shipsAt(world, id, 'red');
+			expect(blueShips.length).toBe(planet.owner === 'blue' ? expectedShips : 0);
+			expect(redShips.length).toBe(planet.owner === 'red' ? expectedShips : 0);
+			for (const { components: { unit } } of [...blueShips, ...redShips]) {
+				expect(unit).toMatchObject({
+					kind: 'ship',
+					phase: 'orbit',
+					hp: CONFIG.shipHealth,
+					cargo: 0,
+					x: planet.x,
+					y: planet.y,
+				});
+			}
+		}
+		expect(world.getResource('match')).toMatchObject({
+			ai: true,
+			aiClock: 0,
+			notices: [],
+		});
+	} finally {
+		await world.dispose();
+	}
+});
+
+test('blockade lab scenario preserves its planet overrides, units, AI flag, and notice', async function () {
+	const world = await createGame('blockade', LAB_MAP);
+	try {
+		const sol = named(world, 'Sol');
+		expect(sol.components.planet).toMatchObject({
+			owner: 'red',
+			troops: 18,
+			guns: 0,
+			production: 'troops',
+		});
+		expect(shipsAt(world, sol.id, 'blue')).toHaveLength(4);
+		expect(shipsAt(world, sol.id, 'red')).toHaveLength(0);
+		expect(shipsAt(world, named(world, 'Terra').id, 'blue')).toHaveLength(3);
+		expect(shipsAt(world, named(world, 'Vega').id, 'red')).toHaveLength(3);
+		expect(world.getResource('match')).toMatchObject({
+			ai: false,
+			notices: [
+				{
+					text: 'Sol: your ships hold orbit; land troops to take the surface',
+					time: 0,
+					side: 'blue',
+				},
+			],
+		});
+	} finally {
+		await world.dispose();
+	}
+});
+
+test('invasion lab scenario preserves its defenses, escorts, AI flag, and notice', async function () {
+	const world = await createGame('invasion', LAB_MAP);
+	try {
+		const sol = named(world, 'Sol');
+		const terra = named(world, 'Terra');
+		expect(sol.components.planet).toMatchObject({
+			owner: 'red',
+			troops: 18,
+			guns: 2,
+			production: 'troops',
+		});
+		expect(shipsAt(world, sol.id, 'red')).toHaveLength(1);
+		expect(shipsAt(world, sol.id, 'blue')).toHaveLength(0);
+		expect(shipsAt(world, terra.id, 'blue')).toHaveLength(8);
+		expect(shipsAt(world, named(world, 'Vega').id, 'red')).toHaveLength(3);
+		expect(world.getResource('match')).toMatchObject({
+			ai: false,
+			notices: [
+				{
+					text: 'Sol is defended: compare troops alone with an escorted invasion',
+					time: 0,
+					side: 'neutral',
+				},
+			],
+		});
+	} finally {
+		await world.dispose();
+	}
+});
+
+test('AI selects its lowest scoring target and dispatches at its configured interval', async function () {
+	const map = {
+		width: 300,
+		height: 200,
+		planets: [
+			['Red', 25, 100, 20, 'red', 40, 0],
+			['Neutral', 60, 100, 20, 'neutral', 5, 0],
+			['Distant', 140, 100, 20, 'neutral', 8, 0],
+			['Blue', 275, 100, 20, 'blue', 30, 0],
+		],
+	} as const;
+	const world = await createGame('skirmish', map);
+	try {
+		const source = named(world, 'Red');
+		const target = named(world, 'Neutral');
+		step(world, Math.ceil(CONFIG.aiInterval / CONFIG.step));
+		expect(source.components.planet.troops).toBe(40);
+		expect(world.getResource('match').aiClock).toBeCloseTo(
+			CONFIG.aiInterval,
+			6,
+		);
+		expect(activeOrders(world, [], 'red')).toHaveLength(0);
+
+		world.update(CONFIG.step);
+
+		expect(world.getResource('match').aiClock).toBe(0);
+		expect(source.components.planet).toMatchObject({
+			troops: 10,
+			production: 'ships',
+		});
+		expect(shipsAt(world, source.id, 'red')).toHaveLength(0);
+		expect(
+			units(world).filter(function ({ components: { unit } }) {
+				return unit.target === target.id;
+			}),
+		).toHaveLength(6);
+		expect(activeOrders(world, [], 'red')).toHaveLength(1);
+	} finally {
+		await world.dispose();
+	}
+});
+
 const step = function (world: Game, count: number): void {
 	for (let i = 0; i < count; i++) world.update(CONFIG.step);
 };
