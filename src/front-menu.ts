@@ -2,7 +2,8 @@ import ECSpresso from 'ecspresso';
 import { COLORS } from './config';
 import { generateMap, isMapSize, MAP_SIZES } from './maps';
 import type { MapSize, StarMap } from './maps';
-import { MAX_PROFILES } from './profile-storage';
+import { createProfilePicker } from './profile-picker';
+import type { ProfilePickerState } from './profile-picker';
 import type { ProfileRepository, ProfileSummary } from './profile-storage';
 
 const element = function <T extends HTMLElement>(
@@ -78,162 +79,54 @@ export const createFrontMenu = async function (options: {
 	let size: MapSize = 'medium';
 	let map = freshMap(size);
 	let starting = false;
-	let profileBusy = false;
-	let profiles = options.initialProfiles;
-	let selectedProfileId = options.initialSelectedProfileId;
-	let profileMessage = options.storageMessage ?? '';
+	let disposed = false;
 	const flow = flowBuilder.build();
-	const selectedProfile = function (): ProfileSummary | undefined {
-		return profiles.find(function (profile) {
-			return profile.id === selectedProfileId;
-		});
-	};
-	const profileErrorText = function (error: unknown): string {
-		const message = error instanceof Error ? error.message : 'Browser storage could not complete the request.';
-		return window.top !== window.self
-			? `${message} Embedded browsers may block saves; open the standalone game to use profiles.`
-			: message;
-	};
-	const reloadProfiles = async function (): Promise<void> {
-		if (!options.profiles) return;
-		profiles = await options.profiles.listProfiles();
-	};
-	const refreshProfiles = async function (): Promise<void> {
-		try {
-			await reloadProfiles();
-			profileMessage = '';
-		} catch (error) {
-			profileMessage = profileErrorText(error);
-		} finally {
-			renderProfiles();
-		}
-	};
-	const selectProfile = async function (profileId: string): Promise<void> {
-		if (!options.profiles || profileBusy || starting) return;
-		profileBusy = true;
-		profileStatus.textContent = 'Switching profile…';
-		try {
-			await options.beforeProfileChange();
-			await options.profiles.setSelectedProfileId(profileId);
-			selectedProfileId = profileId;
-			options.onProfileChange(profileId);
-			profileMessage = '';
-		} catch (error) {
-			profileMessage = profileErrorText(error);
-		} finally {
-			profileBusy = false;
-			renderProfiles();
-		}
-	};
-	const renderProfiles = function (): void {
-		profileCount.textContent = options.profiles
-			? `${profiles.length} / ${MAX_PROFILES}`
-			: 'Storage unavailable';
-		const rows = profiles.map(function (profile) {
-			const row = document.createElement('div');
-			row.className = `profile-row${profile.id === selectedProfileId ? ' current' : ''}`;
-			const info = document.createElement('div');
-			info.className = 'profile-row-name';
-			const name = document.createElement('strong');
-			name.textContent = profile.name;
-			const detail = document.createElement('small');
-			detail.textContent = profile.hasSave
-				? profile.savedAt === null
-					? 'Saved conquest · validation needed'
-					: `Saved ${new Date(profile.savedAt).toLocaleString()}`
-				: 'No saved conquest';
-			info.append(name, detail);
-			const use = document.createElement('button');
-			use.type = 'button';
-			use.textContent = profile.id === selectedProfileId ? 'Selected' : 'Use';
-			use.disabled = starting || profileBusy || profile.id === selectedProfileId;
-			use.setAttribute('aria-pressed', String(profile.id === selectedProfileId));
-			use.addEventListener('click', function () {
-				void selectProfile(profile.id);
-			});
-			const rename = document.createElement('button');
-			rename.type = 'button';
-			rename.textContent = 'Rename';
-			rename.disabled = starting || profileBusy;
-			rename.addEventListener('click', async function () {
-				if (!options.profiles || starting || profileBusy) return;
-				const name = window.prompt('Rename local profile', profile.name);
-				if (name === null) return;
-				profileBusy = true;
-				profileStatus.textContent = 'Renaming profile…';
-				try {
-					await options.profiles.renameProfile(profile.id, name);
-					await reloadProfiles();
-					profileMessage = '';
-				} catch (error) {
-					profileMessage = profileErrorText(error);
-				} finally {
-					profileBusy = false;
-					renderProfiles();
-				}
-			});
-			const remove = document.createElement('button');
-			remove.type = 'button';
-			remove.textContent = 'Delete';
-			remove.disabled = starting || profileBusy;
-			remove.addEventListener('click', async function () {
-				if (!options.profiles || starting || profileBusy) return;
-				if (
-					!window.confirm(
-						`Delete ${profile.name} and its saved conquest? This cannot be undone.`,
-					)
-				)
-					return;
-				profileBusy = true;
-				profileStatus.textContent = 'Deleting profile…';
-				try {
-					const deletingSelectedProfile = selectedProfileId === profile.id;
-					await options.profiles.deleteProfile(profile.id);
-					if (deletingSelectedProfile) {
-						selectedProfileId = null;
-						options.onProfileChange(null);
-					}
-					await reloadProfiles();
-					profileMessage = '';
-					if (deletingSelectedProfile) {
-						const nextProfileId = profiles[0]?.id ?? null;
-						try {
-							await options.profiles.setSelectedProfileId(nextProfileId);
-							selectedProfileId = nextProfileId;
-							options.onProfileChange(nextProfileId);
-						} catch (error) {
-							profileMessage = profileErrorText(error);
-						}
-					}
-				} catch (error) {
-					profileMessage = profileErrorText(error);
-				} finally {
-					profileBusy = false;
-					renderProfiles();
-				}
-			});
-			row.append(info, use, rename, remove);
-			return row;
-		});
-		profileList.replaceChildren(...rows);
-		const selected = selectedProfile();
-		continueButton.disabled =
-			!options.profiles || starting || profileBusy || !selected?.hasSave;
-		createProfileButton.disabled =
-			!options.profiles || starting || profileBusy || profiles.length >= MAX_PROFILES;
-		profileName.disabled = createProfileButton.disabled;
-		profileCreateForm.hidden = !options.profiles || profiles.length >= MAX_PROFILES;
-		newGame.disabled = !options.profiles || profileBusy || starting || !selected;
-		profileSaveTime.textContent = selected?.savedAt
-			? `Last save ${new Date(selected.savedAt).toLocaleString()}`
-			: selected?.hasSave
-				? 'Saved conquest needs validation'
-				: 'No saved conquest yet';
-		profileStatus.textContent = profileMessage;
-		start.disabled = !options.profiles || !selected || starting;
+	const renderProfileControls = function (
+		profileState: ProfilePickerState,
+	): void {
+		const selected = profileState.selectedProfile;
+		newGame.disabled =
+			!profileState.available ||
+			profileState.busy ||
+			starting ||
+			!selected;
+		start.disabled = !profileState.available || !selected || starting;
 		for (const button of sizeButtons) button.disabled = starting;
 		element('reroll', HTMLButtonElement).disabled = starting;
 		element('back', HTMLButtonElement).disabled = starting;
+	};
+	const profilePicker = createProfilePicker({
+		elements: {
+			list: profileList,
+			count: profileCount,
+			createForm: profileCreateForm,
+			nameInput: profileName,
+			createButton: createProfileButton,
+			continueButton,
+			saveTime: profileSaveTime,
+			status: profileStatus,
+		},
+		profiles: options.profiles,
+		initialProfiles: options.initialProfiles,
+		initialSelectedProfileId: options.initialSelectedProfileId,
+		storageMessage: options.storageMessage,
+		beforeProfileChange: options.beforeProfileChange,
+		onProfileChange: options.onProfileChange,
+		continueProfile: async function (profileId) {
+			await options.continue(profileId);
+			if (disposed) return;
+			await flow.setScreen('playing', {});
+		},
+		isStarting: function () {
+			return starting;
+		},
+		setStarting: function (value) {
+			starting = value;
+		},
+		onStateChange: renderProfileControls,
+	});
+	const renderProfiles = function (): void {
+		renderProfileControls(profilePicker.render());
 	};
 	const renderPreview = function (): void {
 		preview.setAttribute('viewBox', `0 0 ${map.width} ${map.height}`);
@@ -318,57 +211,9 @@ export const createFrontMenu = async function (options: {
 				})
 				?.focus();
 	};
-	profileCreateForm.addEventListener('submit', async function (event) {
-		event.preventDefault();
-		if (!options.profiles || starting || profileBusy || profiles.length >= MAX_PROFILES) return;
-		profileBusy = true;
-		profileStatus.textContent = 'Creating profile…';
-		renderProfiles();
-		let createdProfileId: string | undefined;
-		try {
-			await options.beforeProfileChange();
-			const created = await options.profiles.createProfile(profileName.value);
-			createdProfileId = created.id;
-			await options.profiles.setSelectedProfileId(created.id);
-			await reloadProfiles();
-			selectedProfileId = created.id;
-			options.onProfileChange(created.id);
-			profileName.value = 'Player';
-			profileMessage = '';
-		} catch (error) {
-			profileMessage = profileErrorText(error);
-			if (createdProfileId) {
-				try {
-					await reloadProfiles();
-				} catch (refreshError) {
-					profileMessage = `${profileMessage} ${profileErrorText(refreshError)}`;
-				}
-			}
-		} finally {
-			profileBusy = false;
-			renderProfiles();
-		}
-	});
-	continueButton.addEventListener('click', async function () {
-		const selected = selectedProfile();
-		if (!selected?.hasSave || !options.profiles || starting || profileBusy) return;
-		starting = true;
-		profileStatus.textContent = 'Validating saved conquest…';
-		renderProfiles();
-		try {
-			await options.continue(selected.id);
-			await flow.setScreen('playing', {});
-			profileMessage = '';
-		} catch (error) {
-			profileMessage = profileErrorText(error);
-		} finally {
-			starting = false;
-			renderProfiles();
-		}
-	});
 	flow.onScreenEnter('title', function () {
 		showMenu('title');
-		void refreshProfiles();
+		void profilePicker.refresh();
 	});
 	flow.onScreenEnter('setup', function () {
 		showMenu('setup');
@@ -404,14 +249,14 @@ export const createFrontMenu = async function (options: {
 		status.textContent = 'New layout generated.';
 	});
 	start.addEventListener('click', async function () {
-		const selected = selectedProfile();
+		const selected = profilePicker.getState().selectedProfile;
 		if (starting || !selected || !options.profiles) return;
 		starting = true;
 		renderProfiles();
 		status.textContent = 'Preparing your galaxy…';
 		try {
-			await reloadProfiles();
-			const currentProfile = selectedProfile();
+			await profilePicker.reload();
+			const currentProfile = profilePicker.getState().selectedProfile;
 			if (!currentProfile)
 				throw new Error('The selected profile is no longer available.');
 			if (
@@ -441,5 +286,12 @@ export const createFrontMenu = async function (options: {
 	renderPreview();
 	await flow.initialize();
 	await flow.setScreen('title', {});
+	const disposeFlow = flow.dispose.bind(flow);
+	flow.dispose = async function (): Promise<void> {
+		if (disposed) return;
+		disposed = true;
+		profilePicker.dispose();
+		await disposeFlow();
+	};
 	return flow;
 };
