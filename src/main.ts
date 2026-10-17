@@ -994,35 +994,6 @@ speedSelect.addEventListener('change', function () {
 aiInput.addEventListener('change', function () {
 	world.getResource('match').ai = aiInput.checked;
 });
-document.addEventListener('visibilitychange', function () {
-	if (frontMenu.getCurrentScreen() !== 'playing') return;
-	if (document.hidden) {
-		cancelGesture();
-		hiddenPause = !world.getResource('match').paused;
-		world.getResource('match').paused = true;
-	} else if (hiddenPause) {
-		world.getResource('match').paused = false;
-		hiddenPause = false;
-	}
-});
-window.addEventListener('keydown', function (event) {
-	if (frontMenu.getCurrentScreen() !== 'playing' || busy) return;
-	if (event.key === 'Escape') {
-		if (!ordersPanel.hidden) {
-			drawer.close();
-			return;
-		}
-		if (!fieldGuide.hidden) toggleGuide();
-		selected = [];
-		inspected = undefined;
-		multi = false;
-		refresh();
-	}
-	if (event.code === 'Space' && event.target === document.body) {
-		event.preventDefault();
-		pause.click();
-	}
-});
 let previous = performance.now();
 let lastRefresh = 0;
 const frame = function (now: number): void {
@@ -1063,6 +1034,35 @@ element('setup-game', HTMLButtonElement).addEventListener('click', function () {
 	settings.setAttribute('aria-expanded', 'false');
 	settings.setAttribute('aria-label', 'Open game menu');
 	void frontMenu.setScreen('setup', {});
+});
+document.addEventListener('visibilitychange', function () {
+	if (frontMenu.getCurrentScreen() !== 'playing') return;
+	if (document.hidden) {
+		cancelGesture();
+		hiddenPause = !world.getResource('match').paused;
+		world.getResource('match').paused = true;
+	} else if (hiddenPause) {
+		world.getResource('match').paused = false;
+		hiddenPause = false;
+	}
+});
+window.addEventListener('keydown', function (event) {
+	if (frontMenu.getCurrentScreen() !== 'playing' || busy) return;
+	if (event.key === 'Escape') {
+		if (!ordersPanel.hidden) {
+			drawer.close();
+			return;
+		}
+		if (!fieldGuide.hidden) toggleGuide();
+		selected = [];
+		inspected = undefined;
+		multi = false;
+		refresh();
+	}
+	if (event.code === 'Space' && event.target === document.body) {
+		event.preventDefault();
+		pause.click();
+	}
 });
 raf = requestAnimationFrame(frame);
 window.addEventListener('pagehide', function (event) {
