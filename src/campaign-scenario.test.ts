@@ -8,11 +8,18 @@ const finish = function (state: CampaignState): CampaignState {
 	return resolveCampaignTurn(commitFactionTurn(commitFactionTurn(state, 'blue'), 'red'), state.turn);
 };
 
-test('fixture has two owned three-planet systems and round-trips campaign validation', function () {
+test('fixture has two owned and two unclaimed three-planet systems and round-trips campaign validation', function () {
 	const state = createCampaign();
-	expect(state.systems).toHaveLength(2);
-	expect(state.planets).toHaveLength(6);
+	expect(state.systems).toHaveLength(4);
+	expect(state.planets).toHaveLength(12);
 	expect(state.planets.filter(function (planet) { return planet.factionId === 'blue'; })).toHaveLength(3);
+	expect(state.planets.filter(function (planet) { return planet.factionId === 'red'; })).toHaveLength(3);
+	expect(state.planets.filter(function (planet) { return planet.factionId === null; })).toHaveLength(6);
+	expect(state.systems.filter(function (system) { return system.id === 'deneb' || system.id === 'arcturus'; })
+		.every(function (system) { return system.map.planets.every(function (seed) { return seed[4] === 'neutral'; }); })).toBe(true);
+	expect(state.systems.map(function (system) { return [system.id, system.x, system.y]; })).toEqual([
+		['sol', 100, 100], ['sirius', 200, 100], ['deneb', 100, 200], ['arcturus', 200, 200],
+	]);
 	expect(state.planets.every(function (planet) { return planet.baselinePoints === 100; })).toBe(true);
 	const save = { schemaVersion: 1, mode: 'campaign' as const, profileId: 'p', savedAt: 100, campaign: state };
 	expect(parseCampaignSave(save)).toEqual(save);
@@ -26,6 +33,7 @@ test('rival commits half its source budget once, using stable planets without ov
 	expect(next.expeditions[0]?.id).toBe('rival:1');
 	expect(next.expeditions[0]?.points).toBe(150);
 	expect(next.expeditions[0]?.arrivalTime).toBe(1);
+	expect(next.expeditions[0]?.destinationSystemId).toBe('arcturus');
 	expect(next.expeditions[0]?.contributions).toEqual([{ planetId: 'sirius:1', points: 100 }, { planetId: 'sirius:2', points: 50 }]);
 	expect(commitCampaignRival(next)).toBe(next);
 	expect(start.planets.every(function (planet) { return planet.depletion === 0; })).toBe(true);
@@ -60,14 +68,27 @@ test('rival floors half an odd balance and can issue another order on the next c
 	}) };
 	expect(commitCampaignRival(odd).expeditions[0]?.points).toBe(149);
 	const battle = finish(commitCampaignRival(start));
-	const defenders = battle.planets.filter(function (planet) { return planet.systemId === 'sol'; });
-	const nextTurn = applyCampaignEncounterResult(battle, { encounterId: 'encounter:rival:1', captureEvents: [],
-		ownership: defenders.map(function (planet) { return { planetId: planet.id, factionId: planet.factionId }; }) });
+	expect(battle.phase).toBe('planning');
+	const reloaded = parseCampaignSave({ schemaVersion: 1, mode: 'campaign', profileId: 'claim', savedAt: 100, campaign: battle }).campaign;
+	expect(reloaded).toEqual(battle);
+	expect(resolveCampaignTurn(reloaded, 1)).toBe(reloaded);
+	const nextTurn = battle;
 	const next = commitCampaignRival(nextTurn);
 	expect(next.turn).toBe(2);
 	expect(next.expeditions.at(-1)?.id).toBe('rival:2');
-	expect(next.expeditions.at(-1)?.points).toBe(88);
+	expect(next.expeditions.at(-1)?.points).toBe(150);
 	expect(commitCampaignRival(next)).toBe(next);
+});
+
+test('rival skips unaffordable neutral colonization without increasing its half-budget', function () {
+	const initial = createCampaign();
+	const state = { ...initial, planets: initial.planets.map(function (planet) {
+		return planet.factionId === 'red' ? { ...planet, depletion: 90 } : planet;
+	}) };
+	const sent = commitCampaignRival(state);
+	expect(sent.expeditions[0]?.points).toBe(15);
+	expect(sent.expeditions[0]?.destinationSystemId).toBe('sol');
+	expect(function () { finish(sent); }).not.toThrow();
 });
 
 test('planet loss does not eliminate a faction while relief remains in flight or an encounter is active', function () {

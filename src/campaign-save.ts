@@ -133,6 +133,7 @@ export const campaignStateSchema = z.object({
 	phase: z.enum(['planning', 'resolving', 'encounter']),
 	rules: z.object({
 		travelSpeed: z.number().check(z.gt(0), z.lte(Number.MAX_SAFE_INTEGER)),
+		neutralClaimFraction: z._default(fraction, 0.1),
 		development: z.object({ growthFraction: fraction, capFraction: fraction, captureLossFraction: fraction }),
 		recovery: z.object({ fractionOfMaximum: fraction }),
 	}),

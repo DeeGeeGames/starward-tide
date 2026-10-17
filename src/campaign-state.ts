@@ -7,11 +7,13 @@ import type { DevelopmentPolicy, PlanetDevelopment } from './campaign-developmen
 
 export interface CampaignRules {
 	readonly travelSpeed: number;
+	readonly neutralClaimFraction: number;
 	readonly development: DevelopmentPolicy;
 	readonly recovery: PointRecoveryPolicy;
 }
 export const CAMPAIGN_RULES: CampaignRules = {
 	travelSpeed: 100,
+	neutralClaimFraction: 0.1,
 	development: { growthFraction: 0.02, capFraction: 0.2, captureLossFraction: 0.5 },
 	recovery: { fractionOfMaximum: 0.1 },
 };
@@ -80,6 +82,23 @@ const requireId = function (id: string): void { if (!id.trim()) throw new Error(
 const requireSide = function (side: Side): void {
 	if (side !== 'blue' && side !== 'red') throw new Error('Unknown campaign faction.');
 };
+
+/** Colonization uses whole committed points and the destination's original capacity. */
+export const neutralClaimMinimum = function (state: CampaignState, systemId: string): number {
+	const fraction = state.rules.neutralClaimFraction;
+	if (!Number.isFinite(fraction) || fraction < 0 || fraction > 1) throw new Error('Neutral claim fraction must be between zero and one.');
+	const local = state.planets.filter(function (planet) { return planet.systemId === systemId; });
+	if (!state.systems.some(function (system) { return system.id === systemId; }) || local.length === 0)
+		throw new Error('Neutral claim requires a known populated system.');
+	const baseline = local.reduce(function (total, planet) {
+		if (!Number.isFinite(planet.baselinePoints) || planet.baselinePoints < 0) throw new Error('Invalid baseline capacity.');
+		return total + planet.baselinePoints;
+	}, 0);
+	const minimum = Math.max(1, Math.ceil(baseline * fraction));
+	if (!Number.isFinite(baseline) || baseline > Number.MAX_SAFE_INTEGER || !Number.isSafeInteger(minimum))
+		throw new Error('Neutral claim capacity exceeds the safe numeric range.');
+	return minimum;
+};
 const sameOrder = function (a: ExpeditionOrder, b: ExpeditionOrder): boolean {
 	return a.factionId === b.factionId && a.sourceSystemId === b.sourceSystemId &&
 		a.destinationSystemId === b.destinationSystemId && a.contributions.length === b.contributions.length &&
@@ -113,6 +132,10 @@ export const commitExpedition = function (state: CampaignState, order: Expeditio
 			maximumPoints: developmentMaximum(planet), depletion: planet.depletion };
 	}), source.id, order.factionId, order.contributions);
 	if (committed.totalPoints === 0) throw new Error('An expedition must commit points.');
+	const destinationPlanets = state.planets.filter(function (planet) { return planet.systemId === destination.id; });
+	if (destinationPlanets.length > 0 && destinationPlanets.every(function (planet) { return planet.factionId === null; }) &&
+		committed.totalPoints < neutralClaimMinimum(state, destination.id))
+		throw new Error('The expedition does not meet the unclaimed system commitment minimum.');
 	const debits = new Map(committed.balances.map(function (balance) { return [balance.planetId, balance.depletion] as const; }));
 	const expedition: CampaignExpedition = { ...order, contributions: committed.debits, points: committed.totalPoints,
 		departureTurn: state.turn, arrivalTime, status: 'traveling' };
@@ -137,6 +160,20 @@ const resolveArrivals = function (initial: CampaignState): CampaignState {
 	for (const expedition of due) {
 		const destination = state.planets.filter(function (planet) { return planet.systemId === expedition.destinationSystemId; });
 		if (destination.length === 0) throw new Error('Destination system has no planets.');
+		if (destination.every(function (planet) { return planet.factionId === null; })) {
+			const qualifies = expedition.points >= neutralClaimMinimum(state, expedition.destinationSystemId);
+			state = { ...state,
+				planets: qualifies ? state.planets.map(function (planet) {
+					return planet.systemId !== expedition.destinationSystemId ? planet : {
+						...planet, ...captureDevelopment(planet, expedition.factionId, state.turn, state.rules.development), factionId: expedition.factionId,
+					};
+				}) : state.planets,
+				expeditions: state.expeditions.map(function (item) {
+					return item.id === expedition.id ? { ...item, status: 'resolved' as const } : item;
+				}),
+			};
+			continue;
+		}
 		if (destination.every(function (planet) { return planet.factionId === expedition.factionId; })) {
 			let remaining = expedition.points;
 			const depleted = destination.toSorted(function (a, b) { return b.depletion - a.depletion || compareIds(a.id, b.id); });

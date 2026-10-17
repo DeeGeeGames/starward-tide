@@ -1,4 +1,5 @@
 import type { CampaignState, ExpeditionOrder } from './campaign-state';
+import { neutralClaimMinimum } from './campaign-state';
 import type { CampaignEncounterSetup } from './campaign-setup';
 import { validateAttackerAllocation, validateDefenderAllocation } from './campaign-allocation';
 import { availablePoints } from './campaign-points';
@@ -89,14 +90,37 @@ export const createCampaignView = function (options: {
 		galaxy.setAttribute('aria-label', 'Galaxy systems');
 		const minX = Math.min(...state.systems.map(function (system) { return system.x; }));
 		const maxX = Math.max(...state.systems.map(function (system) { return system.x; }));
-		for (const system of state.systems) {
+		const minY = Math.min(...state.systems.map(function (system) { return system.y; }));
+		const maxY = Math.max(...state.systems.map(function (system) { return system.y; }));
+		if (maxY > minY) galaxy.classList.add('expanded');
+		const positions = state.systems.map(function (system) {
+			return { system, x: maxX === minX ? 50 : 22 + (system.x - minX) / (maxX - minX) * 56,
+				y: maxY === minY ? 50 : 25 + (system.y - minY) / (maxY - minY) * 50 };
+		});
+		const routes = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+		routes.setAttribute('viewBox', '0 0 100 100');
+		routes.setAttribute('preserveAspectRatio', 'none');
+		routes.setAttribute('aria-hidden', 'true');
+		for (const [index, source] of positions.entries()) {
+			for (const destination of positions.slice(index + 1)) {
+				const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+				for (const [key, value] of Object.entries({ x1: source.x, y1: source.y, x2: destination.x, y2: destination.y }))
+					line.setAttribute(key, String(value));
+				routes.append(line);
+			}
+		}
+		galaxy.append(routes);
+		for (const { system, x, y } of positions) {
 			const owned = state.planets.filter(function (planet) { return planet.systemId === system.id; });
 			const blue = owned.filter(function (planet) { return planet.factionId === 'blue'; }).length;
+			const red = owned.filter(function (planet) { return planet.factionId === 'red'; }).length;
+			const neutral = owned.every(function (planet) { return planet.factionId === null; });
 			const button = actionButton(system.name, function () { selectedSystem = system.id; render(state, undefined); });
-			button.className = `campaign-star ${blue === owned.length ? 'blue' : blue === 0 ? 'red' : 'mixed'}`;
-			button.style.left = `${22 + (system.x - minX) / Math.max(1, maxX - minX) * 56}%`;
+			button.className = `campaign-star ${neutral ? 'neutral' : blue === owned.length ? 'blue' : red === owned.length ? 'red' : 'mixed'}`;
+			button.style.left = `${x}%`;
+			button.style.top = `${y}%`;
 			button.setAttribute('aria-pressed', String(selectedSystem === system.id));
-			button.append(node('small', `${blue}/${owned.length} worlds held`));
+			button.append(node('small', neutral ? `Unclaimed · ${owned.length} worlds` : `${blue}/${owned.length} worlds held`));
 			galaxy.append(button);
 		}
 		root.append(galaxy);
@@ -125,22 +149,33 @@ export const createCampaignView = function (options: {
 			const destinationLabel = node('label', 'Destination');
 			const destination = node('select');
 			for (const system of state.systems.filter(function (item) { return item.id !== source.id; })) {
-				const option = node('option', system.name); option.value = system.id; destination.append(option);
+				const unclaimed = state.planets.filter(function (planet) { return planet.systemId === system.id; }).every(function (planet) { return planet.factionId === null; });
+				const option = node('option', system.name + (unclaimed ? ' · Unclaimed' : '')); option.value = system.id; destination.append(option);
 			}
 			destinationLabel.append(destination); form.append(destinationLabel);
 			const contributions = new Map<string, number>();
 			const summary = node('p', '0 points committed', 'campaign-muted');
+			const claimHint = node('p', '', 'campaign-muted');
 			const submit = node('button', 'Commit expedition'); submit.type = 'submit'; submit.disabled = true;
+			const updateCommitment = function (): void {
+				const total = [...contributions.values()].reduce(function (sum, points) { return sum + points; }, 0);
+				const target = state.planets.filter(function (planet) { return planet.systemId === destination.value; });
+				const unclaimed = target.length > 0 && target.every(function (planet) { return planet.factionId === null; });
+				const minimum = unclaimed ? neutralClaimMinimum(state, destination.value) : 1;
+				claimHint.textContent = unclaimed ? `Minimum ${amount(minimum)} points to claim all planets on arrival without battle. All committed points remain spent. The first qualifying arrival claims the system; a later hostile arrival starts a battle.` : '';
+				summary.textContent = `${amount(total)} points committed · ${amount(owned.reduce(function (sum, item) { return sum + availablePoints(developmentMaximum(item), item.depletion); }, 0) - total)} defense points remain`;
+				submit.disabled = !Number.isSafeInteger(total) || total < minimum || !form.checkValidity();
+			};
+			destination.addEventListener('change', updateCommitment);
 			for (const planet of owned) {
 				const available = Math.floor(availablePoints(developmentMaximum(planet), planet.depletion));
 				form.append(numberField(`${planet.name} · ${available} available`, 0, available, function (value) {
 					contributions.set(planet.id, value);
-					const total = [...contributions.values()].reduce(function (sum, points) { return sum + points; }, 0);
-					summary.textContent = `${amount(total)} points committed · ${amount(owned.reduce(function (sum, item) { return sum + availablePoints(developmentMaximum(item), item.depletion); }, 0) - total)} defense points remain`;
-					submit.disabled = !Number.isSafeInteger(total) || total <= 0 || !form.checkValidity();
+					updateCommitment();
 				}));
 			}
-			form.append(summary, node('p', 'Spending weakens this system’s initial defense and is lost even if the expedition fails. Friendly arrivals replenish depleted points; surplus is discarded.', 'campaign-muted'), submit);
+			form.append(summary, claimHint, node('p', 'Spending weakens this system’s initial defense and is lost even if the expedition fails. Friendly arrivals replenish depleted points; surplus is discarded.', 'campaign-muted'), submit);
+			updateCommitment();
 			form.addEventListener('submit', function (event) {
 				event.preventDefault();
 				if (!form.reportValidity()) return;
@@ -194,7 +229,7 @@ export const createCampaignView = function (options: {
 			const planet = encounter.planets.find(function (item) { return item.planetId === defender.planetId; });
 			if (!planet) continue;
 			const row = node('fieldset'); row.disabled = planet.factionId !== 'blue';
-			row.append(node('legend', `${planet.name} · ${amount(planet.points)} points · ${planet.factionId === 'blue' ? 'You' : 'Rival'}`));
+			row.append(node('legend', `${planet.name} · ${amount(planet.points)} points · ${planet.factionId === 'blue' ? 'You' : planet.factionId === null ? 'Neutral' : 'Rival'}`));
 			for (const kind of ['troops', 'ships', 'guns'] as const) {
 				row.append(numberField(`${kind === 'guns' ? 'Platforms' : kind} (${draft.costs[kind]} pt)`, defender.forces[kind], Math.floor(planet.points / draft.costs[kind]), function (value) {
 					draft = { ...draft, defenders: draft.defenders.map(function (item) { return item.planetId === defender.planetId ? { ...item, forces: { ...item.forces, [kind]: value } } : item; }) };

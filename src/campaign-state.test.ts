@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { applyCampaignEncounterResult, CAMPAIGN_RULES, commitExpedition, commitFactionTurn, resolveCampaignTurn } from './campaign-state';
+import { applyCampaignEncounterResult, CAMPAIGN_RULES, commitExpedition, commitFactionTurn, neutralClaimMinimum, resolveCampaignTurn } from './campaign-state';
 import type { CampaignState, CampaignPlanet, ExpeditionOrder } from './campaign-state';
 import type { StarMap } from './maps';
 
@@ -167,4 +167,80 @@ test('idle completion applies growth and recovery once and allows captured sourc
 	expect(next.planets[0]?.depletion).toBe(8);
 	expect(resolveCampaignTurn(next, 1)).toBe(next);
 	expect(commitExpedition(next, order('eligible', 10)).expeditions).toHaveLength(1);
+});
+
+const unclaimed = function (): CampaignState {
+	const state = initial();
+	return { ...state, planets: state.planets.map(function (planet) {
+		return planet.systemId === 'away' ? { ...planet, factionId: null, depletion: 80, developmentBonusPoints: 0 } : planet;
+	}) };
+};
+
+test('neutral minimum uses baseline and configurable fraction, rejects too-small commitments atomically', function () {
+	const state = unclaimed();
+	expect(neutralClaimMinimum(state, 'away')).toBe(20);
+	expect(neutralClaimMinimum({ ...state, rules: { ...state.rules, neutralClaimFraction: 0.125 } }, 'away')).toBe(25);
+	expect(neutralClaimMinimum({ ...state, rules: { ...state.rules, neutralClaimFraction: 0.126 } }, 'away')).toBe(26);
+	expect(neutralClaimMinimum({ ...state, rules: { ...state.rules, neutralClaimFraction: 0 } }, 'away')).toBe(1);
+	expect(function () { commitExpedition(state, order('small', 19)); }).toThrow();
+	expect(state.planets[0]?.depletion).toBe(0);
+	expect(commitExpedition(state, order('enough', 20)).expeditions[0]?.points).toBe(20);
+	for (const fraction of [-1, NaN, Infinity, 1.1]) {
+		expect(function () { neutralClaimMinimum({ ...state, rules: { ...state.rules, neutralClaimFraction: fraction } }, 'away'); }).toThrow();
+	}
+});
+
+test('first neutral arrival claims all planets without replenishment, battle or repeated effects', function () {
+	const state = commitExpedition(unclaimed(), order('claim', 20));
+	const completed = finish(state);
+	expect(completed.phase).toBe('planning');
+	expect(completed.encounter).toBeNull();
+	expect(completed.resolvedEncounters).toHaveLength(0);
+	expect(completed.expeditions[0]?.status).toBe('resolved');
+	const local = completed.planets.filter(function (planet) { return planet.systemId === 'away'; });
+	expect(local.every(function (planet) { return planet.factionId === 'blue' && planet.capturedTurn === 1 && planet.developmentBonusPoints === 0 && planet.depletion === 70; })).toBe(true);
+	// Source has spent twenty and recovers twelve at this boundary; no refund.
+	expect(completed.planets[0]?.depletion).toBe(8);
+	expect(resolveCampaignTurn(completed, 1)).toBe(completed);
+	expect(commitExpedition(completed, order('claim', 20))).toBe(completed);
+});
+
+test('opposing later arrival fights the first neutral claimant in deterministic identity order', function () {
+	const state = unclaimed();
+	const source = state.systems[0];
+	if (!source) throw new Error('Missing system fixture');
+	const third = { ...source, id: 'redhome', name: 'Red', x: 200, y: 0 };
+	const expanded: CampaignState = { ...state, systems: [...state.systems, { id: third.id, name: third.name, x: third.x, y: third.y, map: third.map }],
+		planets: [...state.planets, makePlanet('r1', 'redhome', 'One', 'red'), makePlanet('r2', 'redhome', 'Two', 'red')] };
+	const blue = commitExpedition(expanded, order('a', 20));
+	const red = commitExpedition(blue, { ...order('z', 20), factionId: 'red', sourceSystemId: 'redhome', contributions: [{ planetId: 'r1', points: 20 }] });
+	const battle = finish(red);
+	expect(battle.encounter?.expeditionId).toBe('z');
+	expect(battle.encounter?.planets.every(function (planet) { return planet.factionId === 'blue'; })).toBe(true);
+	expect(battle.expeditions[0]?.status).toBe('resolved');
+	expect(battle.planets.find(function (planet) { return planet.id === 'a1'; })?.depletion).toBe(80);
+	expect(function () { commitExpedition({ ...battle, phase: 'planning', readyFactions: [] }, {
+		...order('new', 20), sourceSystemId: 'away', destinationSystemId: 'home', contributions: [{ planetId: 'a1', points: 20 }],
+	}); }).toThrow();
+});
+
+test('later friendly arrival replenishes a claimed system while mixed ownership still needs combat', function () {
+	const claimed = finish(commitExpedition(commitExpedition(unclaimed(), order('a', 20)), order('b', 20)));
+	expect(claimed.planets.find(function (planet) { return planet.id === 'a1'; })?.depletion).toBe(50);
+	expect(claimed.planets.find(function (planet) { return planet.id === 'a2'; })?.depletion).toBe(70);
+	const state = unclaimed();
+	const mixed = { ...state, planets: state.planets.map(function (planet) { return planet.id === 'a1' ? { ...planet, factionId: 'red' as const } : planet; }) };
+	expect(finish(commitExpedition(mixed, order('small', 1))).phase).toBe('encounter');
+});
+
+test('insufficient legacy in-flight neutral arrival resolves spent without claiming or battle', function () {
+	const committed = commitExpedition(initial(), order('old', 1));
+	const changed = { ...committed, planets: committed.planets.map(function (planet) {
+		return planet.systemId === 'away' ? { ...planet, factionId: null } : planet;
+	}) };
+	const completed = finish(changed);
+	expect(completed.phase).toBe('planning');
+	expect(completed.expeditions[0]?.status).toBe('resolved');
+	expect(completed.expeditions[0]?.points).toBe(1);
+	expect(completed.planets.filter(function (planet) { return planet.systemId === 'away'; }).every(function (planet) { return planet.factionId === null; })).toBe(true);
 });

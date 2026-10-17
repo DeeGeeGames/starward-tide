@@ -1,12 +1,12 @@
-import type { Side } from './config';
+import type { Owner, Side } from './config';
 import type { StarMap } from './maps';
-import { CAMPAIGN_RULES, commitExpedition } from './campaign-state';
+import { CAMPAIGN_RULES, commitExpedition, neutralClaimMinimum } from './campaign-state';
 import type { CampaignPlanet, CampaignState, CampaignSystem } from './campaign-state';
 import { availablePoints } from './campaign-points';
 import { developmentMaximum } from './campaign-development';
 
 const compareIds = function (a: string, b: string): number { return a < b ? -1 : a > b ? 1 : 0; };
-const systemMap = function (factionId: Side, names: readonly [string, string, string]): StarMap {
+const systemMap = function (factionId: Owner, names: readonly [string, string, string]): StarMap {
 	return { width: 1000, height: 700, planets: [
 		[names[0], 200, 230, 32, factionId, 0, 1.8],
 		[names[1], 750, 230, 35, factionId, 0, 2.2],
@@ -14,16 +14,18 @@ const systemMap = function (factionId: Side, names: readonly [string, string, st
 	] };
 };
 
-/** Minimal deterministic two-system fixture; tactical starting units come from point allocation. */
+/** Deterministic campaign opening; tactical starting units come from point allocation. */
 export const createCampaign = function (): CampaignState {
 	const systems: CampaignSystem[] = [
 		{ id: 'sol', name: 'Sol', x: 100, y: 100, map: systemMap('blue', ['Terra', 'Vega', 'Luna']) },
 		{ id: 'sirius', name: 'Sirius', x: 200, y: 100, map: systemMap('red', ['Sirius', 'Rigel', 'Altair']) },
+		{ id: 'deneb', name: 'Deneb', x: 100, y: 200, map: systemMap('neutral', ['Deneb', 'Sadr', 'Gienah']) },
+		{ id: 'arcturus', name: 'Arcturus', x: 200, y: 200, map: systemMap('neutral', ['Arcturus', 'Izar', 'Muphrid']) },
 	];
 	const planets: CampaignPlanet[] = systems.flatMap(function (system) {
 		return system.map.planets.map(function (seed, index) {
 			return { id: `${system.id}:${index + 1}`, systemId: system.id, name: seed[0],
-				factionId: system.id === 'sol' ? 'blue' as const : 'red' as const,
+				factionId: seed[4] === 'neutral' ? null : seed[4],
 				baselinePoints: 100, developmentBonusPoints: 0, depletion: 0, capturedTurn: null, lastAppliedTurn: 0 };
 		});
 	});
@@ -58,6 +60,9 @@ export const commitCampaignRival = function (state: CampaignState): CampaignStat
 		});
 		// Fractional recovery remains on each planet; it cannot fund a whole-point debit elsewhere.
 		if (contributions.length === 0) continue;
+		if (state.planets.filter(function (planet) { return planet.systemId === route.destination.id; })
+			.every(function (planet) { return planet.factionId === null; }) &&
+			contributions.reduce(function (total, contribution) { return total + contribution.points; }, 0) < neutralClaimMinimum(state, route.destination.id)) continue;
 		return commitExpedition(state, { id, factionId: 'red', sourceSystemId: route.source.id,
 			destinationSystemId: route.destination.id, contributions });
 	}

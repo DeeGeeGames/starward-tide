@@ -241,3 +241,26 @@ test('a genuine battle containing a neutral planet round-trips and restores', as
 		} finally { await restored.world.dispose(); }
 	} finally { await battle.world.dispose(); }
 });
+
+
+test('saves predating configurable neutral claims load with the approved default', function () {
+	const save = makeSave();
+	const rules = { travelSpeed: save.campaign.rules.travelSpeed, development: save.campaign.rules.development,
+		recovery: save.campaign.rules.recovery };
+	const legacy = { ...save, campaign: { ...save.campaign, rules } };
+	const before = structuredClone(legacy);
+	const restored = parseCampaignSave(legacy);
+	expect(restored.campaign.rules.neutralClaimFraction).toBe(0.1);
+	expect(legacy).toEqual(before);
+	expect(parseCampaignSave(restored)).toEqual(restored);
+});
+
+test('neutral claim fractions round-trip configured values and reject invalid values', function () {
+	const save = makeSave();
+	for (const neutralClaimFraction of [0, 0.1, 0.25, 1]) {
+		const configured = { ...save, campaign: { ...save.campaign, rules: { ...save.campaign.rules, neutralClaimFraction } } };
+		expect(parseCampaignSave(configured)).toEqual(configured);
+	}
+	for (const neutralClaimFraction of [-1, 1.01, NaN, Infinity, null, '0.1'])
+		expect(isSupportedCampaignSave({ ...save, campaign: { ...save.campaign, rules: { ...save.campaign.rules, neutralClaimFraction } } })).toBe(false);
+});
