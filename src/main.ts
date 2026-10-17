@@ -24,6 +24,7 @@ import type { Game } from './game';
 import { openProfileRepository } from './profile-storage';
 import type { ProfileRepository, ProfileSummary } from './profile-storage';
 import { createCampaignView } from './campaign-ui';
+import { v4 as createId } from 'uuid';
 import { createCampaign, commitCampaignRival, campaignWinner } from './campaign-scenario';
 import { commitExpedition, commitFactionTurn, resolveCampaignTurn, applyCampaignEncounterResult } from './campaign-state';
 import type { CampaignState } from './campaign-state';
@@ -997,7 +998,7 @@ const enterCampaignBattle = async function (setup: CampaignEncounterSetup): Prom
 const campaignView = createCampaignView({
 	order: async function (order) {
 		if (!campaignSession) return;
-		const state = commitExpedition(campaignSession.campaign, { ...order, id: crypto.randomUUID(), factionId: 'blue' });
+		const state = commitExpedition(campaignSession.campaign, { ...order, id: createId(), factionId: 'blue' });
 		await persistCampaign(campaignSaveForState(state, campaignSession.profileId));
 		renderCampaign();
 	},

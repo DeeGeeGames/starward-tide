@@ -1,4 +1,5 @@
 import { openDB } from 'idb';
+import { v4 as createId } from 'uuid';
 import type { DBSchema, IDBPDatabase, IDBPTransaction } from 'idb';
 import { InvalidSaveError, parseConquestSave } from './save-state';
 import type { ConquestSave } from './save-state';
@@ -138,7 +139,7 @@ export class ProfileRepository {
 
 	async createProfile(name: string): Promise<ProfileSummary> {
 		const profile: StoredProfile = {
-			id: crypto.randomUUID(),
+			id: createId(),
 			name: normalizeProfileName(name),
 		};
 		try {

@@ -105,9 +105,9 @@
 						<path d="M-136 70l-6 6 10-2z M-146 78l-6 6 10-2z" fill="#60d9ff" />
 					</g>
 				</svg>
-				<button type="button" id="profile-badge" class="profile-badge" aria-haspopup="dialog" aria-controls="profile-dialog">
-					<span id="profile-badge-orb" class="profile-badge-orb" aria-hidden="true">P</span>
-					<span class="profile-badge-copy"><strong id="profile-badge-name">Player</strong><small>Profiles</small></span>
+				<button type="button" id="profile-badge" class="profile-badge" disabled aria-label="Loading local profiles" aria-haspopup="dialog" aria-controls="profile-dialog">
+					<span id="profile-badge-orb" class="profile-badge-orb" aria-hidden="true">…</span>
+					<span class="profile-badge-copy"><strong id="profile-badge-name">Loading profiles…</strong><small>Profiles</small></span>
 					<span aria-hidden="true">☰</span>
 				</button>
 				<div class="brand">
@@ -117,7 +117,8 @@
 				<div class="hero">
 					<h1 id="game-title">GALAXY<span>CONQUEST</span></h1>
 					<p>Claim worlds. Build your fleet.<br />Take control of the stars.</p>
-					<button class="primary" id="new-game">
+					<p id="menu-profile-status" class="status" role="status" aria-live="polite"></p>
+					<button class="primary" id="new-game" disabled>
 						New game <span aria-hidden="true">→</span>
 					</button>
 					<div class="title-actions">
@@ -161,7 +162,6 @@
 					<button id="continue-conquest" class="primary" disabled>Continue</button>
 					<span id="profile-save-time" class="mono"></span>
 				</div>
-				<p id="menu-profile-status" class="status" role="status" aria-live="polite"></p>
 				<div class="footer">
 					<span>SINGLE PLAYER · REAL-TIME STRATEGY</span><span>v0.1</span>
 				</div>

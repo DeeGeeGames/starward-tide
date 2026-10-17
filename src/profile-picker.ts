@@ -214,7 +214,7 @@ export const createProfilePicker = function (
 			: selected?.hasSave
 				? 'Saved conquest needs validation'
 				: 'No saved conquest yet';
-		elements.status.textContent = profileMessage;
+		elements.status.textContent = profileMessage || (options.profiles && !selected ? 'Choose or create a local profile to start.' : '');
 		return state;
 	};
 	const notifyStateChange = function (): void {

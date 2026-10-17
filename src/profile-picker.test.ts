@@ -168,7 +168,9 @@ test('profile refresh succeeds and a save-before-change failure remains visible'
 
 	await refreshController.refresh();
 
-	expect(refreshElements.status.textContent).toBe('');
+	expect(refreshElements.status.textContent).toBe('Choose or create a local profile to start.');
+	expect(refreshElements.createButton.disabled).toBe(false);
+	expect(refreshElements.continueButton.disabled).toBe(true);
 	expect(refreshedStates.at(-1)?.busy).toBe(false);
 	refreshController.dispose();
 

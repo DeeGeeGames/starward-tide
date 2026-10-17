@@ -431,3 +431,25 @@ test('separate campaign slot stores allocation drafts and active battles without
 		expect(await repository.loadSave(profile.id)).toEqual(makeSave(profile.id, 50));
 	} finally { await battle.world.dispose(); repository.close(); }
 });
+
+
+test('profiles can be created when HTTP browsers omit crypto.randomUUID', async function () {
+	const previous = Object.getOwnPropertyDescriptor(crypto, 'randomUUID');
+	const database = new MemoryProfileDatabase();
+	const repository = new ProfileRepository(database);
+	Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: undefined });
+	try {
+		const first = await repository.createProfile('LAN player');
+		const second = await repository.createProfile('Another LAN player');
+		expect(first.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+		expect(second.id).not.toBe(first.id);
+		await repository.setSelectedProfileId(first.id);
+		expect(await repository.getSelectedProfileId()).toBe(first.id);
+		await repository.saveProfile(makeSave(first.id, 100));
+		expect((await repository.loadSave(first.id))?.profileId).toBe(first.id);
+	} finally {
+		if (previous) Object.defineProperty(crypto, 'randomUUID', previous);
+		else Reflect.deleteProperty(crypto, 'randomUUID');
+		repository.close();
+	}
+});
