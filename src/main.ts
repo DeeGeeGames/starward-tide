@@ -1,6 +1,6 @@
 import { createPerformanceDiagnostics, type PerformanceDiagnostics, type DiagnosticsReport } from './performance-diagnostics';
 import { createCrowdedBaseline } from './performance-scenario';
-import { createCanvasRenderer } from './canvas-renderer';
+import { createPixiRenderer } from './pixi-renderer';
 import { createMapInput } from './map-input';
 import { createOrdersDrawer } from './orders-drawer';
 import { zoomCamera } from './camera';
@@ -577,7 +577,8 @@ const mapInput = createMapInput({
 	},
 	zoomAt,
 });
-const renderer = createCanvasRenderer({
+const renderer = await createPixiRenderer({
+	getViewport: function () { return { width: board.clientWidth, height: board.clientHeight }; },
 	canvas,
 	getPixelRatio: function (): number {
 		return devicePixelRatio;
@@ -687,6 +688,7 @@ const installGame = async function (
 	}
 	mapInput.cancel();
 	const previousWorld = world;
+	renderer.reset();
 	diagnostics?.dispose();
 	diagnostics = undefined;
 	world = installation.game;
@@ -1001,7 +1003,7 @@ const attachDiagnostics = function (): void {
 	if (!diagnosticsEnabled) return;
 	diagnostics = createPerformanceDiagnostics(world, function () {
 		const all = units(world);
-		return { scenario, map: activeMap, pace: speed, camera, simulationTime: world.getResource('match').time,
+		return { renderer: renderer.inspect(), scenario, map: activeMap, pace: speed, camera, simulationTime: world.getResource('match').time,
 			ships: all.filter(function (entity) { return entity.components.unit.kind === 'ship'; }).length,
 			transports: all.filter(function (entity) { return entity.components.unit.kind === 'transport'; }).length,
 			screen: frontMenu.getCurrentScreen(), viewport: {
@@ -1066,7 +1068,7 @@ window.addEventListener('pagehide', function (event) {
 	diagnostics = undefined;
 	Reflect.deleteProperty(window, 'conquestDiagnostics');
 	mapInput.dispose();
-	renderer.dispose();
+	void renderer.dispose();
 	cancelAnimationFrame(raf);
 	if (autosaveTimer !== undefined) window.clearInterval(autosaveTimer);
 	if (queuedAutosave !== undefined) window.clearTimeout(queuedAutosave);

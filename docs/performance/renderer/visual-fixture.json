@@ -1,0 +1,743 @@
+{
+  "map": {
+    "width": 1200,
+    "height": 1320,
+    "planets": [
+      [
+        "Polaris",
+        234,
+        180,
+        25,
+        "neutral",
+        8,
+        1.7
+      ],
+      [
+        "Vega",
+        521,
+        198,
+        31,
+        "red",
+        44,
+        2.6
+      ],
+      [
+        "Altair",
+        942,
+        165,
+        25,
+        "neutral",
+        8,
+        1.7
+      ],
+      [
+        "Rhea",
+        277,
+        414,
+        25,
+        "neutral",
+        8,
+        1.7
+      ],
+      [
+        "Deneb",
+        668,
+        418,
+        28,
+        "neutral",
+        14,
+        2.2
+      ],
+      [
+        "Io",
+        930,
+        389,
+        25,
+        "neutral",
+        8,
+        1.7
+      ],
+      [
+        "Nyx",
+        98,
+        600,
+        28,
+        "neutral",
+        14,
+        2.2
+      ],
+      [
+        "Sol",
+        514,
+        570,
+        36,
+        "neutral",
+        24,
+        3.4
+      ],
+      [
+        "Eris",
+        1077,
+        617,
+        28,
+        "neutral",
+        14,
+        2.2
+      ],
+      [
+        "Tethys",
+        214,
+        801,
+        28,
+        "neutral",
+        14,
+        2.2
+      ],
+      [
+        "Atlas",
+        535,
+        831,
+        36,
+        "neutral",
+        24,
+        3.4
+      ],
+      [
+        "Dione",
+        1084,
+        841,
+        28,
+        "neutral",
+        14,
+        2.2
+      ],
+      [
+        "Luna",
+        337,
+        991,
+        25,
+        "neutral",
+        8,
+        1.7
+      ],
+      [
+        "Astra",
+        638,
+        1032,
+        28,
+        "neutral",
+        14,
+        2.2
+      ],
+      [
+        "Ceres",
+        866,
+        1024,
+        25,
+        "neutral",
+        8,
+        1.7
+      ],
+      [
+        "Mira",
+        244,
+        1192,
+        25,
+        "neutral",
+        8,
+        1.7
+      ],
+      [
+        "Terra",
+        532,
+        1229,
+        31,
+        "blue",
+        44,
+        2.6
+      ],
+      [
+        "Lyra",
+        1069,
+        1186,
+        25,
+        "neutral",
+        8,
+        1.7
+      ]
+    ]
+  },
+  "scenario": "skirmish",
+  "pace": 1,
+  "planets": [
+    {
+      "id": 1,
+      "planet": {
+        "name": "Polaris",
+        "x": 234,
+        "y": 180,
+        "radius": 25,
+        "owner": "neutral",
+        "troops": 8,
+        "rate": 1.7,
+        "guns": 0,
+        "production": "troops",
+        "progress": 0
+      }
+    },
+    {
+      "id": 2,
+      "planet": {
+        "name": "Vega",
+        "x": 521,
+        "y": 198,
+        "radius": 31,
+        "owner": "red",
+        "troops": 44,
+        "rate": 2.6,
+        "guns": 0,
+        "production": "troops",
+        "progress": 0
+      }
+    },
+    {
+      "id": 3,
+      "planet": {
+        "name": "Altair",
+        "x": 942,
+        "y": 165,
+        "radius": 25,
+        "owner": "neutral",
+        "troops": 8,
+        "rate": 1.7,
+        "guns": 0,
+        "production": "troops",
+        "progress": 0
+      }
+    },
+    {
+      "id": 4,
+      "planet": {
+        "name": "Rhea",
+        "x": 277,
+        "y": 414,
+        "radius": 25,
+        "owner": "neutral",
+        "troops": 8,
+        "rate": 1.7,
+        "guns": 0,
+        "production": "troops",
+        "progress": 0
+      }
+    },
+    {
+      "id": 5,
+      "planet": {
+        "name": "Deneb",
+        "x": 668,
+        "y": 418,
+        "radius": 28,
+        "owner": "neutral",
+        "troops": 14,
+        "rate": 2.2,
+        "guns": 0,
+        "production": "troops",
+        "progress": 0
+      }
+    },
+    {
+      "id": 6,
+      "planet": {
+        "name": "Io",
+        "x": 930,
+        "y": 389,
+        "radius": 25,
+        "owner": "neutral",
+        "troops": 8,
+        "rate": 1.7,
+        "guns": 0,
+        "production": "troops",
+        "progress": 0
+      }
+    },
+    {
+      "id": 7,
+      "planet": {
+        "name": "Nyx",
+        "x": 98,
+        "y": 600,
+        "radius": 28,
+        "owner": "neutral",
+        "troops": 14,
+        "rate": 2.2,
+        "guns": 0,
+        "production": "troops",
+        "progress": 0
+      }
+    },
+    {
+      "id": 8,
+      "planet": {
+        "name": "Sol",
+        "x": 514,
+        "y": 570,
+        "radius": 36,
+        "owner": "neutral",
+        "troops": 24,
+        "rate": 3.4,
+        "guns": 0,
+        "production": "troops",
+        "progress": 0
+      }
+    },
+    {
+      "id": 9,
+      "planet": {
+        "name": "Eris",
+        "x": 1077,
+        "y": 617,
+        "radius": 28,
+        "owner": "neutral",
+        "troops": 14,
+        "rate": 2.2,
+        "guns": 0,
+        "production": "troops",
+        "progress": 0
+      }
+    },
+    {
+      "id": 10,
+      "planet": {
+        "name": "Tethys",
+        "x": 214,
+        "y": 801,
+        "radius": 28,
+        "owner": "neutral",
+        "troops": 14,
+        "rate": 2.2,
+        "guns": 0,
+        "production": "troops",
+        "progress": 0
+      }
+    },
+    {
+      "id": 11,
+      "planet": {
+        "name": "Atlas",
+        "x": 535,
+        "y": 831,
+        "radius": 36,
+        "owner": "neutral",
+        "troops": 24,
+        "rate": 3.4,
+        "guns": 0,
+        "production": "troops",
+        "progress": 0
+      }
+    },
+    {
+      "id": 12,
+      "planet": {
+        "name": "Dione",
+        "x": 1084,
+        "y": 841,
+        "radius": 28,
+        "owner": "neutral",
+        "troops": 14,
+        "rate": 2.2,
+        "guns": 0,
+        "production": "troops",
+        "progress": 0
+      }
+    },
+    {
+      "id": 13,
+      "planet": {
+        "name": "Luna",
+        "x": 337,
+        "y": 991,
+        "radius": 25,
+        "owner": "neutral",
+        "troops": 8,
+        "rate": 1.7,
+        "guns": 0,
+        "production": "troops",
+        "progress": 0
+      }
+    },
+    {
+      "id": 14,
+      "planet": {
+        "name": "Astra",
+        "x": 638,
+        "y": 1032,
+        "radius": 28,
+        "owner": "neutral",
+        "troops": 14,
+        "rate": 2.2,
+        "guns": 0,
+        "production": "troops",
+        "progress": 0
+      }
+    },
+    {
+      "id": 15,
+      "planet": {
+        "name": "Ceres",
+        "x": 866,
+        "y": 1024,
+        "radius": 25,
+        "owner": "neutral",
+        "troops": 8,
+        "rate": 1.7,
+        "guns": 0,
+        "production": "troops",
+        "progress": 0
+      }
+    },
+    {
+      "id": 16,
+      "planet": {
+        "name": "Mira",
+        "x": 244,
+        "y": 1192,
+        "radius": 25,
+        "owner": "neutral",
+        "troops": 8,
+        "rate": 1.7,
+        "guns": 0,
+        "production": "troops",
+        "progress": 0
+      }
+    },
+    {
+      "id": 17,
+      "planet": {
+        "name": "Terra",
+        "x": 532,
+        "y": 1229,
+        "radius": 31,
+        "owner": "blue",
+        "troops": 44,
+        "rate": 2.6,
+        "guns": 0,
+        "production": "troops",
+        "progress": 0
+      }
+    },
+    {
+      "id": 18,
+      "planet": {
+        "name": "Lyra",
+        "x": 1069,
+        "y": 1186,
+        "radius": 25,
+        "owner": "neutral",
+        "troops": 8,
+        "rate": 1.7,
+        "guns": 0,
+        "production": "troops",
+        "progress": 0
+      }
+    }
+  ],
+  "units": [
+    {
+      "id": 50,
+      "unit": {
+        "owner": "blue",
+        "kind": "ship",
+        "x": 170,
+        "y": 150,
+        "target": 8,
+        "phase": "orbit",
+        "hp": 6,
+        "cargo": 0,
+        "age": 3
+      }
+    },
+    {
+      "id": 51,
+      "unit": {
+        "owner": "red",
+        "kind": "ship",
+        "x": 200,
+        "y": 170,
+        "target": 8,
+        "phase": "orbit",
+        "hp": 6,
+        "cargo": 0,
+        "age": 3
+      }
+    },
+    {
+      "id": 52,
+      "unit": {
+        "owner": "blue",
+        "kind": "transport",
+        "x": 230,
+        "y": 190,
+        "target": 8,
+        "phase": "orbit",
+        "hp": 6,
+        "cargo": 10,
+        "age": 3
+      }
+    },
+    {
+      "id": 53,
+      "unit": {
+        "owner": "red",
+        "kind": "transport",
+        "x": 260,
+        "y": 210,
+        "target": 8,
+        "phase": "orbit",
+        "hp": 6,
+        "cargo": 7,
+        "age": 3
+      }
+    },
+    {
+      "id": 54,
+      "unit": {
+        "owner": "blue",
+        "kind": "ship",
+        "x": 290,
+        "y": 230,
+        "target": 8,
+        "phase": "orbit",
+        "hp": 6,
+        "cargo": 0,
+        "age": 3
+      }
+    },
+    {
+      "id": 55,
+      "unit": {
+        "owner": "red",
+        "kind": "ship",
+        "x": 320,
+        "y": 250,
+        "target": 8,
+        "phase": "orbit",
+        "hp": 6,
+        "cargo": 0,
+        "age": 3
+      }
+    },
+    {
+      "id": 56,
+      "unit": {
+        "owner": "blue",
+        "kind": "transport",
+        "x": 350,
+        "y": 270,
+        "target": 8,
+        "phase": "orbit",
+        "hp": 6,
+        "cargo": 10,
+        "age": 3
+      }
+    },
+    {
+      "id": 57,
+      "unit": {
+        "owner": "red",
+        "kind": "transport",
+        "x": 380,
+        "y": 290,
+        "target": 8,
+        "phase": "orbit",
+        "hp": 6,
+        "cargo": 7,
+        "age": 3
+      }
+    },
+    {
+      "id": 58,
+      "unit": {
+        "owner": "blue",
+        "kind": "ship",
+        "x": 410,
+        "y": 310,
+        "target": 8,
+        "phase": "orbit",
+        "hp": 6,
+        "cargo": 0,
+        "age": 3
+      }
+    },
+    {
+      "id": 59,
+      "unit": {
+        "owner": "red",
+        "kind": "ship",
+        "x": 440,
+        "y": 330,
+        "target": 8,
+        "phase": "orbit",
+        "hp": 6,
+        "cargo": 0,
+        "age": 3
+      }
+    },
+    {
+      "id": 60,
+      "unit": {
+        "owner": "blue",
+        "kind": "transport",
+        "x": 470,
+        "y": 350,
+        "target": 8,
+        "phase": "orbit",
+        "hp": 6,
+        "cargo": 10,
+        "age": 3
+      }
+    },
+    {
+      "id": 61,
+      "unit": {
+        "owner": "red",
+        "kind": "transport",
+        "x": 500,
+        "y": 370,
+        "target": 8,
+        "phase": "orbit",
+        "hp": 6,
+        "cargo": 7,
+        "age": 3
+      }
+    },
+    {
+      "id": 62,
+      "unit": {
+        "owner": "blue",
+        "kind": "ship",
+        "x": 530,
+        "y": 390,
+        "target": 8,
+        "phase": "orbit",
+        "hp": 6,
+        "cargo": 0,
+        "age": 3
+      }
+    },
+    {
+      "id": 63,
+      "unit": {
+        "owner": "red",
+        "kind": "ship",
+        "x": 560,
+        "y": 410,
+        "target": 8,
+        "phase": "orbit",
+        "hp": 6,
+        "cargo": 0,
+        "age": 3
+      }
+    },
+    {
+      "id": 64,
+      "unit": {
+        "owner": "blue",
+        "kind": "transport",
+        "x": 590,
+        "y": 430,
+        "target": 8,
+        "phase": "orbit",
+        "hp": 6,
+        "cargo": 10,
+        "age": 3
+      }
+    },
+    {
+      "id": 65,
+      "unit": {
+        "owner": "red",
+        "kind": "transport",
+        "x": 620,
+        "y": 450,
+        "target": 8,
+        "phase": "orbit",
+        "hp": 6,
+        "cargo": 7,
+        "age": 3
+      }
+    },
+    {
+      "id": 66,
+      "unit": {
+        "owner": "blue",
+        "kind": "ship",
+        "x": 650,
+        "y": 470,
+        "target": 8,
+        "phase": "travel",
+        "hp": 6,
+        "cargo": 0,
+        "age": 3
+      }
+    },
+    {
+      "id": 67,
+      "unit": {
+        "owner": "red",
+        "kind": "ship",
+        "x": 680,
+        "y": 490,
+        "target": 8,
+        "phase": "travel",
+        "hp": 6,
+        "cargo": 0,
+        "age": 3
+      }
+    },
+    {
+      "id": 68,
+      "unit": {
+        "owner": "blue",
+        "kind": "transport",
+        "x": 710,
+        "y": 510,
+        "target": 8,
+        "phase": "travel",
+        "hp": 6,
+        "cargo": 10,
+        "age": 3
+      }
+    },
+    {
+      "id": 69,
+      "unit": {
+        "owner": "red",
+        "kind": "transport",
+        "x": 740,
+        "y": 530,
+        "target": 8,
+        "phase": "travel",
+        "hp": 6,
+        "cargo": 7,
+        "age": 3
+      }
+    }
+  ],
+  "orderBook": {
+    "nextId": 1,
+    "active": []
+  },
+  "match": {
+    "time": 5,
+    "paused": true,
+    "winner": null,
+    "ai": false,
+    "aiClock": 0,
+    "orders": 0,
+    "captures": 0,
+    "transportsLost": 0,
+    "troopsLost": 0,
+    "firstCapture": null,
+    "notices": []
+  }
+}
