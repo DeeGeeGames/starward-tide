@@ -2,14 +2,14 @@ import { MAX_PROFILES } from './profile-storage';
 import type { ProfileRepository, ProfileSummary } from './profile-storage';
 
 interface ProfilePickerElements {
-	list: HTMLDivElement;
-	count: HTMLSpanElement;
-	createForm: HTMLFormElement;
-	nameInput: HTMLInputElement;
-	createButton: HTMLButtonElement;
-	continueButton: HTMLButtonElement;
-	saveTime: HTMLSpanElement;
-	status: HTMLParagraphElement;
+	list: Pick<HTMLDivElement, 'replaceChildren'>;
+	count: Pick<HTMLSpanElement, 'textContent'>;
+	createForm: Pick<HTMLFormElement, 'addEventListener' | 'hidden'>;
+	nameInput: Pick<HTMLInputElement, 'disabled' | 'value'>;
+	createButton: Pick<HTMLButtonElement, 'disabled'>;
+	continueButton: Pick<HTMLButtonElement, 'addEventListener' | 'disabled'>;
+	saveTime: Pick<HTMLSpanElement, 'textContent'>;
+	status: Pick<HTMLParagraphElement, 'textContent'>;
 }
 
 export interface ProfilePickerState {
@@ -49,6 +49,7 @@ export const createProfilePicker = function (
 	let profileBusy = false;
 	let profileMessage = options.storageMessage ?? '';
 	let disposed = false;
+	let continueActive = false;
 	const permanentListeners = new AbortController();
 	let rowListeners = new AbortController();
 
@@ -68,13 +69,16 @@ export const createProfilePicker = function (
 		const message = error instanceof Error
 			? error.message
 			: 'Browser storage could not complete the request.';
-		return window.top !== window.self
+		const embedded = typeof window !== 'undefined' && window.top !== window.self;
+		return embedded
 			? message + ' Embedded browsers may block saves; open the standalone game to use profiles.'
 			: message;
 	};
 	const reloadProfiles = async function (): Promise<void> {
 		if (!options.profiles) return;
-		profiles = await options.profiles.listProfiles();
+		const nextProfiles = await options.profiles.listProfiles();
+		if (disposed) return;
+		profiles = nextProfiles;
 	};
 	const render = function (): ProfilePickerState {
 		const state = getState();
@@ -130,7 +134,9 @@ export const createProfilePicker = function (
 					await runProfileOperation('Renaming profile…', async function () {
 						if (!options.profiles) return;
 						await options.profiles.renameProfile(profile.id, name);
+						if (disposed) return;
 						await reloadProfiles();
+						if (disposed) return;
 						profileMessage = '';
 					});
 				},
@@ -158,20 +164,24 @@ export const createProfilePicker = function (
 						const deletingSelectedProfile =
 							selectedProfileId === profile.id;
 						await options.profiles.deleteProfile(profile.id);
+						if (disposed) return;
 						if (deletingSelectedProfile) {
 							selectedProfileId = null;
 							options.onProfileChange(null);
+							if (disposed) return;
 						}
 						await reloadProfiles();
+						if (disposed) return;
 						profileMessage = '';
 						if (deletingSelectedProfile) {
 							const nextProfileId = profiles[0]?.id ?? null;
 							try {
 								await options.profiles.setSelectedProfileId(nextProfileId);
+								if (disposed) return;
 								selectedProfileId = nextProfileId;
 								options.onProfileChange(nextProfileId);
 							} catch (error) {
-								profileMessage = profileErrorText(error);
+								if (!disposed) profileMessage = profileErrorText(error);
 							}
 						}
 					});
@@ -206,6 +216,7 @@ export const createProfilePicker = function (
 		return state;
 	};
 	const notifyStateChange = function (): void {
+		if (disposed) return;
 		const state = render();
 		options.onStateChange(state);
 	};
@@ -227,29 +238,34 @@ export const createProfilePicker = function (
 		try {
 			await operation();
 		} catch (error) {
-			profileMessage = profileErrorText(error);
+			if (!disposed) profileMessage = profileErrorText(error);
 		} finally {
-			profileBusy = false;
-			if (!disposed) notifyStateChange();
+			if (!disposed) {
+				profileBusy = false;
+				notifyStateChange();
+			}
 		}
 	};
 	const selectProfile = async function (profileId: string): Promise<void> {
 		await runProfileOperation('Switching profile…', async function () {
 			if (!options.profiles) return;
 			await options.beforeProfileChange();
+			if (disposed) return;
 			await options.profiles.setSelectedProfileId(profileId);
+			if (disposed) return;
 			selectedProfileId = profileId;
-			options.onProfileChange(profileId);
 			profileMessage = '';
+			options.onProfileChange(profileId);
 		});
 	};
 	const refresh = async function (): Promise<void> {
 		if (disposed) return;
 		try {
 			await reloadProfiles();
+			if (disposed) return;
 			profileMessage = '';
 		} catch (error) {
-			profileMessage = profileErrorText(error);
+			if (!disposed) profileMessage = profileErrorText(error);
 		} finally {
 			if (!disposed) notifyStateChange();
 		}
@@ -262,23 +278,30 @@ export const createProfilePicker = function (
 				try {
 					if (!options.profiles) return;
 					await options.beforeProfileChange();
+					if (disposed) return;
 					const created = await options.profiles.createProfile(
 						elements.nameInput.value,
 					);
+					if (disposed) return;
 					createdProfileId = created.id;
 					await options.profiles.setSelectedProfileId(created.id);
+					if (disposed) return;
 					await reloadProfiles();
+					if (disposed) return;
 					selectedProfileId = created.id;
-					options.onProfileChange(created.id);
 					elements.nameInput.value = 'Player';
 					profileMessage = '';
+					options.onProfileChange(created.id);
 				} catch (error) {
+					if (disposed) return;
 					profileMessage = profileErrorText(error);
 					if (createdProfileId) {
 						try {
 							await reloadProfiles();
+							if (disposed) return;
 						} catch (refreshError) {
-							profileMessage += ' ' + profileErrorText(refreshError);
+							if (!disposed)
+								profileMessage += ' ' + profileErrorText(refreshError);
 						}
 					}
 				}
@@ -296,17 +319,23 @@ export const createProfilePicker = function (
 			options.isStarting()
 		)
 			return;
+		continueActive = true;
 		options.setStarting(true);
+		if (disposed) return;
 		elements.status.textContent = 'Validating saved conquest…';
 		notifyStateChange();
 		try {
 			await options.continueProfile(selected.id);
+			if (disposed) return;
 			profileMessage = '';
 		} catch (error) {
-			profileMessage = profileErrorText(error);
+			if (!disposed) profileMessage = profileErrorText(error);
 		} finally {
-			options.setStarting(false);
-			if (!disposed) notifyStateChange();
+			if (!disposed) {
+				continueActive = false;
+				options.setStarting(false);
+				notifyStateChange();
+			}
 		}
 	};
 
@@ -335,7 +364,12 @@ export const createProfilePicker = function (
 		refresh,
 		dispose: function (): void {
 			if (disposed) return;
+			if (continueActive) {
+				continueActive = false;
+				options.setStarting(false);
+			}
 			disposed = true;
+			profileBusy = false;
 			permanentListeners.abort();
 			rowListeners.abort();
 		},

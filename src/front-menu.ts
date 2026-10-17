@@ -79,6 +79,7 @@ export const createFrontMenu = async function (options: {
 	let size: MapSize = 'medium';
 	let map = freshMap(size);
 	let starting = false;
+	let disposed = false;
 	const flow = flowBuilder.build();
 	const renderProfileControls = function (
 		profileState: ProfilePickerState,
@@ -113,6 +114,7 @@ export const createFrontMenu = async function (options: {
 		onProfileChange: options.onProfileChange,
 		continueProfile: async function (profileId) {
 			await options.continue(profileId);
+			if (disposed) return;
 			await flow.setScreen('playing', {});
 		},
 		isStarting: function () {
@@ -286,6 +288,8 @@ export const createFrontMenu = async function (options: {
 	await flow.setScreen('title', {});
 	const disposeFlow = flow.dispose.bind(flow);
 	flow.dispose = async function (): Promise<void> {
+		if (disposed) return;
+		disposed = true;
 		profilePicker.dispose();
 		await disposeFlow();
 	};
