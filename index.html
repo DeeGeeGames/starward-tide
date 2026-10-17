@@ -119,7 +119,19 @@
 					<button class="primary" id="new-game">
 						New game <span aria-hidden="true">→</span>
 					</button>
+					<div class="title-actions">
+						<button id="title-fullscreen" aria-label="Enter fullscreen" aria-pressed="false">Fullscreen</button>
+						<button id="how-to-play" aria-haspopup="dialog" aria-controls="help-dialog">How to Play</button>
+					</div>
+					<p id="title-fullscreen-status" class="status" role="status" aria-live="polite"></p>
 				</div>
+				<dialog id="help-dialog" class="profile-panel help-panel" aria-labelledby="help-dialog-title">
+					<div class="profile-panel-heading">
+						<h2 id="help-dialog-title">How to Play</h2>
+						<button id="close-help" autofocus>Close</button>
+					</div>
+					<div id="title-instructions"></div>
+				</dialog>
 				<dialog id="profile-dialog" class="profile-panel" aria-labelledby="profile-dialog-title">
 					<div class="profile-panel-heading">
 						<h2 id="profile-dialog-title" class="label">LOCAL PROFILES</h2>
@@ -368,36 +380,38 @@
 				</details>
 				<details class="guide">
 					<summary>How to play</summary>
-					<p>Drag to explore. Scroll or pinch to zoom. Focus the map and use arrow keys to pan.</p>
-					<p>
-						Tap or left-click a world to select it. Hold a destination on touch,
-						or right-click it with a mouse, to send units. Select the source again
-						to deselect. Use Multi-select to gather sources, then turn it off
-						and hold or right-click a destination. You can also send to friendly
-						worlds.
-					</p>
-					<p>
-						Troops capture surfaces. Ships win orbit. Defense platforms defend but
-						never travel. A dashed enemy-colored ring means blockade: the surface
-						cannot dispatch. Tap a blue orbital ring over an enemy world to
-						redirect your ships.
-					</p>
-					<p>
-						Enemy defense platforms and ships stop landings. Transports wait in orbit
-						and can be destroyed; escorts absorb fire first. Ships that pass within range
-						trade shots and keep their destination. Transports cannot shoot back.
-						Take every rival planet to win. Switching production discards unfinished
-						work.
-					</p>
-					<p>
-						Pause freezes movement, production, combat, and the rival AI. You
-						can still select worlds, send units, and change production. Orders
-						reserve units immediately; units move and production continues when
-						you resume. Open Orders to cancel a launch before resuming, or
-						recall units already underway. Recalled units turn around from their
-						current positions. Selecting a planet filters incoming and outgoing
-						orders; Show all keeps the selection and displays every route.
-					</p>
+					<div id="play-instructions">
+						<p>Drag to explore. Scroll or pinch to zoom. Focus the map and use arrow keys to pan.</p>
+						<p>
+							Tap or left-click a world to select it. Hold a destination on touch,
+							or right-click it with a mouse, to send units. Select the source again
+							to deselect. Use Multi-select to gather sources, then turn it off
+							and hold or right-click a destination. You can also send to friendly
+							worlds.
+						</p>
+						<p>
+							Troops capture surfaces. Ships win orbit. Defense platforms defend but
+							never travel. A dashed enemy-colored ring means blockade: the surface
+							cannot dispatch. Tap a blue orbital ring over an enemy world to
+							redirect your ships.
+						</p>
+						<p>
+							Enemy defense platforms and ships stop landings. Transports wait in orbit
+							and can be destroyed; escorts absorb fire first. Ships that pass within range
+							trade shots and keep their destination. Transports cannot shoot back.
+							Take every rival planet to win. Switching production discards unfinished
+							work.
+						</p>
+						<p>
+							Pause freezes movement, production, combat, and the rival AI. You
+							can still select worlds, send units, and change production. Orders
+							reserve units immediately; units move and production continues when
+							you resume. Open Orders to cancel a launch before resuming, or
+							recall units already underway. Recalled units turn around from their
+							current positions. Selecting a planet filters incoming and outgoing
+							orders; Show all keeps the selection and displays every route.
+						</p>
+					</div>
 				</details>
 				<div class="map-key">
 					<span>● surface owner</span><span>◆ orbital ships</span
