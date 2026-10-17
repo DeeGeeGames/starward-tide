@@ -645,7 +645,9 @@ const syncFullscreen = function (): void {
 	for (const button of fullscreenButtons) {
 		button.setAttribute('aria-pressed', String(active));
 		button.setAttribute('aria-label', label);
-		button.textContent = active ? 'Exit fullscreen' : 'Fullscreen';
+		button.innerHTML = `<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">${active
+			? '<path d="M5 16h3v3h2v-5H5v2zm3-8H5V5h5v2H7v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>'
+			: '<path d="M5 14h2v3h3v2H5v-5zm2-4H5V5h5v2H7v3zm7 7h3v-3h2v5h-5v-2zm3-7V7h-3V5h5v5h-2z"/>'}</svg>`;
 		button.disabled = fullscreenPending || !document.fullscreenEnabled;
 		button.title = document.fullscreenEnabled
 			? label

@@ -120,6 +120,19 @@
 	.help-panel button {
 		padding: 0 16px;
 	}
+	.title-actions .fullscreen-icon-button {
+		position: absolute;
+		top: 32px;
+		right: 32px;
+		flex: 0 0 54px;
+		width: 54px;
+		height: 54px;
+		min-height: 54px;
+		padding: 0;
+		display: grid;
+		place-items: center;
+		background: #0b1723e6;
+	}
 	.help-panel p {
 		color: var(--menu-muted);
 		font-size: 14px;
@@ -484,6 +497,10 @@
 			max(12px, env(safe-area-inset-left));
 		.screen {
 			padding: 20px;
+		}
+		.title-actions .fullscreen-icon-button {
+			top: 20px;
+			right: 20px;
 		}
 		.title {
 			min-height: calc(100dvh - 24px);
