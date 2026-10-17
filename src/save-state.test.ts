@@ -372,3 +372,75 @@ test('schema parsing preserves extension fields and fractional state without coe
 		await world.dispose();
 	}
 });
+
+test('validation retains array, tuple and own __proto__ extensions without changing prototypes', async function () {
+	const world = await createGame('invasion');
+	try {
+		const saved = captureConquestSave(world, LAB_MAP, 'invasion', 1, 'test');
+		const seed = saved.game.map.planets[0];
+		if (!seed) throw new Error('Missing seed');
+		const extended = [saved, saved.game, saved.game.map, saved.game.match,
+			saved.game.orderBook, saved.game.units, seed];
+		for (const value of extended) {
+			Object.defineProperty(value, 'extension', { value: { retained: true }, enumerable: true });
+			Object.defineProperty(value, '__proto__', { value: { retained: true }, enumerable: true });
+		}
+		const before = structuredClone(saved);
+		const parsed = parseConquestSave(saved, 'test');
+		expect(parsed).toBe(saved);
+		expect(structuredClone(parsed)).toEqual(before);
+		for (const value of extended) {
+			expect(Object.getOwnPropertyDescriptor(value, '__proto__')?.value).toEqual({ retained: true });
+			expect(Object.getPrototypeOf(value)).toBe(Array.isArray(value) ? Array.prototype : Object.prototype);
+		}
+	} finally {
+		await world.dispose();
+	}
+});
+
+test('sparse save arrays retain holes while explicit undefined and missing tuple slots are rejected', async function () {
+	const world = await createGame('invasion');
+	try {
+		world.getResource('match').paused = true;
+		dispatch(world, [named(world, 'Terra').id], named(world, 'Sol').id, 0.5);
+		const saved = captureConquestSave(world, LAB_MAP, 'invasion', 1, 'test');
+		const changes: ((copy: ConquestSave) => unknown[])[] = [
+			function (copy): unknown[] { return copy.game.match.notices; },
+			function (copy): unknown[] { return copy.game.units; },
+			function (copy): unknown[] { return copy.game.orderBook.active; },
+			function (copy): unknown[] {
+				const order = copy.game.orderBook.active[0];
+				if (!order) throw new Error('Missing order');
+				return order.departures;
+			},
+		];
+		for (const select of changes) {
+			const copy = structuredClone(saved);
+			const array = select(copy);
+			const index = array.length;
+			array.length++;
+			const cloned = structuredClone(copy);
+			expect(parseConquestSave(cloned)).toBe(cloned);
+			expect(index in select(cloned)).toBe(false);
+			array[index] = undefined;
+			expect(function () { parseConquestSave(copy); }).toThrow(
+				'Could not validate this saved conquest. Its profile data was kept unchanged.',
+			);
+		}
+		// Matching holes in seed/live-planet arrays were also accepted originally.
+		const sparsePlanets = structuredClone(saved);
+		Reflect.deleteProperty(sparsePlanets.game.map.planets, '0');
+		delete sparsePlanets.game.planets[0];
+		// Remove references to the deleted planet while retaining valid remaining rows.
+		sparsePlanets.game.units = [];
+		sparsePlanets.game.orderBook.active = [];
+		expect(parseConquestSave(sparsePlanets)).toBe(sparsePlanets);
+		const sparseTuple = structuredClone(saved);
+		const seed = sparseTuple.game.map.planets[0];
+		if (!seed) throw new Error('Missing seed');
+		Reflect.deleteProperty(seed, '0');
+		expect(function () { parseConquestSave(sparseTuple); }).toThrow();
+	} finally {
+		await world.dispose();
+	}
+});

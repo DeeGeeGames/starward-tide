@@ -213,3 +213,30 @@ test('deleting the selected profile clears only that profile selection and save'
 	expect((await repository.loadSave(second.id))?.savedAt).toBe(200);
 	repository.close();
 });
+
+test('saving and loading retains structured-clone extensions and sparse notices', async function () {
+	const database = new MemoryProfileDatabase();
+	const repository = new ProfileRepository(database);
+	try {
+		const profile = await repository.createProfile('Compatibility');
+		const save = makeSave(profile.id, 100);
+		const seed = save.game.map.planets[0];
+		if (!seed) throw new Error('Missing seed');
+		for (const value of [save.game.units, seed, save.game.match]) {
+			Object.defineProperty(value, 'extension', { value: 'retained', enumerable: true });
+			Object.defineProperty(value, '__proto__', { value: { retained: true }, enumerable: true });
+		}
+		save.game.match.notices.length = 1;
+		const before = structuredClone(save);
+		await repository.saveProfile(save);
+		const loaded = await repository.loadSave(profile.id);
+		expect(loaded).toEqual(before);
+		expect(loaded?.game.match.notices).toHaveLength(1);
+		expect(loaded && 0 in loaded.game.match.notices).toBe(false);
+		expect(Object.getOwnPropertyDescriptor(loaded?.game.units, 'extension')?.value).toBe('retained');
+		expect(Object.getOwnPropertyDescriptor(loaded?.game.map.planets[0], '__proto__')?.value)
+			.toEqual({ retained: true });
+	} finally {
+		repository.close();
+	}
+});

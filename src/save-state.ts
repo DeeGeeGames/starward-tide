@@ -39,7 +39,23 @@ export interface ConquestSave {
 const isRecord = function (value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 };
-// Loose objects preserve the existing acceptance of additional save fields.
+// Validate array elements with the original every() semantics: skip holes, but
+// reject explicit undefined. Keep the input so array/tuple extension fields survive.
+const savedArray = function <T extends z.ZodMiniType>(element: T): z.ZodMiniCustom<z.output<T>[]> {
+	return z.custom<z.output<T>[]>(function (value) {
+		return Array.isArray(value) && value.every(function (item: unknown) {
+			return element.safeParse(item).success;
+		});
+	});
+};
+// Schema validation proves the output type without replacing the accepted input.
+// This preserves all extension properties, including own enumerable __proto__.
+const unchanged = function <T extends z.ZodMiniType>(schema: T): z.ZodMiniCustom<z.output<T>> {
+	return z.custom<z.output<T>>(function (value) {
+		return schema.safeParse(value).success;
+	});
+};
+// Loose objects accept additional save fields.
 // Schemas are checked against simulation types rather than defining a second model.
 const nonnegativeNumber = z.number().check(z.gte(0));
 const safeInteger = nonnegativeNumber.check(z.refine(Number.isSafeInteger));
@@ -59,7 +75,7 @@ const planetSeedSchema = z.tuple([
 const mapSchema = z.looseObject({
 	width: z.number().check(z.gt(0), z.lte(10000)),
 	height: z.number().check(z.gt(0), z.lte(10000)),
-	planets: z.array(planetSeedSchema).check(z.minLength(2), z.maxLength(100)),
+	planets: savedArray(planetSeedSchema).check(z.minLength(2), z.maxLength(100)),
 }).check(z.refine(function (map) {
 	return map.planets.every(function (seed) {
 		return seed[1] <= map.width && seed[2] <= map.height;
@@ -104,7 +120,7 @@ const matchSchema = z.looseObject({
 	transportsLost: safeInteger,
 	troopsLost: safeInteger,
 	firstCapture: z.nullable(nonnegativeNumber),
-	notices: z.array(noticeSchema).check(z.maxLength(100)),
+	notices: savedArray(noticeSchema).check(z.maxLength(100)),
 }).check(z.refine(function (match) {
 	return match.firstCapture === null || match.firstCapture <= match.time;
 })) satisfies z.ZodMiniType<Omit<Match, 'engagements'>>;
@@ -120,11 +136,11 @@ const orderSchema = z.looseObject({
 	owner: sideSchema,
 	target: idSchema,
 	state: z.enum(['pending', 'outbound', 'returning']),
-	departures: z.array(departureSchema).check(z.maxLength(10000)),
+	departures: savedArray(departureSchema).check(z.maxLength(10000)),
 }) satisfies z.ZodMiniType<Order>;
 const orderBookSchema = z.looseObject({
 	nextId: idSchema,
-	active: z.array(orderSchema).check(z.maxLength(10000)),
+	active: savedArray(orderSchema).check(z.maxLength(10000)),
 }) satisfies z.ZodMiniType<OrderBook>;
 
 const sameSeedGeometry = function (planet: Planet, seed: PlanetSeed): boolean {
@@ -148,8 +164,9 @@ const hasUniqueIds = function (
 };
 const hasSnapshotIntegrity = function (value: GameSnapshot): boolean {
 	if (value.planets.length !== value.map.planets.length) return false;
-	const planetRows = value.planets;
-	const unitRows = value.units;
+	// filter() skips holes, as the original parser's narrowing pass did.
+	const planetRows = value.planets.filter(function () { return true; });
+	const unitRows = value.units.filter(function () { return true; });
 	const allIds = new Set<number>();
 	if (!hasUniqueIds(planetRows, allIds) || !hasUniqueIds(unitRows, allIds)) return false;
 	const planetsByName = new Map(
@@ -222,8 +239,8 @@ const gameSnapshotSchema = z.looseObject({
 	scenario: scenarioSchema,
 	pace: z.union([z.literal(0.5), z.literal(1), z.literal(2)]),
 	match: matchSchema,
-	planets: z.array(z.looseObject({ id: idSchema, planet: planetSchema })),
-	units: z.array(z.looseObject({ id: idSchema, unit: unitSchema })).check(z.maxLength(10000)),
+	planets: savedArray(z.looseObject({ id: idSchema, planet: planetSchema })),
+	units: savedArray(z.looseObject({ id: idSchema, unit: unitSchema })).check(z.maxLength(10000)),
 	orderBook: orderBookSchema,
 }).check(z.refine(hasSnapshotIntegrity)) satisfies z.ZodMiniType<GameSnapshot>;
 const conquestSaveSchema = z.looseObject({
@@ -232,6 +249,8 @@ const conquestSaveSchema = z.looseObject({
 	savedAt: z.number().check(z.gt(0)),
 	game: gameSnapshotSchema,
 }) satisfies z.ZodMiniType<ConquestSave>;
+
+const validatedSaveSchema = unchanged(conquestSaveSchema);
 
 const migrateSave = function (value: unknown): unknown {
 	if (!isRecord(value) || typeof value.schemaVersion !== 'number')
@@ -259,7 +278,7 @@ export const parseConquestSave = function (
 	expectedProfileId?: string,
 ): ConquestSave {
 	const value = migrateSave(input);
-	const result = conquestSaveSchema.safeParse(value);
+	const result = validatedSaveSchema.safeParse(value);
 	if (!result.success ||
 		(expectedProfileId !== undefined && result.data.profileId !== expectedProfileId))
 		throw new InvalidSaveError(
