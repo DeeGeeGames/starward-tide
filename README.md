@@ -7,6 +7,8 @@ bun install --frozen-lockfile
 bun run dev
 ```
 
+Developer timing and a reusable crowded fixture are documented in [Performance diagnostics](docs/performance-diagnostics.md).
+
 Open http://localhost:3000. `bun run check` runs strict TypeScript checks, simulation tests, and a production build into `dist/`.
 
 GitHub Pages publishes the production build at https://david0178418.github.io/galaxy-conquest/. The [deployment workflow](.github/workflows/deploy.yml) runs checks, builds, and deploys on pushes to `main`; it can also be run manually from the Actions tab on `main`. Repository Settings → Pages must use **GitHub Actions** as the build source. Bundled asset URLs are relative, so the same build works under `/galaxy-conquest/` and at a domain root.
