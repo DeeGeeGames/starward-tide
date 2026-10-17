@@ -6,6 +6,10 @@ export const shipDetailZoom = function (zoom: number): 1 | 2 | 3 {
 	return 1;
 };
 
+export const planetPlatformOrbitRadius = function (planetRadius: number): number {
+	return Math.max((planetRadius + 20) * 1.5, planetRadius + 54);
+};
+
 // Cancel the DOM map transform for a viewport-sized backing canvas. The Pixi
 // root applies that same camera in logical CSS pixels; planets keep the DOM map.
 export const canvasViewport = function (camera: Camera, width: number, height: number): {

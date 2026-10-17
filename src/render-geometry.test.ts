@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { canvasViewport, visibleMapViewport, mapClipInsets, dashedLine, shipDetailZoom } from './render-geometry';
+import { canvasViewport, visibleMapViewport, mapClipInsets, dashedLine, shipDetailZoom, planetPlatformOrbitRadius } from './render-geometry';
 
 test('map backing bounds preserve projection at fit, partial pan, full viewport and offscreen', function () {
 	for (const camera of [{ x: 374.09, y: 130, scale: 0.443 }, { x: -1250, y: -542, scale: 3.7 },
@@ -37,6 +37,12 @@ test('viewport canvas cancels map CSS transform across pan, zoom and resize', fu
 
 test('ship detail tiers preserve original zoom thresholds', function () {
 	expect([0.5, 1, 1.749, 1.75, 2.499, 2.5, 5].map(shipDetailZoom)).toEqual([1, 1, 1, 2, 2, 3, 3]);
+});
+
+test('platform orbit clears transports and their silhouette', function () {
+	for (const planetRadius of [25, 28, 36]) {
+		expect(planetPlatformOrbitRadius(planetRadius)).toBeGreaterThan(planetRadius + 32 + 11);
+	}
 });
 
 test('pending routes retain screen-space dashes even when endpoints are offscreen', function () {
