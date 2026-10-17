@@ -6,6 +6,7 @@ import { LAB_MAP } from './maps';
 import type { StarMap } from './maps';
 import { createFrontMenu } from './front-menu';
 import type { DispatchFilter, Production, Scenario, Side } from './config';
+import { captureConquestSave } from './game-save';
 import {
 	createGame,
 	dispatch,
@@ -18,6 +19,8 @@ import {
 	units,
 } from './game';
 import type { Game } from './game';
+import { openProfileRepository } from './profile-storage';
+import type { ProfileRepository, ProfileSummary } from './profile-storage';
 
 const element = function <T extends HTMLElement>(
 	id: string,
@@ -28,6 +31,7 @@ const element = function <T extends HTMLElement>(
 	return found;
 };
 const board = element('board', HTMLElement);
+const app = element('app', HTMLDivElement);
 const mapWorld = element('map-world', HTMLDivElement);
 const planetPanel = element('planet-panel', HTMLElement);
 const productionControls = element('production-controls', HTMLDivElement);
@@ -58,6 +62,9 @@ const blueCount = element('blue-count', HTMLElement);
 const redCount = element('red-count', HTMLElement);
 const clock = element('clock', HTMLDivElement);
 const multiButton = element('multi', HTMLButtonElement);
+const saveGameButton = element('save-game', HTMLButtonElement);
+const saveStatus = element('save-status', HTMLSpanElement);
+const menuSaveStatus = element('save-status-menu', HTMLParagraphElement);
 const productionButtons = [
 	...document.querySelectorAll<HTMLButtonElement>('[data-production]'),
 ];
@@ -76,6 +83,30 @@ interface PlanetView {
 }
 const views = new Map<number, PlanetView>();
 let activeMap: StarMap = LAB_MAP;
+let profileRepository: ProfileRepository | undefined;
+let initialProfiles: ProfileSummary[] = [];
+let activeProfileId: string | null = null;
+let profileStorageMessage: string | null = null;
+let hasActiveConquest = false;
+let queuedAutosave: number | undefined;
+try {
+	profileRepository = await openProfileRepository();
+	initialProfiles = await profileRepository.listProfiles();
+	const storedSelection = await profileRepository.getSelectedProfileId();
+	activeProfileId = initialProfiles.some(function (profile) {
+		return profile.id === storedSelection;
+	})
+		? storedSelection
+		: (initialProfiles[0]?.id ?? null);
+	if (activeProfileId !== storedSelection)
+		await profileRepository.setSelectedProfileId(activeProfileId);
+} catch (error) {
+	profileRepository?.close();
+	profileRepository = undefined;
+	profileStorageMessage = error instanceof Error
+		? error.message
+		: 'Browser storage could not open. Open the standalone game to use local profiles.';
+}
 let world: Game = await createGame();
 let selected: number[] = [];
 let inspected: number | undefined;
@@ -83,7 +114,7 @@ let fraction = 0.5;
 let filter: DispatchFilter = 'combined';
 let multi = false;
 let scenario: Scenario = 'skirmish';
-let speed = 1;
+let speed: 0.5 | 1 | 2 = 1;
 let busy = false;
 let disposed = false;
 let raf = 0;
@@ -248,6 +279,94 @@ const feedback = function (text: string): void {
 	orderMessage = text;
 	noticeUntil = performance.now() + 2600;
 };
+const saveErrorMessage = function (error: unknown): string {
+	const message =
+		error instanceof Error
+			? error.message
+			: 'Browser storage could not complete the request.';
+	return window.top !== window.self
+		? `${message} Open the standalone game to use local saves.`
+		: message;
+};
+const updateSaveStatus = function (message: string): void {
+	saveStatus.textContent = message;
+	menuSaveStatus.textContent = message;
+};
+const savedStatus = function (savedAt: number): string {
+	return `Saved ${new Date(savedAt).toLocaleString()}`;
+};
+const sameMap = function (left: StarMap, right: StarMap): boolean {
+	return (
+		left.width === right.width &&
+		left.height === right.height &&
+		left.planets.length === right.planets.length &&
+		left.planets.every(function (planet, index) {
+			const match = right.planets[index];
+			return (
+				match !== undefined &&
+				planet.every(function (value, field) {
+					return value === match[field];
+				})
+			);
+		})
+	);
+};
+const saveCurrentProfile = async function (): Promise<void> {
+	if (!hasActiveConquest) return;
+	if (!profileRepository || activeProfileId === null)
+		throw new Error('Select a local profile before saving this conquest.');
+	const profileId = activeProfileId;
+	const save = captureConquestSave(
+		world,
+		activeMap,
+		scenario,
+		speed,
+		profileId,
+	);
+	updateSaveStatus('Saving…');
+	try {
+		await profileRepository.saveProfile(save);
+		if (activeProfileId === profileId) updateSaveStatus(savedStatus(save.savedAt));
+	} catch (error) {
+		const message = saveErrorMessage(error);
+		updateSaveStatus(`Save failed · ${message}`);
+		feedback(`Save failed: ${message}`);
+		throw error;
+	}
+};
+const queueAutosave = function (): void {
+	if (busy || !hasActiveConquest || frontMenu.getCurrentScreen() !== 'playing') return;
+	if (queuedAutosave !== undefined) window.clearTimeout(queuedAutosave);
+	queuedAutosave = window.setTimeout(function () {
+		queuedAutosave = undefined;
+		if (busy) return;
+		void saveCurrentProfile().catch(function () {});
+	}, 800);
+};
+const saveBeforeLeavingGame = async function (): Promise<boolean> {
+	if (busy) return false;
+	busy = true;
+	app.inert = true;
+	if (queuedAutosave !== undefined) {
+		window.clearTimeout(queuedAutosave);
+		queuedAutosave = undefined;
+	}
+	const match = world.getResource('match');
+	const wasPaused = match.paused;
+	cancelGesture();
+	match.paused = true;
+	try {
+		await saveCurrentProfile();
+		return true;
+	} catch {
+		match.paused = wasPaused;
+		refresh();
+		return false;
+	} finally {
+		busy = false;
+		app.inert = false;
+	}
+};
 const selectPlanet = function (id: number): void {
 	if (
 		busy ||
@@ -301,6 +420,7 @@ const sendToPlanet = function (id: number): void {
 				? `${sent} ${sent === 1 ? 'unit' : 'units'} launched → ${p.name}`
 				: 'No units launched. Check stock, filter, or blockade.',
 		);
+		if (sent > 0) queueAutosave();
 	}
 	refresh();
 };
@@ -534,6 +654,7 @@ const drawer = createOrdersDrawer(
 	},
 	function (message) {
 		feedback(message);
+		queueAutosave();
 		refresh();
 	},
 );
@@ -906,23 +1027,69 @@ syncFullscreen();
 const restart = async function (
 	next: Scenario = scenario,
 	map: StarMap = activeMap,
+	replacementConfirmed = false,
 ): Promise<void> {
 	if (busy) return;
 	busy = true;
+	app.inert = true;
+	if (queuedAutosave !== undefined) {
+		window.clearTimeout(queuedAutosave);
+		queuedAutosave = undefined;
+	}
 	cancelGesture();
+	let replacement: Game | undefined;
+	let installed = false;
 	try {
-		const replacement = await createGame(next, map);
-		await world.dispose();
+		if (hasActiveConquest && !replacementConfirmed) {
+			if (!profileRepository || activeProfileId === null)
+				throw new Error('Select a local profile before replacing this conquest.');
+			const profiles = await profileRepository.listProfiles();
+			const profile = profiles.find(function (candidate) {
+				return candidate.id === activeProfileId;
+			});
+			if (!profile) throw new Error('The active profile is no longer available.');
+			if (
+				!window.confirm(
+					`Restarting will replace ${profile.name}'s active conquest with a new one. Continue?`,
+				)
+			) {
+				scenarioSelect.value = activeMap === LAB_MAP ? scenario : 'generated';
+				return;
+			}
+		}
+		replacement = await createGame(next, map);
+		replacement.getResource('match').paused = document.hidden;
+		if (!profileRepository || activeProfileId === null)
+			throw new Error('Local profile storage is unavailable. The previous conquest was kept.');
+		const nextSave = captureConquestSave(
+			replacement,
+			map,
+			next,
+			speed,
+			activeProfileId,
+		);
+		try {
+			await profileRepository.saveProfile(nextSave);
+		} catch (error) {
+			const message = saveErrorMessage(error);
+			updateSaveStatus(`Save failed · ${message}`);
+			throw new Error(
+				`The new conquest could not be saved. The previous game and save were kept. ${message}`,
+				{ cause: error },
+			);
+		}
 		if (disposed) {
 			await replacement.dispose();
 			return;
 		}
+		const previousWorld = world;
 		world = replacement;
+		installed = true;
 		activeMap = map;
 		mapWorld.style.width = `${map.width}px`;
 		mapWorld.style.height = `${map.height}px`;
 		hiddenPause = document.hidden;
-		world.getResource('match').paused = document.hidden;
+		hasActiveConquest = true;
 		scenario = next;
 		scenarioSelect.value = map === LAB_MAP ? next : 'generated';
 		selected = [];
@@ -934,15 +1101,24 @@ const restart = async function (
 		fitMap();
 		mountPlanets();
 		refresh();
+		updateSaveStatus(savedStatus(nextSave.savedAt));
+		saveGameButton.disabled = false;
+		await previousWorld.dispose();
+	} catch (error) {
+		if (replacement && !installed) await replacement.dispose();
+		throw error;
 	} finally {
 		busy = false;
+		app.inert = false;
 	}
 };
 for (const button of productionButtons)
 	button.addEventListener('click', function () {
 		const value = button.dataset.production;
-		if (value === 'troops' || value === 'ships' || value === 'guns')
+		if (value === 'troops' || value === 'ships' || value === 'guns') {
 			setProduction(world, selected, value);
+			queueAutosave();
+		}
 		refresh();
 	});
 for (const button of amountButtons)
@@ -974,25 +1150,30 @@ element('clear', HTMLButtonElement).addEventListener('click', function () {
 pause.addEventListener('click', function () {
 	const match = world.getResource('match');
 	match.paused = !match.paused;
+	queueAutosave();
 	refresh();
 });
 element('restart', HTMLButtonElement).addEventListener('click', function () {
-	void restart().catch(function () {
-		feedback('Could not restart map. Please try again.');
+	void restart().catch(function (error) {
+		feedback(saveErrorMessage(error));
 	});
 });
 scenarioSelect.addEventListener('change', function () {
 	const next = scenarioSelect.value;
 	if (next === 'skirmish' || next === 'blockade' || next === 'invasion')
-		void restart(next, LAB_MAP).catch(function () {
-			feedback('Could not load scenario. Please try again.');
+		void restart(next, LAB_MAP).catch(function (error) {
+			feedback(saveErrorMessage(error));
 		});
 });
 speedSelect.addEventListener('change', function () {
-	speed = Number(speedSelect.value);
+	const nextSpeed = Number(speedSelect.value);
+	if (nextSpeed !== 0.5 && nextSpeed !== 1 && nextSpeed !== 2) return;
+	speed = nextSpeed;
+	queueAutosave();
 });
 aiInput.addEventListener('change', function () {
 	world.getResource('match').ai = aiInput.checked;
+	queueAutosave();
 });
 let previous = performance.now();
 let lastRefresh = 0;
@@ -1012,9 +1193,73 @@ const frame = function (now: number): void {
 	raf = requestAnimationFrame(frame);
 };
 world.getResource('match').paused = true;
+saveGameButton.disabled = true;
+const continueProfile = async function (profileId: string): Promise<void> {
+	if (!profileRepository) throw new Error('IndexedDB local storage is unavailable.');
+	const save = await profileRepository.loadSave(profileId);
+	if (!save) throw new Error('This profile has no saved conquest to continue.');
+	let replacement: Game | undefined;
+	let installed = false;
+	try {
+		replacement = await createGame(
+			save.game.scenario,
+			save.game.map,
+			save.game,
+		);
+		replacement.getResource('match').paused = true;
+		if (disposed) {
+			await replacement.dispose();
+			return;
+		}
+		const previousWorld = world;
+		world = replacement;
+		installed = true;
+		activeProfileId = profileId;
+		hasActiveConquest = true;
+		activeMap = sameMap(save.game.map, LAB_MAP)
+			? LAB_MAP
+			: structuredClone(save.game.map);
+		mapWorld.style.width = `${activeMap.width}px`;
+		mapWorld.style.height = `${activeMap.height}px`;
+		scenario = save.game.scenario;
+		speed = save.game.pace;
+		speedSelect.value = String(speed);
+		scenarioSelect.value = activeMap === LAB_MAP ? scenario : 'generated';
+		hiddenPause = false;
+		selected = [];
+		inspected = undefined;
+		multi = false;
+		drawer.reset();
+		noticeUntil = 0;
+		lastNoticeKey = '';
+		fitMap();
+		mountPlanets();
+		refresh();
+		updateSaveStatus(savedStatus(save.savedAt));
+		saveGameButton.disabled = false;
+		await previousWorld.dispose();
+	} catch (error) {
+		if (replacement && !installed) await replacement.dispose();
+		throw error;
+	}
+};
 const frontMenu = await createFrontMenu({
-	start: function (map) {
-		return restart('skirmish', map);
+	start: async function (map) {
+		await restart('skirmish', map, true);
+	},
+	continue: continueProfile,
+	profiles: profileRepository,
+	initialProfiles,
+	initialSelectedProfileId: activeProfileId,
+	storageMessage: profileStorageMessage,
+	beforeProfileChange: async function () {
+		await saveCurrentProfile();
+	},
+	onProfileChange: function (profileId) {
+		activeProfileId = profileId;
+		hasActiveConquest = false;
+		updateSaveStatus(profileId ? 'No active conquest' : 'Not saved');
+		saveGameButton.disabled = true;
 	},
 	onMenu: function () {
 		cancelGesture();
@@ -1025,15 +1270,34 @@ const frontMenu = await createFrontMenu({
 		fitMap();
 		refresh();
 		board.focus();
+		void saveCurrentProfile().catch(function () {});
 	},
 });
-element('setup-game', HTMLButtonElement).addEventListener('click', function () {
+
+const autosaveTimer = window.setInterval(function () {
+	if (busy || frontMenu.getCurrentScreen() !== 'playing') return;
+	void saveCurrentProfile().catch(function () {});
+}, 15_000);
+saveGameButton.addEventListener('click', function () {
 	if (busy) return;
+	void saveCurrentProfile().catch(function () {});
+});
+element('profiles-game', HTMLButtonElement).addEventListener('click', async function () {
+	if (busy || !(await saveBeforeLeavingGame())) return;
 	drawer.reset();
 	fieldGuide.hidden = true;
 	settings.setAttribute('aria-expanded', 'false');
 	settings.setAttribute('aria-label', 'Open game menu');
-	void frontMenu.setScreen('setup', {});
+	await frontMenu.setScreen('title', {});
+});
+element('setup-game', HTMLButtonElement).addEventListener('click', async function () {
+	if (busy) return;
+	if (!(await saveBeforeLeavingGame())) return;
+	drawer.reset();
+	fieldGuide.hidden = true;
+	settings.setAttribute('aria-expanded', 'false');
+	settings.setAttribute('aria-label', 'Open game menu');
+	await frontMenu.setScreen('setup', {});
 });
 document.addEventListener('visibilitychange', function () {
 	if (frontMenu.getCurrentScreen() !== 'playing') return;
@@ -1070,7 +1334,10 @@ window.addEventListener('pagehide', function (event) {
 	disposed = true;
 	cancelGesture();
 	cancelAnimationFrame(raf);
+	if (autosaveTimer !== undefined) window.clearInterval(autosaveTimer);
+	if (queuedAutosave !== undefined) window.clearTimeout(queuedAutosave);
 	resizeObserver.disconnect();
 	void world.dispose();
 	void frontMenu.dispose();
+	profileRepository?.close();
 });
