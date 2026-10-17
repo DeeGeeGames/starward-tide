@@ -1,9 +1,10 @@
-import { COLORS, type Side } from './config';
+import { COLORS, type Owner, type Side } from './config';
 
 // Original Canvas paths are rasterized once per side/kind/detail tier.
 export const createShipPainter = function (ctx: CanvasRenderingContext2D): {
 	warship: (owner: Side, zoom: number) => void;
 	transport: (owner: Side, zoom: number) => void;
+	defensePlatform: (owner: Owner, zoom: number) => void;
 } {
 	const WARSHIP_HULL = new Path2D();
 	WARSHIP_HULL.moveTo(12, -1.5);
@@ -41,6 +42,19 @@ export const createShipPainter = function (ctx: CanvasRenderingContext2D): {
 	TRANSPORT_HULL.lineTo(2, -5);
 	TRANSPORT_HULL.lineTo(7, -5);
 	TRANSPORT_HULL.closePath();
+	const PLATFORM_BASE = new Path2D();
+	PLATFORM_BASE.moveTo(-5, -2.8);
+	PLATFORM_BASE.lineTo(-2.8, -5);
+	PLATFORM_BASE.lineTo(2.8, -5);
+	PLATFORM_BASE.lineTo(5, -2.8);
+	PLATFORM_BASE.lineTo(5, 2.8);
+	PLATFORM_BASE.lineTo(2.8, 5);
+	PLATFORM_BASE.lineTo(-2.8, 5);
+	PLATFORM_BASE.lineTo(-5, 2.8);
+	PLATFORM_BASE.closePath();
+	const PLATFORM_BARRELS = new Path2D();
+	PLATFORM_BARRELS.rect(3, -3.6, 8, 2);
+	PLATFORM_BARRELS.rect(3, 1.6, 8, 2);
 	const UNIT_SHADE: Record<Side, string> = {
 		blue: '#17485b',
 		red: '#753f42',
@@ -125,5 +139,33 @@ export const createShipPainter = function (ctx: CanvasRenderingContext2D): {
 			ctx.fillRect(3.8, -0.5, 3.4, 1);
 		}
 	};
-	return { warship: drawWarship, transport: drawTroopTransport };
+	const drawDefensePlatform = function (owner: Owner, zoom: number): void {
+		ctx.fillStyle = COLORS[owner];
+		ctx.strokeStyle = '#142a38';
+		ctx.lineWidth = 1;
+		ctx.fill(PLATFORM_BARRELS);
+		ctx.fill(PLATFORM_BASE);
+		ctx.stroke(PLATFORM_BARRELS);
+		ctx.stroke(PLATFORM_BASE);
+		if (zoom >= 1.75) {
+			ctx.fillStyle = owner === 'neutral' ? '#4b5865' : UNIT_SHADE[owner];
+			ctx.beginPath();
+			ctx.arc(0, 0, 1.8, 0, Math.PI * 2);
+			ctx.fill();
+			ctx.strokeStyle =
+				owner === 'neutral' ? '#c6d2dd' : UNIT_HIGHLIGHT[owner];
+			ctx.lineWidth = 0.7;
+			ctx.beginPath();
+			ctx.moveTo(-2, 0);
+			ctx.lineTo(2, 0);
+			ctx.moveTo(0, -2);
+			ctx.lineTo(0, 2);
+			ctx.stroke();
+		}
+	};
+	return {
+		warship: drawWarship,
+		transport: drawTroopTransport,
+		defensePlatform: drawDefensePlatform,
+	};
 };

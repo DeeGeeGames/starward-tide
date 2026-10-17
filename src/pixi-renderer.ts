@@ -1,13 +1,13 @@
 import ECSpresso from 'ecspresso';
 import { createRenderer2DPlugin, createSpriteComponents } from 'ecspresso/plugins/rendering/renderer2D';
 import { Application, Container, Graphics, Sprite, Texture, CanvasSource } from 'pixi.js';
-import { COLORS, type Side } from './config';
+import { COLORS, type Owner, type Side } from './config';
 import type { Camera } from './camera';
 import type { StarMap } from './maps';
 import { isBlockaded, planets, shipsAt, orderUnits, unitPoint, units } from './game';
 import type { Game, Order } from './game';
 import { createShipPainter } from './ship-art';
-import { canvasViewport, visibleMapViewport, mapClipInsets, dashedLine, shipDetailZoom } from './render-geometry';
+import { canvasViewport, visibleMapViewport, mapClipInsets, dashedLine, shipDetailZoom, planetPlatformOrbitRadius } from './render-geometry';
 
 interface RendererState {
 	world: Game;
@@ -17,13 +17,18 @@ interface RendererState {
 	highlighted: Order | undefined;
 }
 interface RendererInspection {
-	ships: number; travelLines: number; textures: number; entities: number; tickerStarted: boolean; width: number; height: number; resolution: number;
+	ships: number; platforms: number; travelLines: number; textures: number; entities: number; tickerStarted: boolean; width: number; height: number; resolution: number;
 }
 interface RendererDependencies {
 	canvas: HTMLCanvasElement;
 	getState: () => RendererState;
 	getPixelRatio: () => number;
 	getViewport: () => { width: number; height: number };
+}
+interface PlatformView {
+	entityId: number;
+	sprite: Sprite;
+	textureKey: string;
 }
 
 const makeTexture = function (size: number, resolution: number, paint: (context: CanvasRenderingContext2D) => void): Texture {
@@ -63,6 +68,7 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 	const travelLines = new Container();
 	const textures = new Map<string, Texture>();
 	const fleet = new Map<number, { entityId: number; display: Container; hull: Sprite; badge: Sprite | undefined; route: Sprite | undefined }>();
+	const platformViews = new Map<number, PlatformView[]>();
 	let currentWorld: Game | undefined;
 	let currentMap: StarMap | undefined;
 	let disposal: Promise<void> | undefined;
@@ -89,6 +95,22 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			const painter = createShipPainter(context);
 			if (kind === 'ship') painter.warship(owner, detail === 3 ? 2.5 : detail === 2 ? 1.75 : 1);
 			else painter.transport(owner, detail === 3 ? 2.5 : detail === 2 ? 1.75 : 1);
+		});
+		textures.set(key, created);
+		return created;
+	};
+	const platformTextureKey = function (owner: Owner, detail: 1 | 2 | 3): string {
+		return `platform:${owner}:${detail}`;
+	};
+	const platformTexture = function (owner: Owner, detail: 1 | 2 | 3): Texture {
+		const key = platformTextureKey(owner, detail);
+		const cached = textures.get(key);
+		if (cached) return cached;
+		const created = makeTexture(32, 4, function (context) {
+			createShipPainter(context).defensePlatform(
+				owner,
+				detail === 3 ? 2.5 : detail === 2 ? 1.75 : 1,
+			);
 		});
 		textures.set(key, created);
 		return created;
@@ -141,6 +163,13 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			route?.destroy();
 		}
 		fleet.clear();
+		for (const views of platformViews.values()) {
+			for (const view of views) {
+				presentation.removeEntity(view.entityId);
+				view.sprite.destroy();
+			}
+		}
+		platformViews.clear();
 		for (const shared of cargoTextures.values()) shared.destroy(true);
 		cargoTextures.clear();
 	};
@@ -179,6 +208,54 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 		const zoom = camera.scale / fitScale;
 		for (const { id, components: { planet: p } } of planets(world)) {
 			routes.circle(p.x, p.y, p.radius + 20).stroke({ color: '#4d739517', width: 1 });
+			const platformCount = Math.max(0, Math.ceil(p.guns));
+			const existingPlatforms = platformViews.get(id) ?? [];
+			while (existingPlatforms.length > platformCount) {
+				const removed = existingPlatforms.pop();
+				if (!removed) continue;
+				presentation.removeEntity(removed.entityId);
+				removed.sprite.destroy();
+			}
+			if (platformCount > 0) {
+				const orbitRadius = planetPlatformOrbitRadius(p.radius);
+				routes.circle(p.x, p.y, orbitRadius).stroke({
+					color: COLORS[p.owner],
+					alpha: 0.13,
+					width: 1,
+				});
+				const detail = shipDetailZoom(zoom);
+				const key = platformTextureKey(p.owner, detail);
+				for (let index = 0; index < platformCount; index++) {
+					let view = existingPlatforms[index];
+					if (!view) {
+						const sprite = new Sprite(platformTexture(p.owner, detail));
+						sprite.anchor.set(0.5);
+						const entity = presentation.spawn({
+							...createSpriteComponents(sprite),
+							renderLayer: 'ships',
+						});
+						view = { entityId: entity.id, sprite, textureKey: key };
+						existingPlatforms.push(view);
+					}
+					if (view.textureKey !== key) {
+						view.sprite.texture = platformTexture(p.owner, detail);
+						view.textureKey = key;
+					}
+					const angle =
+						match.time * 0.12 + (Math.PI * 2 * index) / platformCount;
+					const transform = presentation.getComponent(
+						view.entityId,
+						'localTransform',
+					);
+					if (transform) {
+						transform.x = p.x + Math.cos(angle) * orbitRadius;
+						transform.y = p.y + Math.sin(angle) * orbitRadius;
+						transform.rotation = angle;
+						presentation.markChanged(view.entityId, 'localTransform');
+					}
+				}
+				platformViews.set(id, existingPlatforms);
+			} else platformViews.delete(id);
 			const blue = shipsAt(world, id, 'blue').length;
 			const red = shipsAt(world, id, 'red').length;
 			if ((blue > 0 && p.owner !== 'blue') || (red > 0 && p.owner !== 'red')) {
@@ -312,7 +389,8 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 		return disposal;
 	};
 	const inspect = function (): RendererInspection {
-		return { ships: fleet.size, travelLines: travelLines.children.length, textures: textures.size + cargoTextures.size, entities: presentation.entityCount,
+		return { ships: fleet.size, platforms: [...platformViews.values()].reduce(function (count, views) { return count + views.length; }, 0),
+			travelLines: travelLines.children.length, textures: textures.size + cargoTextures.size, entities: presentation.entityCount,
 			tickerStarted: app.ticker.started, width: app.screen.width, height: app.screen.height, resolution: app.renderer.resolution };
 	};
 	return { draw, reset, inspect, dispose };
