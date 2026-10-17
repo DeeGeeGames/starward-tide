@@ -81,6 +81,17 @@ interface PlanetView {
 	mark: HTMLSpanElement;
 	progress: HTMLElement;
 }
+type GamePace = 0.5 | 1 | 2;
+interface GameInstallation {
+	game: Game;
+	map: StarMap;
+	scenario: Scenario;
+	profileId: string;
+	pace: GamePace;
+	paused: boolean;
+	hiddenPause: boolean;
+	savedAt: number;
+}
 const views = new Map<number, PlanetView>();
 let activeMap: StarMap = LAB_MAP;
 let profileRepository: ProfileRepository | undefined;
@@ -114,7 +125,7 @@ let fraction = 0.5;
 let filter: DispatchFilter = 'combined';
 let multi = false;
 let scenario: Scenario = 'skirmish';
-let speed: 0.5 | 1 | 2 = 1;
+let speed: GamePace = 1;
 let busy = false;
 let disposed = false;
 let raf = 0;
@@ -1024,6 +1035,43 @@ fullscreen.addEventListener('click', async function () {
 document.addEventListener('fullscreenchange', syncFullscreen);
 syncFullscreen();
 
+const installGame = async function (
+	installation: GameInstallation,
+): Promise<void> {
+	if (disposed) {
+		await installation.game.dispose();
+		return;
+	}
+	const previousWorld = world;
+	world = installation.game;
+	try {
+		world.getResource('match').paused = installation.paused;
+		activeProfileId = installation.profileId;
+		activeMap = installation.map;
+		mapWorld.style.width = `${activeMap.width}px`;
+		mapWorld.style.height = `${activeMap.height}px`;
+		hiddenPause = installation.hiddenPause;
+		hasActiveConquest = true;
+		scenario = installation.scenario;
+		speed = installation.pace;
+		speedSelect.value = String(speed);
+		scenarioSelect.value = activeMap === LAB_MAP ? scenario : 'generated';
+		selected = [];
+		inspected = undefined;
+		multi = false;
+		drawer.reset();
+		noticeUntil = 0;
+		lastNoticeKey = '';
+		fitMap();
+		mountPlanets();
+		refresh();
+		updateSaveStatus(savedStatus(installation.savedAt));
+		saveGameButton.disabled = false;
+	} finally {
+		await previousWorld.dispose();
+	}
+};
+
 const restart = async function (
 	next: Scenario = scenario,
 	map: StarMap = activeMap,
@@ -1038,7 +1086,6 @@ const restart = async function (
 	}
 	cancelGesture();
 	let replacement: Game | undefined;
-	let installed = false;
 	try {
 		if (hasActiveConquest && !replacementConfirmed) {
 			if (!profileRepository || activeProfileId === null)
@@ -1059,14 +1106,15 @@ const restart = async function (
 		}
 		replacement = await createGame(next, map);
 		replacement.getResource('match').paused = document.hidden;
-		if (!profileRepository || activeProfileId === null)
+		const profileId = activeProfileId;
+		if (!profileRepository || profileId === null)
 			throw new Error('Local profile storage is unavailable. The previous conquest was kept.');
 		const nextSave = captureConquestSave(
 			replacement,
 			map,
 			next,
 			speed,
-			activeProfileId,
+			profileId,
 		);
 		try {
 			await profileRepository.saveProfile(nextSave);
@@ -1078,34 +1126,20 @@ const restart = async function (
 				{ cause: error },
 			);
 		}
-		if (disposed) {
-			await replacement.dispose();
-			return;
-		}
-		const previousWorld = world;
-		world = replacement;
-		installed = true;
-		activeMap = map;
-		mapWorld.style.width = `${map.width}px`;
-		mapWorld.style.height = `${map.height}px`;
-		hiddenPause = document.hidden;
-		hasActiveConquest = true;
-		scenario = next;
-		scenarioSelect.value = map === LAB_MAP ? next : 'generated';
-		selected = [];
-		inspected = undefined;
-		multi = false;
-		drawer.reset();
-		noticeUntil = 0;
-		lastNoticeKey = '';
-		fitMap();
-		mountPlanets();
-		refresh();
-		updateSaveStatus(savedStatus(nextSave.savedAt));
-		saveGameButton.disabled = false;
-		await previousWorld.dispose();
+		const gameToInstall = replacement;
+		replacement = undefined;
+		await installGame({
+			game: gameToInstall,
+			map,
+			scenario: next,
+			profileId,
+			pace: speed,
+			paused: document.hidden,
+			hiddenPause: document.hidden,
+			savedAt: nextSave.savedAt,
+		});
 	} catch (error) {
-		if (replacement && !installed) await replacement.dispose();
+		if (replacement) await replacement.dispose();
 		throw error;
 	} finally {
 		busy = false;
@@ -1199,7 +1233,6 @@ const continueProfile = async function (profileId: string): Promise<void> {
 	const save = await profileRepository.loadSave(profileId);
 	if (!save) throw new Error('This profile has no saved conquest to continue.');
 	let replacement: Game | undefined;
-	let installed = false;
 	try {
 		replacement = await createGame(
 			save.game.scenario,
@@ -1207,39 +1240,23 @@ const continueProfile = async function (profileId: string): Promise<void> {
 			save.game,
 		);
 		replacement.getResource('match').paused = true;
-		if (disposed) {
-			await replacement.dispose();
-			return;
-		}
-		const previousWorld = world;
-		world = replacement;
-		installed = true;
-		activeProfileId = profileId;
-		hasActiveConquest = true;
-		activeMap = sameMap(save.game.map, LAB_MAP)
+		const restoredMap = sameMap(save.game.map, LAB_MAP)
 			? LAB_MAP
 			: structuredClone(save.game.map);
-		mapWorld.style.width = `${activeMap.width}px`;
-		mapWorld.style.height = `${activeMap.height}px`;
-		scenario = save.game.scenario;
-		speed = save.game.pace;
-		speedSelect.value = String(speed);
-		scenarioSelect.value = activeMap === LAB_MAP ? scenario : 'generated';
-		hiddenPause = false;
-		selected = [];
-		inspected = undefined;
-		multi = false;
-		drawer.reset();
-		noticeUntil = 0;
-		lastNoticeKey = '';
-		fitMap();
-		mountPlanets();
-		refresh();
-		updateSaveStatus(savedStatus(save.savedAt));
-		saveGameButton.disabled = false;
-		await previousWorld.dispose();
+		const gameToInstall = replacement;
+		replacement = undefined;
+		await installGame({
+			game: gameToInstall,
+			map: restoredMap,
+			scenario: save.game.scenario,
+			profileId,
+			pace: save.game.pace,
+			paused: true,
+			hiddenPause: false,
+			savedAt: save.savedAt,
+		});
 	} catch (error) {
-		if (replacement && !installed) await replacement.dispose();
+		if (replacement) await replacement.dispose();
 		throw error;
 	}
 };
