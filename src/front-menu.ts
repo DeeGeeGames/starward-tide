@@ -58,6 +58,29 @@ export const createFrontMenu = async function (options: {
 	const app = element('app', HTMLDivElement);
 	const newGame = element('new-game', HTMLButtonElement);
 	const start = element('start-conquest', HTMLButtonElement);
+	const profileBadge = element('profile-badge', HTMLButtonElement);
+	const profileBadgeName = element('profile-badge-name', HTMLElement);
+	const profileBadgeOrb = element('profile-badge-orb', HTMLElement);
+	const profileDialog = element('profile-dialog', HTMLDialogElement);
+	const closeProfiles = element('close-profiles', HTMLButtonElement);
+	const menuProfileStatus = element('menu-profile-status', HTMLParagraphElement);
+	const profileDialogListeners = new AbortController();
+	let restoreBadgeFocus = false;
+	const closeProfileDialog = function (): void {
+		if (!profileDialog.open) return;
+		restoreBadgeFocus = true;
+		profileDialog.close();
+	};
+	profileBadge.addEventListener(
+		'click',
+		function () {
+			if (!profileDialog.open) profileDialog.showModal();
+		},
+		{ signal: profileDialogListeners.signal },
+	);
+	closeProfiles.addEventListener('click', closeProfileDialog, {
+		signal: profileDialogListeners.signal,
+	});
 	const profileList = element('profile-list', HTMLDivElement);
 	const profileCount = element('profile-count', HTMLSpanElement);
 	const profileCreateForm = element('profile-create-form', HTMLFormElement);
@@ -81,10 +104,27 @@ export const createFrontMenu = async function (options: {
 	let starting = false;
 	let disposed = false;
 	const flow = flowBuilder.build();
+	const focusProfileBadge = function (): void {
+		if (!restoreBadgeFocus || disposed || profileBadge.disabled) return;
+		restoreBadgeFocus = false;
+		profileBadge.focus();
+	};
 	const renderProfileControls = function (
 		profileState: ProfilePickerState,
 	): void {
 		const selected = profileState.selectedProfile;
+		const name = selected?.name ??
+			(profileState.available ? 'Choose profile' : 'Storage unavailable');
+		profileBadgeName.textContent = name;
+		profileBadgeOrb.textContent = Array.from(name)[0]?.toUpperCase() ?? 'P';
+		profileBadge.setAttribute(
+			'aria-label',
+			`Active profile: ${name}. Open profile selection`,
+		);
+		profileBadge.disabled = starting || profileState.busy;
+		menuProfileStatus.textContent = profileStatus.textContent;
+		focusProfileBadge();
+
 		newGame.disabled =
 			!profileState.available ||
 			profileState.busy ||
@@ -111,7 +151,10 @@ export const createFrontMenu = async function (options: {
 		initialSelectedProfileId: options.initialSelectedProfileId,
 		storageMessage: options.storageMessage,
 		beforeProfileChange: options.beforeProfileChange,
-		onProfileChange: options.onProfileChange,
+		onProfileChange: function (profileId) {
+			options.onProfileChange(profileId);
+			if (profileId !== null) closeProfileDialog();
+		},
 		continueProfile: async function (profileId) {
 			await options.continue(profileId);
 			if (disposed) return;
@@ -125,6 +168,14 @@ export const createFrontMenu = async function (options: {
 		},
 		onStateChange: renderProfileControls,
 	});
+	profileDialog.addEventListener(
+		'close',
+		function () {
+			restoreBadgeFocus = true;
+			focusProfileBadge();
+		},
+		{ signal: profileDialogListeners.signal },
+	);
 	const renderProfiles = function (): void {
 		renderProfileControls(profilePicker.render());
 	};
@@ -197,6 +248,7 @@ export const createFrontMenu = async function (options: {
 			}),
 		);
 	const showMenu = function (screen: 'title' | 'setup'): void {
+		closeProfileDialog();
 		options.onMenu();
 		app.hidden = true;
 		root.hidden = false;
@@ -219,6 +271,7 @@ export const createFrontMenu = async function (options: {
 		showMenu('setup');
 	});
 	flow.onScreenEnter('playing', function () {
+		closeProfileDialog();
 		root.hidden = true;
 		app.hidden = false;
 		options.onPlaying();
@@ -290,6 +343,8 @@ export const createFrontMenu = async function (options: {
 	flow.dispose = async function (): Promise<void> {
 		if (disposed) return;
 		disposed = true;
+		profileDialogListeners.abort();
+		closeProfileDialog();
 		profilePicker.dispose();
 		await disposeFlow();
 	};
