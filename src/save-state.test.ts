@@ -333,3 +333,42 @@ test('malformed numeric state is rejected before it can stall production or disp
 		await original.dispose();
 	}
 });
+
+test('schema parsing preserves extension fields and fractional state without coercing malformed saves', async function () {
+	const world = await createGame('invasion');
+	try {
+		const saved = captureConquestSave(world, LAB_MAP, 'invasion', 1, 'test');
+		const row = saved.game.planets[0];
+		if (!row) throw new Error('Missing planet');
+		row.planet.guns = 0.5;
+		row.planet.progress = 0.25;
+		const extended = {
+			...saved,
+			extension: { enabled: true },
+			game: {
+				...saved.game,
+				match: { ...saved.game.match, extension: 'retained' },
+				planets: [{ ...row, planet: { ...row.planet, extension: 123 } }, ...saved.game.planets.slice(1)],
+			},
+		};
+		expect(parseConquestSave(extended, 'test')).toEqual(extended);
+		const malformed: unknown[] = [
+			{ ...saved, savedAt: String(saved.savedAt) },
+			{ ...saved, game: { ...saved.game, match: { ...saved.game.match, winner: undefined } } },
+			{ ...saved, game: { ...saved.game, match: { ...saved.game.match, time: Infinity } } },
+			{ ...saved, game: { ...saved.game, map: {
+				...saved.game.map,
+				planets: saved.game.map.planets.map(function (seed) { return [...seed, 'extra']; }),
+			} } },
+		];
+		for (const input of malformed) {
+			const before = structuredClone(input);
+			expect(function () { parseConquestSave(input); }).toThrow(
+				'Could not validate this saved conquest. Its profile data was kept unchanged.',
+			);
+			expect(input).toEqual(before);
+		}
+	} finally {
+		await world.dispose();
+	}
+});
