@@ -1,3 +1,5 @@
+import { createPerformanceDiagnostics, type PerformanceDiagnostics, type DiagnosticsReport } from './performance-diagnostics';
+import { createCrowdedBaseline } from './performance-scenario';
 import { createCanvasRenderer } from './canvas-renderer';
 import { createMapInput } from './map-input';
 import { createOrdersDrawer } from './orders-drawer';
@@ -16,6 +18,7 @@ import {
 	planets,
 	setProduction,
 	shipsAt,
+	units,
 } from './game';
 import type { Game } from './game';
 import { openProfileRepository } from './profile-storage';
@@ -115,6 +118,8 @@ try {
 		: 'Browser storage could not open. Open the standalone game to use local profiles.';
 }
 let world: Game = await createGame();
+let diagnostics: PerformanceDiagnostics | undefined;
+let diagnosticsEnabled = new URLSearchParams(location.search).get('diagnostics') === '1';
 let selected: number[] = [];
 let inspected: number | undefined;
 let fraction = 0.5;
@@ -182,16 +187,20 @@ const saveCurrentProfile = async function (): Promise<void> {
 	if (!profileRepository || activeProfileId === null)
 		throw new Error('Select a local profile before saving this conquest.');
 	const profileId = activeProfileId;
-	const save = captureConquestSave(
+	const capture = function (): ReturnType<typeof captureConquestSave> { return captureConquestSave(
 		world,
 		activeMap,
 		scenario,
 		speed,
 		profileId,
-	);
+	); };
+	const save = diagnostics ? diagnostics.measure('save.capture', capture) : capture();
 	updateSaveStatus('Saving…');
 	try {
-		await profileRepository.saveProfile(save);
+		// Async saveProfile validates/clones synchronously before its first await.
+		const repository = profileRepository;
+		const write = function (): Promise<void> { return repository.saveProfile(save); };
+		await (diagnostics ? diagnostics.measure('save.validateCloneSync', write) : write());
 		if (activeProfileId === profileId) updateSaveStatus(savedStatus(save.savedAt));
 	} catch (error) {
 		const message = saveErrorMessage(error);
@@ -323,6 +332,10 @@ const mountPlanets = function (): void {
 	}
 };
 const refresh = function (): void {
+	if (diagnostics) diagnostics.measure('hud', refreshContent);
+	else refreshContent();
+};
+const refreshContent = function (): void {
 	const match = world.getResource('match');
 	const all = planets(world);
 	selected = selected.filter(function (id) {
@@ -672,7 +685,10 @@ const installGame = async function (
 	}
 	mapInput.cancel();
 	const previousWorld = world;
+	diagnostics?.dispose();
+	diagnostics = undefined;
 	world = installation.game;
+	attachDiagnostics();
 	try {
 		world.getResource('match').paused = installation.paused;
 		activeProfileId = installation.profileId;
@@ -844,10 +860,15 @@ const frame = function (now: number): void {
 	if (disposed) return;
 	const dt = Math.min(Math.max((now - previous) / 1000, 0), 0.1);
 	previous = now;
+	diagnostics?.frame(now);
 	if (!busy && frontMenu.getCurrentScreen() === 'playing') {
 		// Keep rendering and command input live while simulation time is frozen.
-		if (!world.getResource('match').paused) world.update(dt * speed);
-		renderer.draw();
+		if (!world.getResource('match').paused) {
+			if (diagnostics) diagnostics.measure('simulation', function () { world.update(dt * speed); });
+			else world.update(dt * speed);
+		}
+		if (diagnostics) diagnostics.measure('draw', function () { renderer.draw(); });
+		else renderer.draw();
 		if (now - lastRefresh > 100) {
 			refresh();
 			lastRefresh = now;
@@ -974,10 +995,74 @@ window.addEventListener('keydown', function (event) {
 		pause.click();
 	}
 });
+const attachDiagnostics = function (): void {
+	if (!diagnosticsEnabled) return;
+	diagnostics = createPerformanceDiagnostics(world, function () {
+		const all = units(world);
+		return { scenario, map: activeMap, pace: speed, camera, simulationTime: world.getResource('match').time,
+			ships: all.filter(function (entity) { return entity.components.unit.kind === 'ship'; }).length,
+			transports: all.filter(function (entity) { return entity.components.unit.kind === 'transport'; }).length,
+			screen: frontMenu.getCurrentScreen(), viewport: {
+			width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
+			userAgent: navigator.userAgent, paused: world.getResource('match').paused,
+			visibility: document.visibilityState };
+	});
+	diagnostics.setEnabled(true);
+};
+// Developer API is exposed only with the explicit URL opt-in.
+if (diagnosticsEnabled) {
+	let baselineProfileId: string | undefined;
+	const api = {
+		enable: function (enabled: boolean): void {
+			diagnosticsEnabled = enabled;
+			diagnostics?.dispose(); diagnostics = undefined;
+			attachDiagnostics();
+		},
+		report: function (): DiagnosticsReport | undefined { return diagnostics?.report(); },
+		reset: function (): void { diagnostics?.reset(); },
+		baseline: async function (): Promise<void> {
+			if (disposed || busy || !profileRepository)
+				throw new Error('Baseline requires idle local storage');
+			if (!(await saveBeforeLeavingGame()))
+				throw new Error('Current conquest could not be saved');
+			busy = true;
+			let replacement: Game | undefined;
+			try {
+				// Reuse this session's dedicated profile; preserve all existing conquests.
+				if (!baselineProfileId) {
+					const profile = await profileRepository.createProfile('Performance baseline v1');
+					baselineProfileId = profile.id;
+				}
+				const snapshot = createCrowdedBaseline();
+				replacement = await createGame(snapshot.scenario, snapshot.map, snapshot);
+				const save = captureConquestSave(replacement, LAB_MAP, 'skirmish', 1, baselineProfileId);
+				await profileRepository.saveProfile(save);
+				await profileRepository.setSelectedProfileId(baselineProfileId);
+				const game = replacement;
+				replacement = undefined;
+				await installGame({ game, map: LAB_MAP, scenario: 'skirmish',
+					profileId: baselineProfileId, pace: 1, paused: false,
+					hiddenPause: false, savedAt: save.savedAt });
+				if (disposed) return;
+				await frontMenu.setScreen('playing', {});
+				world.getResource('match').paused = false;
+				diagnostics?.reset();
+			} finally {
+				await replacement?.dispose();
+				busy = false;
+			}
+		},
+	};
+	Object.defineProperty(window, 'conquestDiagnostics', { value: api, configurable: true });
+	attachDiagnostics();
+}
 raf = requestAnimationFrame(frame);
 window.addEventListener('pagehide', function (event) {
 	if (event.persisted) return;
 	disposed = true;
+	diagnostics?.dispose();
+	diagnostics = undefined;
+	Reflect.deleteProperty(window, 'conquestDiagnostics');
 	mapInput.dispose();
 	renderer.dispose();
 	cancelAnimationFrame(raf);

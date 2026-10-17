@@ -8,6 +8,7 @@ import {
 	createSpatialIndexPlugin,
 	spatialIndexSystems,
 } from 'ecspresso/plugins/spatial/spatial-index';
+import { createDiagnosticsPlugin, type DiagnosticsResourceTypes } from 'ecspresso/plugins/debug/diagnostics';
 import { CONFIG } from './config';
 import { runAI } from './ai';
 import { registerCombat } from './combat';
@@ -103,7 +104,7 @@ const spatialIndexPlugin = createSpatialIndexPlugin({
 type SpatialIndexConfig = NonNullable<typeof spatialIndexPlugin['_cfg']>;
 type GameConfig = WithResources<
 	WithComponents<SpatialIndexConfig, { planet: Planet; unit: Unit }>,
-	{ match: Match; orderBook: OrderBook }
+	DiagnosticsResourceTypes & { match: Match; orderBook: OrderBook; diagnosticsLifetime: { dispose: () => void } }
 >;
 export type Game = ECSpresso<GameConfig>;
 type PlanetEntity = FilteredEntity<GameConfig['components'], 'planet'>;
@@ -146,6 +147,8 @@ const makeWorld = function (): Game {
 	const orderBook: OrderBook = { nextId: 1, active: [] };
 	return ECSpresso.create()
 		.withPlugin(spatialIndexPlugin)
+		.withPlugin(createDiagnosticsPlugin({ enableTimingOnInit: false }))
+		.withResource('diagnosticsLifetime', { dispose: function (): void {} })
 		.withComponentTypes<{ planet: Planet; unit: Unit }>()
 		.withResource('match', match)
 		.withResource('orderBook', orderBook)
@@ -606,6 +609,7 @@ export const createGame = async function (
 	registerTravelerCleanup(world)
 		.inPhase('fixedUpdate')
 		.after(strategySystem);
+	world.disableSystemGroup('diagnostics');
 	await world.initialize();
 	if (snapshot) {
 		restoreSnapshot(world, snapshot);
