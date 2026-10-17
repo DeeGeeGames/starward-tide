@@ -1048,3 +1048,75 @@ test('recall to a captured departure planet uses normal combat instead of refund
 		await world.dispose();
 	}
 });
+
+test('passing fire includes the exact range boundary and breaks equal-distance ties by entity id', async function () {
+	const world = await quietWorld();
+	try {
+		const lyra = named(world, 'Lyra');
+		const blue = spawnTraveler(world, 'blue', 'ship', 600, 700, lyra.id);
+		const first = spawnTraveler(world, 'red', 'ship', 600 - CONFIG.engagementRange, 700, lyra.id);
+		const second = spawnTraveler(world, 'red', 'ship', 600 + CONFIG.engagementRange, 700, lyra.id);
+		world.update(CONFIG.step);
+		expect(blue.components.unit.x).toBe(600);
+		expect(first.components.unit.x).toBe(600 - CONFIG.engagementRange);
+		expect(second.components.unit.x).toBe(600 + CONFIG.engagementRange);
+		expect(first.components.unit.hp).toBeCloseTo(CONFIG.shipHealth - CONFIG.shipDamage * CONFIG.step);
+		expect(second.components.unit.hp).toBe(CONFIG.shipHealth);
+		expect(blue.components.unit.hp).toBeCloseTo(CONFIG.shipHealth - 2 * CONFIG.shipDamage * CONFIG.step);
+	} finally {
+		await world.dispose();
+	}
+});
+
+test('a transport entering range is found through the pre-movement spatial index', async function () {
+	const world = await quietWorld();
+	try {
+		const lyra = named(world, 'Lyra');
+		const planet = lyra.components.planet;
+		// Blue halts for the transport ahead, which exits range this step. The
+		// transport behind enters range, but its indexed position is still outside.
+		const x = 600, y = 700;
+		const length = Math.hypot(planet.x - x, planet.y - y);
+		const dx = (planet.x - x) / length, dy = (planet.y - y) / length;
+		const blue = spawnTraveler(world, 'blue', 'ship', x, y, lyra.id);
+		const entering = spawnTraveler(world, 'red', 'transport',
+			x - dx * (CONFIG.engagementRange + 0.5), y - dy * (CONFIG.engagementRange + 0.5), lyra.id, 7);
+		const escaping = spawnTraveler(world, 'red', 'transport',
+			x + dx * (CONFIG.engagementRange - 0.5), y + dy * (CONFIG.engagementRange - 0.5), lyra.id, 1);
+		world.update(CONFIG.step);
+		expect(blue.components.unit.x).toBe(x);
+		expect(blue.components.unit.y).toBe(y);
+		expect(entering.components.unit.hp).toBeCloseTo(CONFIG.transportHealth - CONFIG.shipDamage * CONFIG.step);
+		expect(escaping.components.unit.hp).toBe(CONFIG.transportHealth);
+	} finally {
+		await world.dispose();
+	}
+});
+
+test('an escorted invasion clears defenses, lands cargo, and retires its pending order', async function () {
+	const world = await createGame('invasion');
+	try {
+		const terra = named(world, 'Terra');
+		const sol = named(world, 'Sol');
+		const match = world.getResource('match');
+		match.paused = true;
+		expect(dispatch(world, [terra.id], sol.id, 1, 'combined')).toBeGreaterThan(8);
+		const order = activeOrders(world)[0];
+		if (!order) throw new Error('Missing invasion order');
+		expect(order.state).toBe('pending');
+		match.paused = false;
+		world.update(CONFIG.step);
+		expect(order.state).toBe('outbound');
+		step(world, 2000);
+		expect(sol.components.planet.owner).toBe('blue');
+		expect(sol.components.planet.guns).toBe(0);
+		expect(sol.components.planet.troops).toBeGreaterThan(0);
+		expect(match.captures).toBe(1);
+		expect(match.firstCapture).not.toBeNull();
+		expect(match.transportsLost).toBe(0);
+		expect(match.troopsLost).toBe(0);
+		expect(activeOrders(world)).toHaveLength(0);
+	} finally {
+		await world.dispose();
+	}
+});
