@@ -55,6 +55,11 @@ button:disabled {
 	opacity: 0.35;
 	cursor: default;
 }
+.fullscreen-icon-button svg {
+	display: block;
+	width: 24px;
+	height: 24px;
+}
 #app {
 	position: relative;
 	height: 100dvh;
@@ -529,6 +534,14 @@ input {
 }
 .menu-actions button {
 	flex: 1;
+}
+.menu-actions .fullscreen-icon-button {
+	flex: 0 0 44px;
+	width: 44px;
+	min-width: 44px;
+	padding: 0;
+	display: grid;
+	place-items: center;
 }
 #app:has(#field-guide:not([hidden])) #planet-panel {
 	display: none;
