@@ -27,6 +27,16 @@ test('campaign orders scope includes incoming and outgoing active expeditions bu
 	expect(view.expeditions.map(function (order) { return order.id; })).toEqual(['incoming', 'outgoing', 'returning', 'encounter']);
 });
 
+test('campaign orders match player-owned orders in both system and all-route scopes', function () {
+	const state = { ...createCampaign(), expeditions: [
+		expedition('player', 'sol', 'deneb'),
+		{ ...expedition('opponent', 'sol', 'deneb'), factionId: 'red' as const },
+	] };
+
+	expect(campaignOrdersView(state, 'sol', false).expeditions.map(function (order) { return order.id; })).toEqual(['player']);
+	expect(campaignOrdersView(state, 'sol', true).expeditions.map(function (order) { return order.id; })).toEqual(['player']);
+});
+
 test('Show all and an empty selection display every active expedition without changing the selected scope', function () {
 	const state = { ...createCampaign(), expeditions: [
 		expedition('in-scope', 'sol', 'deneb'), expedition('unrelated', 'sirius', 'arcturus'),

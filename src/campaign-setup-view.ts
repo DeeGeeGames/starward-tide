@@ -1,4 +1,4 @@
-import { isActiveExpedition, expeditionArrival } from './campaign-state';
+import { activePlayerExpeditions, expeditionArrival } from './campaign-state';
 import { zoomCamera } from './camera';
 import type { Camera } from './camera';
 import { createMapInput } from './map-input';
@@ -267,7 +267,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		if (drawer === 'orders') {
 			titleText.textContent = 'Orders';
 			panel.append(node('p', `Galaxy time ${amount(state.time)}s remains frozen`, 'csu-sub'));
-			for (const expedition of state.expeditions.filter(isActiveExpedition)) {
+			for (const expedition of activePlayerExpeditions(state)) {
 				const from = state.systems.find(function (item) { return item.id === expedition.sourceSystemId; });
 				const to = state.systems.find(function (item) { return item.id === expedition.destinationSystemId; });
 				const row = node('div', '', 'csu-order');
@@ -397,7 +397,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		blue.textContent = `● ${encounter.planets.filter(function (planet) { return planet.factionId === 'blue'; }).length} YOU`;
 		red.textContent = `● ${encounter.planets.filter(function (planet) { return planet.factionId === 'red'; }).length} RIVAL`;
 		turn.textContent = `Galaxy ${amount(state.time)}s · Frozen`;
-		orders.textContent = `Orders · ${state.expeditions.filter(isActiveExpedition).length}`;
+		orders.textContent = `Orders · ${activePlayerExpeditions(state).length}`;
 		renderPanel(); updateMap(); fit();
 	};
 	const reset = function (): void {
