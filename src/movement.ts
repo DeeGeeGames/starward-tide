@@ -49,7 +49,8 @@ export const registerMovement = function (
 				}
 				if (fighting.has(entity.id)) continue;
 				const reach = p.radius + CONFIG.arrivalClearance;
-				const travel = Math.min(distance, CONFIG.travelSpeed * dt);
+				const speed = CONFIG.travelSpeed * (u.kind === 'transport' ? 0.5 : 1);
+				const travel = Math.min(distance, speed * dt);
 				u.x += (dx / distance) * travel;
 				u.y += (dy / distance) * travel;
 				syncUnitPosition(ecs, entity.id, u.x, u.y);
