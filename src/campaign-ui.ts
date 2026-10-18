@@ -5,6 +5,7 @@ import { availablePoints } from './campaign-points';
 import { developmentMaximum } from './campaign-development';
 import { campaignWinner } from './campaign-scenario';
 import { campaignLayout } from './campaign-layout';
+import { campaignOrdersView, emptyCampaignOrdersPreference, reconcileCampaignOrdersPreference, showAllCampaignOrders } from './campaign-orders';
 import { createMapInput } from './map-input';
 import { createCampaignSetupView } from './campaign-setup-view';
 import type { CampaignTransitionReport } from './campaign-report';
@@ -73,6 +74,7 @@ export const createCampaignView = function (options: {
 	const systemContext = function (): 'system' | 'none' { return selection.selectedSystemId === undefined ? 'none' : 'system'; };
 	let campaignLabOpen = false;
 	let report: CampaignTransitionReport | undefined;
+	let ordersPreference = emptyCampaignOrdersPreference();
 	let pending = false;
 	let disposed = false;
 	const drafts = new Map<string, Map<string, number>>();
@@ -265,11 +267,16 @@ export const createCampaignView = function (options: {
 	};
 	const renderOrders = function (): void {
 		if (!state) return;
-		heading('Orders');
-		const active = state.expeditions.filter(isActiveExpedition);
-		panel.append(node('p', `${active.length} active expeditions${state.phase === 'encounter' ? ' · galaxy frozen' : ''}`, 'campaign-muted'));
-		if (!active.length) panel.append(node('p', 'No active expeditions. Select one of your systems to choose contributions.', 'campaign-rule'));
-		for (const expedition of active) {
+		const ordersView = campaignOrdersView(state, selection.selectedSystemId, ordersPreference.showAll);
+		heading(`Orders · ${ordersView.scope}`);
+		panel.append(node('p', `${ordersView.expeditions.length} active expeditions${state.phase === 'encounter' ? ' · galaxy frozen' : ''}`, 'campaign-muted'));
+		if (ordersView.scoped) panel.append(button('Show all', function () {
+			ordersPreference = showAllCampaignOrders(ordersPreference);
+			renderGalaxy();
+			panel.querySelector<HTMLButtonElement>('.campaign-close')?.focus();
+		}, 'campaign-wide'));
+		if (!ordersView.expeditions.length) panel.append(node('p', ordersView.scoped ? 'No active expeditions for this system.' : 'No active expeditions.', 'campaign-rule'));
+		for (const expedition of ordersView.expeditions) {
 			const source = state.systems.find(function (item) { return item.id === expedition.sourceSystemId; });
 			const destination = state.systems.find(function (item) { return item.id === expedition.destinationSystemId; });
 			const row = node('section', undefined, 'campaign-order');
@@ -328,6 +335,7 @@ export const createCampaignView = function (options: {
 	};
 	const renderGalaxy = function (): void {
 		if (!state || disposed) return;
+		ordersPreference = reconcileCampaignOrdersPreference(ordersPreference, selection.selectedSystemId);
 		renderedStructure = structure(); liveUpdates = [];
 		header.replaceChildren(); world.replaceChildren(); panel.replaceChildren();
 		const brand = node('span', 'Galaxy Conquest', 'campaign-brand');
@@ -339,9 +347,15 @@ export const createCampaignView = function (options: {
 			node('span', `● ${state.planets.filter(function (planet) { return planet.factionId === 'red'; }).length} RIVAL`, 'campaign-red'));
 		const actions = node('div', undefined, 'campaign-actions');
 		if (options.save) actions.append(button('Save', function () { void run(async function () { await options.save?.(); }); }, 'campaign-save'));
-		const orders = button(`Orders · ${state.expeditions.filter(isActiveExpedition).length}`, function () { context = context === 'orders' ? systemContext() : 'orders'; renderGalaxy(); });
+		const orderScope = campaignOrdersView(state, selection.selectedSystemId, ordersPreference.showAll);
+		const orders = button(`Orders · ${orderScope.expeditions.length}`, function () { context = context === 'orders' ? systemContext() : 'orders'; renderGalaxy(); });
 		orders.setAttribute('aria-expanded', String(context === 'orders'));
-		live(function () { if (state) orders.textContent = `Orders · ${state.expeditions.filter(isActiveExpedition).length}`; });
+		live(function () {
+			if (!state) return;
+			const currentOrders = campaignOrdersView(state, selection.selectedSystemId, ordersPreference.showAll);
+			orders.textContent = `Orders · ${currentOrders.expeditions.length}`;
+			orders.setAttribute('aria-label', `Orders · ${currentOrders.scope} · ${currentOrders.expeditions.length}`);
+		});
 		const end = button(state.encounter ? 'Prepare encounter' : state.paused ? 'Resume' : 'Pause', function () { if (state?.encounter) prepare(); else void run(options.pause); }, 'campaign-primary');
 		end.disabled = !state.encounter && Boolean(campaignWinner(state));
 		if (!state.encounter) { end.setAttribute('aria-pressed', String(state.paused)); end.setAttribute('aria-label', state.paused ? 'Resume galaxy time' : 'Pause galaxy time'); }
@@ -476,7 +490,7 @@ export const createCampaignView = function (options: {
 		},
 		reset: function (): void {
 			setupView.reset();
-			input.cancel(); drafts.clear(); state = undefined; selection = emptyCampaignSelection(); report = undefined; encounterSetup = undefined; preparedEncounter = undefined;
+			input.cancel(); drafts.clear(); state = undefined; selection = emptyCampaignSelection(); ordersPreference = emptyCampaignOrdersPreference(); report = undefined; encounterSetup = undefined; preparedEncounter = undefined;
 			context = 'system'; campaignLabOpen = false; renderedStructure = ''; liveUpdates = []; fitPending = true; camera = { x: 0, y: 0, scale: 1 }; notify(''); setupView.root.hidden = true; galaxy.hidden = false;
 		},
 		dispose: function (): void { disposed = true; input.dispose(); resize.disconnect(); setupView.dispose(); root.remove(); },
