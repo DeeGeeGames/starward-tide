@@ -128,6 +128,8 @@ const campaignPreviewEnabled = new URLSearchParams(location.search).get('campaig
 try {
 	profileRepository = await openProfileRepository();
 	initialProfiles = await profileRepository.listProfiles();
+	if (initialProfiles.length === 0)
+		initialProfiles = [await profileRepository.createProfile('Player')];
 	const storedSelection = await profileRepository.getSelectedProfileId();
 	activeProfileId = initialProfiles.some(function (profile) {
 		return profile.id === storedSelection;
