@@ -52,13 +52,13 @@
 .campaign-dense .campaign-system:not(.selected) .campaign-system-copy { display: none; }
 
 .campaign-clock { font-variant-numeric: tabular-nums; min-width: 130px; text-align: center; }
-.campaign-paces { display: flex; gap: 3px; }
-.campaign-paces button[aria-pressed=true] { color: #a5ebff; border-color: #60d9ff; background: #153346; }
+.campaign-lab { margin-top: 12px; border-top: 1px solid var(--campaign-line); border-bottom: 1px solid var(--campaign-line); }
+.campaign-lab label { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 10px 0; font-size: 10px; }
+.campaign-lab select { max-width: 190px; min-height: 44px; padding: 6px; border: 1px solid var(--campaign-line); border-radius: 5px; background: #121e2e; color: #d7e4ee; font: inherit; }
 @media (max-width: 700px) {
 	.campaign-shell .campaign-header { flex-wrap: wrap; justify-content: center; }
 	.campaign-score { justify-content: center; width: 100%; }
 	.campaign-actions { justify-content: center; }
-	.campaign-actions .campaign-paces button { padding: 0 7px; }
 	.campaign-hint { top: 116px; }
 	.campaign-context { top: 151px; max-height: calc(100% - 170px); }
 }
