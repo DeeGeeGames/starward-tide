@@ -196,7 +196,11 @@ const updateSaveStatus = function (message: string): void {
 const savedStatus = function (savedAt: number): string {
 	return `Saved ${new Date(savedAt).toLocaleString()}`;
 };
-const saveCampaignWithStatus = async function (save: CampaignSave, isCurrent: () => boolean): Promise<void> {
+const saveCampaignWithStatus = async function (
+	save: CampaignSave,
+	isCurrent: () => boolean,
+	retryInstruction = campaignRuntime ? 'Use Save on the game HUD to retry.' : 'Use Save campaign in the menu to retry.',
+): Promise<void> {
 	const repository = profileRepository;
 	if (!repository) throw new Error('Local profile storage is unavailable.');
 	const revision = ++campaignSaveStatusRevision;
@@ -206,9 +210,6 @@ const saveCampaignWithStatus = async function (save: CampaignSave, isCurrent: ()
 		if (revision === campaignSaveStatusRevision && isCurrent()) updateSaveStatus(savedStatus(save.savedAt));
 	} catch (error) {
 		if (revision === campaignSaveStatusRevision && isCurrent()) {
-			const retryInstruction = campaignRuntime
-				? 'Use Save on the game HUD to retry.'
-				: 'Use Save campaign in the menu to retry.';
 			updateSaveStatus(`Save failed · ${saveErrorMessage(error)} ${retryInstruction}`);
 		}
 		throw error;
@@ -1189,7 +1190,11 @@ const frontMenu = await createFrontMenu({
 			campaignView.reset();
 			const save = campaignSaveForState(campaign, profileId);
 			if (!profileRepository) throw new Error('Local profile storage is unavailable.');
-			await persistCampaign(save);
+			try {
+				await saveCampaignWithStatus(save, function () { return activeProfileId === profileId; }, 'Use Start campaign to retry.');
+			} catch (error) {
+				throw new Error(`${saveErrorMessage(error)} Start campaign to retry.`, { cause: error });
+			}
 			await openCampaignSave(save);
 		},
 		continue: async function (profileId): Promise<void> {
