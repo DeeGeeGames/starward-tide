@@ -1,5 +1,5 @@
+import { isActiveExpedition, expeditionArrival, canCancelExpedition, neutralClaimMinimum } from './campaign-state';
 import type { CampaignState, ExpeditionOrder } from './campaign-state';
-import { neutralClaimMinimum } from './campaign-state';
 import type { CampaignEncounterSetup } from './campaign-setup';
 import { availablePoints } from './campaign-points';
 import { developmentMaximum } from './campaign-development';
@@ -27,6 +27,7 @@ const factionLabel = function (owner: 'blue' | 'red' | null): string { return ow
 
 export const createCampaignView = function (options: {
 	order: (order: Omit<ExpeditionOrder, 'id' | 'factionId'>) => Promise<void>;
+	cancelOrder: (id: string) => Promise<void>;
 	endTurn: () => Promise<void>;
 	setup: (setup: CampaignEncounterSetup) => Promise<void>;
 	launch: (setup: CampaignEncounterSetup) => Promise<void>;
@@ -224,18 +225,27 @@ export const createCampaignView = function (options: {
 	const renderOrders = function (): void {
 		if (!state) return;
 		heading('Orders');
-		const active = state.expeditions.filter(function (item) { return item.status !== 'resolved'; });
+		const active = state.expeditions.filter(isActiveExpedition);
 		panel.append(node('p', `${active.length} active expeditions${state.phase === 'encounter' ? ' · galaxy frozen' : ''}`, 'campaign-muted'));
 		if (!active.length) panel.append(node('p', 'No active expeditions. Select one of your systems to choose contributions.', 'campaign-rule'));
 		for (const expedition of active) {
 			const source = state.systems.find(function (item) { return item.id === expedition.sourceSystemId; });
 			const destination = state.systems.find(function (item) { return item.id === expedition.destinationSystemId; });
 			const row = node('section', undefined, 'campaign-order');
-			row.append(node('strong', `${source?.name ?? expedition.sourceSystemId} → ${destination?.name ?? expedition.destinationSystemId}`),
-				node('p', `${factionLabel(expedition.factionId)} · ${amount(expedition.points)} points · ${expedition.status === 'encounter' ? 'Arrived · resolving now' : `arrival turn ${Math.ceil(expedition.arrivalTime)}`}`, 'campaign-muted'),
-				button('Show destination', function () { selectSystem(expedition.destinationSystemId); }, 'campaign-wide'));
+			row.append(node('strong', `${source?.name ?? expedition.sourceSystemId} ${expedition.status === 'returning' ? '←' : '→'} ${destination?.name ?? expedition.destinationSystemId}`),
+				node('p', `${factionLabel(expedition.factionId)} · ${amount(expedition.points)} points · ${expedition.status === 'encounter' ? 'Arrived · resolving now' : `${expedition.status === 'returning' ? 'Returning · arrival' : 'arrival'} turn ${Math.ceil(expeditionArrival(expedition))}`}`, 'campaign-muted'),
+				button(expedition.status === 'returning' ? 'Show source' : 'Show destination', function () { selectSystem(expedition.status === 'returning' ? expedition.sourceSystemId : expedition.destinationSystemId); }, 'campaign-wide'));
+			if (expedition.factionId === 'blue') {
+				const cancel = button(expedition.status === 'returning' ? 'Returning' : expedition.departureTurn === state.turn ? 'Cancel launch' : '↶ Recall', function () {
+					void run(function () { return options.cancelOrder(expedition.id); });
+				}, 'campaign-wide');
+				cancel.disabled = !canCancelExpedition(state, expedition, 'blue') || Boolean(campaignWinner(state));
+				cancel.setAttribute('aria-label', `${cancel.textContent}: ${source?.name ?? expedition.sourceSystemId} → ${destination?.name ?? expedition.destinationSystemId}`);
+				row.append(cancel);
+			}
 			panel.append(row);
 		}
+		panel.append(node('p', 'Cancel this turn’s launch to refund its source points. Recall traveling expeditions to return points to their contributing planets after the elapsed outbound travel time. Only planets you still own are replenished; surplus is lost.', 'campaign-rule'));
 		if (state.encounter) panel.append(button('Prepare encounter', prepare, 'campaign-wide campaign-primary'));
 	};
 	const prepare = function (): void {
@@ -254,7 +264,7 @@ export const createCampaignView = function (options: {
 		if (report.outcome) panel.append(node('p', `${report.outcome.systemName} · ${report.outcome.winner === 'blue' ? 'Your victory' : 'Rival victory'}`, 'campaign-budget'));
 		for (const resolved of report.resolvedExpeditions) {
 			const system = state.systems.find(function (item) { return item.id === resolved.systemId; });
-			const description = resolved.kind === 'claim' ? 'claimed' : resolved.kind === 'friendly' ? 'replenished' : resolved.kind === 'encounter' ? 'battle resolved at' : 'arrived at';
+			const description = resolved.kind === 'return' ? 'returned to' : resolved.kind === 'claim' ? 'claimed' : resolved.kind === 'friendly' ? 'replenished' : resolved.kind === 'encounter' ? 'battle resolved at' : 'arrived at';
 			panel.append(node('p', `${factionLabel(resolved.factionId)} ${description} ${system?.name ?? resolved.systemId} · ${amount(resolved.points)} committed points`, 'campaign-rule'));
 		}
 		const changes = report.planets.filter(function (change) {
@@ -278,20 +288,20 @@ export const createCampaignView = function (options: {
 			node('span', `● ${state.planets.filter(function (planet) { return planet.factionId === 'red'; }).length} RIVAL`, 'campaign-red'));
 		const actions = node('div', undefined, 'campaign-actions');
 		if (options.save) actions.append(button('Save', function () { void run(async function () { await options.save?.(); }); }, 'campaign-save'));
-		const orders = button(`Orders · ${state.expeditions.filter(function (item) { return item.status !== 'resolved'; }).length}`, function () { context = context === 'orders' ? 'system' : 'orders'; renderGalaxy(); });
+		const orders = button(`Orders · ${state.expeditions.filter(isActiveExpedition).length}`, function () { context = context === 'orders' ? 'system' : 'orders'; renderGalaxy(); });
 		orders.setAttribute('aria-expanded', String(context === 'orders'));
 		const end = button(state.encounter ? 'Prepare encounter' : 'End turn', function () { if (state?.encounter) prepare(); else void run(options.endTurn); }, 'campaign-primary');
 		end.disabled = !state.encounter && (state.phase !== 'planning' || state.readyFactions.includes('blue') || Boolean(campaignWinner(state)));
 		const menu = button('☰', function () { context = context === 'menu' ? 'system' : 'menu'; renderGalaxy(); }, 'campaign-menu'); menu.setAttribute('aria-label', 'Campaign menu'); menu.setAttribute('aria-expanded', String(context === 'menu'));
 		actions.append(orders, end, menu); header.append(brand, score, actions);
 		const routes = svg('svg', { viewBox: '0 0 1000 700', 'aria-hidden': 'true', class: 'campaign-routes' });
-		for (const expedition of state.expeditions.filter(function (item) { return item.status !== 'resolved'; })) {
+		for (const expedition of state.expeditions.filter(isActiveExpedition)) {
 			const source = state.systems.find(function (item) { return item.id === expedition.sourceSystemId; });
 			const destination = state.systems.find(function (item) { return item.id === expedition.destinationSystemId; });
 			if (!source || !destination) continue;
 			const a = position(source); const b = position(destination);
 			const line = svg('line', { x1: String(a.x), y1: String(a.y), x2: String(b.x), y2: String(b.y), stroke: expedition.factionId === 'blue' ? '#60d9ff' : '#ff867e' });
-			const label = svg('text', { x: String((a.x + b.x) / 2 + 12), y: String((a.y + b.y) / 2 - 12) }); label.textContent = amount(expedition.points); routes.append(line, label);
+			const label = svg('text', { x: String((a.x + b.x) / 2 + 12), y: String((a.y + b.y) / 2 - 12) }); label.textContent = `${expedition.status === 'returning' ? '↶ ' : ''}${amount(expedition.points)}`; routes.append(line, label);
 		}
 		world.append(routes);
 		for (const [index, system] of state.systems.entries()) {

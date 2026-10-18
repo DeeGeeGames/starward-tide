@@ -1,6 +1,6 @@
 import type { Owner, Side } from './config';
 import type { StarMap } from './maps';
-import { CAMPAIGN_RULES, commitExpedition, neutralClaimMinimum } from './campaign-state';
+import { CAMPAIGN_RULES, commitExpedition, neutralClaimMinimum, isActiveExpedition } from './campaign-state';
 import type { CampaignPlanet, CampaignState, CampaignSystem } from './campaign-state';
 import { availablePoints } from './campaign-points';
 import { developmentMaximum } from './campaign-development';
@@ -74,7 +74,7 @@ export const campaignWinner = function (state: CampaignState): Side | null {
 	if (state.phase !== 'planning') return null;
 	const alive = function (factionId: Side): boolean {
 		return state.planets.some(function (planet) { return planet.factionId === factionId; }) ||
-			state.expeditions.some(function (item) { return item.factionId === factionId && item.status !== 'resolved'; });
+			state.expeditions.some(function (item) { return item.factionId === factionId && isActiveExpedition(item); });
 	};
 	const blue = alive('blue');
 	const red = alive('red');

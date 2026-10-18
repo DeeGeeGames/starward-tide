@@ -43,7 +43,8 @@ export interface CampaignExpedition extends ExpeditionOrder {
 	readonly points: number;
 	readonly departureTurn: number;
 	readonly arrivalTime: number;
-	readonly status: 'traveling' | 'encounter' | 'resolved';
+	readonly status: 'traveling' | 'returning' | 'cancelled' | 'encounter' | 'resolved';
+	readonly recalledTurn?: number;
 }
 export interface EncounterPlanet {
 	readonly planetId: string;
@@ -146,6 +147,37 @@ export const commitExpedition = function (state: CampaignState, order: Expeditio
 	}), expeditions: [...state.expeditions, expedition] };
 };
 
+export const isActiveExpedition = function (expedition: CampaignExpedition): boolean {
+	return expedition.status !== 'resolved' && expedition.status !== 'cancelled';
+};
+export const expeditionArrival = function (expedition: CampaignExpedition): number {
+	return expedition.recalledTurn === undefined ? expedition.arrivalTime : 2 * expedition.recalledTurn - expedition.departureTurn - 1;
+};
+export const canCancelExpedition = function (state: CampaignState, expedition: CampaignExpedition, factionId: Side): boolean {
+	return state.phase === 'planning' && !state.readyFactions.includes(factionId) &&
+		expedition.factionId === factionId && expedition.status === 'traveling';
+};
+
+/** Same-turn cancellation refunds immediately; recall takes the elapsed outbound time to return. */
+export const cancelExpedition = function (state: CampaignState, id: string, factionId: Side): CampaignState {
+	requireSide(factionId);
+	const expedition = state.expeditions.find(function (item) { return item.id === id; });
+	if (!expedition || !canCancelExpedition(state, expedition, factionId)) return state;
+	const cancelled = expedition.departureTurn === state.turn;
+	const recalledTurn = cancelled ? undefined : state.turn;
+	if (recalledTurn !== undefined && !Number.isSafeInteger(2 * recalledTurn - expedition.departureTurn - 1))
+		throw new Error('Recall exceeds the galaxy turn limit.');
+	const refunds = new Map(expedition.contributions.map(function (entry) { return [entry.planetId, entry.points] as const; }));
+	return { ...state,
+		planets: cancelled ? state.planets.map(function (planet) {
+			return { ...planet, depletion: planet.depletion - (refunds.get(planet.id) ?? 0) };
+		}) : state.planets,
+		expeditions: state.expeditions.map(function (item) {
+			return item.id !== id ? item : cancelled ? { ...item, status: 'cancelled' as const } : { ...item, status: 'returning' as const, recalledTurn };
+		}),
+	};
+};
+
 export const commitFactionTurn = function (state: CampaignState, factionId: Side): CampaignState {
 	requireSide(factionId);
 	if (state.readyFactions.includes(factionId)) return state;
@@ -155,9 +187,20 @@ export const commitFactionTurn = function (state: CampaignState, factionId: Side
 
 const resolveArrivals = function (initial: CampaignState): CampaignState {
 	let state = initial;
-	const due = state.expeditions.filter(function (item) { return item.status === 'traveling' && item.arrivalTime <= state.turn; })
-		.toSorted(function (a, b) { return a.arrivalTime - b.arrivalTime || compareIds(a.id, b.id); });
+	const due = state.expeditions.filter(function (item) { return (item.status === 'traveling' || item.status === 'returning') && expeditionArrival(item) <= state.turn; })
+		.toSorted(function (a, b) { return expeditionArrival(a) - expeditionArrival(b) || compareIds(a.id, b.id); });
 	for (const expedition of due) {
+		if (expedition.status === 'returning') {
+			const refunds = new Map(expedition.contributions.map(function (entry) { return [entry.planetId, entry.points] as const; }));
+			state = { ...state, planets: state.planets.map(function (planet) {
+				return planet.factionId !== expedition.factionId ? planet : {
+					...planet, depletion: Math.max(0, planet.depletion - (refunds.get(planet.id) ?? 0)),
+				};
+			}), expeditions: state.expeditions.map(function (item) {
+				return item.id === expedition.id ? { ...item, status: 'resolved' as const } : item;
+			}) };
+			continue;
+		}
 		const destination = state.planets.filter(function (planet) { return planet.systemId === expedition.destinationSystemId; });
 		if (destination.length === 0) throw new Error('Destination system has no planets.');
 		if (destination.every(function (planet) { return planet.factionId === null; })) {

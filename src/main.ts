@@ -29,7 +29,7 @@ import { describeCampaignTransition, describeEncounterOutcome } from './campaign
 import type { CampaignEncounterOutcome } from './campaign-report';
 import { v4 as createId } from 'uuid';
 import { createCampaign, commitCampaignRival, campaignWinner } from './campaign-scenario';
-import { commitExpedition, commitFactionTurn, resolveCampaignTurn, applyCampaignEncounterResult } from './campaign-state';
+import { cancelExpedition, commitExpedition, commitFactionTurn, resolveCampaignTurn, applyCampaignEncounterResult } from './campaign-state';
 import type { CampaignState } from './campaign-state';
 import { createDefaultEncounterSetup } from './campaign-setup';
 import type { CampaignEncounterSetup } from './campaign-setup';
@@ -1013,6 +1013,12 @@ const campaignView = createCampaignView({
 	order: async function (order) {
 		if (!campaignSession) return;
 		const state = commitExpedition(campaignSession.campaign, { ...order, id: createId(), factionId: 'blue' });
+		await persistCampaign(campaignSaveForState(state, campaignSession.profileId));
+		renderCampaign();
+	},
+	cancelOrder: async function (id) {
+		if (!campaignSession || campaignWinner(campaignSession.campaign)) return;
+		const state = cancelExpedition(campaignSession.campaign, id, 'blue');
 		await persistCampaign(campaignSaveForState(state, campaignSession.profileId));
 		renderCampaign();
 	},
