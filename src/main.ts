@@ -1146,7 +1146,7 @@ campaignReturn.addEventListener('click', async function () {
 	finally { busy = false; campaignReturn.disabled = false; }
 });
 const openCampaignSave = async function (save: CampaignSave): Promise<void> {
-	if (campaignSession?.profileId !== save.profileId) campaignView.reset();
+	campaignView.reset();
 	campaignOutcome = undefined;
 	campaignSession = { ...save, campaign: setCampaignPaused(save.campaign, true) };
 	campaignRuntime = undefined; hasActiveConquest = true; activeProfileId = save.profileId;
