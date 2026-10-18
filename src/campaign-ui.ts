@@ -13,6 +13,7 @@ import { createCampaignSetupView } from './campaign-setup-view';
 import type { CampaignTransitionReport } from './campaign-report';
 import { clearCampaignSelection, emptyCampaignSelection, focusCampaignSystem, reconcileCampaignSelection, selectCampaignSystem } from './campaign-selection';
 import type { CampaignSelection } from './campaign-selection';
+import { formatElapsedTime } from './time-format';
 
 const node = function <K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, className?: string): HTMLElementTagNameMap[K] {
 	const element = document.createElement(tag);
@@ -429,7 +430,7 @@ export const createCampaignView = function (options: {
 		const brand = node('span', 'Galaxy Conquest', 'campaign-brand');
 		const score = node('div', undefined, 'campaign-score');
 		const clock = node('span', undefined, 'campaign-clock');
-		live(function () { if (state) clock.textContent = `Galaxy ${amount(state.time)}s${state.encounter ? ' · Frozen' : state.paused ? ' · Paused' : ''}`; });
+		live(function () { if (state) clock.textContent = `Galaxy ${formatElapsedTime(state.time)}${state.encounter ? ' · Frozen' : state.paused ? ' · Paused' : ''}`; });
 		score.append(node('span', `● ${state.planets.filter(function (planet) { return planet.factionId === 'blue'; }).length} YOU`, 'campaign-blue'),
 			clock,
 			node('span', `● ${state.planets.filter(function (planet) { return planet.factionId === 'red'; }).length} RIVAL`, 'campaign-red'));
