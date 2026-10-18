@@ -39,6 +39,10 @@ import type { CampaignEncounterRuntime } from './campaign-encounter';
 import { CAMPAIGN_SAVE_SCHEMA_VERSION } from './campaign-save';
 import type { CampaignSave } from './campaign-save';
 
+document.addEventListener('contextmenu', function (event) {
+	event.preventDefault();
+}, { capture: true });
+
 const element = function <T extends HTMLElement>(
 	id: string,
 	constructor: { new (...args: never[]): T },
