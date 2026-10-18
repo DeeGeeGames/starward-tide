@@ -641,6 +641,7 @@ const mapInput = createMapInput({
 	zoomAt,
 });
 const renderer = await createPixiRenderer({
+	measure: function (name, action) { return diagnostics ? diagnostics.measure(name, action) : action(); },
 	getViewport: function () { return { width: board.clientWidth, height: board.clientHeight }; },
 	canvas,
 	getPixelRatio: function (): number {
