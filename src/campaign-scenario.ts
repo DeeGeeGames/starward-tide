@@ -22,6 +22,18 @@ export const createCampaign = function (): CampaignState {
 		{ id: 'deneb', name: 'Deneb', x: 100, y: 200, map: systemMap('neutral', ['Deneb', 'Sadr', 'Gienah']) },
 		{ id: 'arcturus', name: 'Arcturus', x: 200, y: 200, map: systemMap('neutral', ['Arcturus', 'Izar', 'Muphrid']) },
 	];
+	return campaignFromSystems(systems);
+};
+
+/** Build a campaign from the exact generated arrangement shown in setup. */
+export const createGeneratedCampaign = function (layout: StarMap): CampaignState {
+	return campaignFromSystems(layout.planets.map(function ([name, x, y, , owner]): CampaignSystem {
+		return { id: name.toLowerCase(), name, x, y,
+			map: systemMap(owner, [`${name} I`, `${name} II`, `${name} III`]) };
+	}));
+};
+
+const campaignFromSystems = function (systems: readonly CampaignSystem[]): CampaignState {
 	const planets: CampaignPlanet[] = systems.flatMap(function (system) {
 		return system.map.planets.map(function (seed, index) {
 			return { id: `${system.id}:${index + 1}`, systemId: system.id, name: seed[0],

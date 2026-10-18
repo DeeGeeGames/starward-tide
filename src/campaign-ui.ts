@@ -4,6 +4,7 @@ import type { CampaignEncounterSetup } from './campaign-setup';
 import { availablePoints } from './campaign-points';
 import { developmentMaximum } from './campaign-development';
 import { campaignWinner } from './campaign-scenario';
+import { campaignLayout } from './campaign-layout';
 import { createMapInput } from './map-input';
 import { createCampaignSetupView } from './campaign-setup-view';
 import type { CampaignTransitionReport } from './campaign-report';
@@ -67,7 +68,10 @@ export const createCampaignView = function (options: {
 	let camera = { x: 0, y: 0, scale: 1 };
 	const transform = function (): void {
 		world.style.transform = `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})`;
-		world.style.setProperty('--marker-scale', String(1 / Math.min(1, camera.scale)));
+		const minimumMarkerScale = space.clientWidth <= 600 ? 0.4 : 0.65;
+		world.style.setProperty('--marker-scale', String(Math.max(minimumMarkerScale, Math.min(1, camera.scale)) / camera.scale));
+		world.classList.toggle('campaign-dense', camera.scale < 0.3);
+		world.classList.toggle('campaign-overview', camera.scale < 0.65);
 	};
 	const notify = function (message: string): void { status.textContent = message; status.hidden = !message; };
 	const localPlanets = function (systemId: string): CampaignState['planets'] {
@@ -126,7 +130,7 @@ export const createCampaignView = function (options: {
 		dispatchPlanet: function (index) { const system = state?.systems[index]; if (system) sendTo(system.id); },
 		panBy: function (delta) { camera = { ...camera, x: camera.x + delta.x, y: camera.y + delta.y }; transform(); },
 		zoomAt: function (anchor, factor) {
-			const scale = Math.max(0.45, Math.min(2.5, camera.scale * factor));
+			const scale = Math.max(0.08, Math.min(2.5, camera.scale * factor));
 			const ratio = scale / camera.scale;
 			camera = { x: camera.x + (anchor.x - world.offsetLeft - camera.x) * (1 - ratio),
 				y: camera.y + (anchor.y - world.offsetTop - camera.y) * (1 - ratio), scale }; transform();
@@ -209,18 +213,17 @@ export const createCampaignView = function (options: {
 		const mobile = space.clientWidth <= 600;
 		const width = Math.max(200, space.clientWidth - (mobile ? 0 : 300));
 		const height = Math.max(220, space.clientHeight - (mobile ? 480 : 140));
-		const scale = Math.min(width / 1000, height / 700, 1.3);
-		camera = { x: (width - 1000 * scale) / 2, y: 100 + (height - 700 * scale) / 2, scale };
+		const { width: worldWidth, height: worldHeight } = galaxyBounds();
+		const scale = Math.min(width / worldWidth, height / worldHeight, 1.3);
+		camera = { x: (width - worldWidth * scale) / 2, y: 100 + (height - worldHeight * scale) / 2, scale };
 		fitPending = false; transform();
 	};
+	const galaxyBounds = function (): ReturnType<typeof campaignLayout> {
+		return campaignLayout(state?.systems ?? []);
+	};
 	const position = function (system: CampaignState['systems'][number]): { x: number; y: number } {
-		const systems = state?.systems ?? [];
-		const xs = systems.map(function (item) { return item.x; });
-		const ys = systems.map(function (item) { return item.y; });
-		const minX = Math.min(...xs); const maxX = Math.max(...xs);
-		const minY = Math.min(...ys); const maxY = Math.max(...ys);
-		return { x: maxX === minX ? 500 : 220 + (system.x - minX) / (maxX - minX) * 560,
-			y: maxY === minY ? 280 : 120 + (system.y - minY) / (maxY - minY) * 280 };
+		const { minX, minY, scale } = galaxyBounds();
+		return { x: 220 + (system.x - minX) * scale, y: 120 + (system.y - minY) * scale };
 	};
 	const renderOrders = function (): void {
 		if (!state) return;
@@ -294,7 +297,10 @@ export const createCampaignView = function (options: {
 		end.disabled = !state.encounter && (state.phase !== 'planning' || state.readyFactions.includes('blue') || Boolean(campaignWinner(state)));
 		const menu = button('☰', function () { context = context === 'menu' ? 'system' : 'menu'; renderGalaxy(); }, 'campaign-menu'); menu.setAttribute('aria-label', 'Campaign menu'); menu.setAttribute('aria-expanded', String(context === 'menu'));
 		actions.append(orders, end, menu); header.append(brand, score, actions);
-		const routes = svg('svg', { viewBox: '0 0 1000 700', 'aria-hidden': 'true', class: 'campaign-routes' });
+		const bounds = galaxyBounds();
+		world.style.width = `${bounds.width}px`;
+		world.style.height = `${bounds.height}px`;
+		const routes = svg('svg', { viewBox: `0 0 ${bounds.width} ${bounds.height}`, 'aria-hidden': 'true', class: 'campaign-routes' });
 		for (const expedition of state.expeditions.filter(isActiveExpedition)) {
 			const source = state.systems.find(function (item) { return item.id === expedition.sourceSystemId; });
 			const destination = state.systems.find(function (item) { return item.id === expedition.destinationSystemId; });

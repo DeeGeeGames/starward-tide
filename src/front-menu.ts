@@ -1,5 +1,7 @@
 import ECSpresso from 'ecspresso';
 import { COLORS } from './config';
+import { createGeneratedCampaign } from './campaign-scenario';
+import type { CampaignState } from './campaign-state';
 import { generateMap, isMapSize, MAP_SIZES } from './maps';
 import type { MapSize, StarMap } from './maps';
 import { createProfilePicker } from './profile-picker';
@@ -54,7 +56,7 @@ export const createFrontMenu = async function (options: {
 	onMenu: () => void;
 	onCampaign: () => void;
 	campaign?: {
-		start: (profileId: string) => Promise<void>;
+		start: (profileId: string, campaign: CampaignState) => Promise<void>;
 		continue: (profileId: string) => Promise<void>;
 	};
 }): Promise<FrontMenu> {
@@ -115,6 +117,7 @@ export const createFrontMenu = async function (options: {
 	const sizeButtons = [
 		...root.querySelectorAll<HTMLButtonElement>('[data-size]'),
 	];
+	let setupMode: 'skirmish' | 'campaign' = 'skirmish';
 	let size: MapSize = 'medium';
 	let map = freshMap(size);
 	let starting = false;
@@ -198,10 +201,13 @@ export const createFrontMenu = async function (options: {
 		renderProfileControls(profilePicker.render());
 	};
 	const renderPreview = function (): void {
+		const campaign = setupMode === 'campaign';
+		const unit = campaign ? 'systems' : 'worlds';
+		const startingUnit = campaign ? 'system' : 'world';
 		preview.setAttribute('viewBox', `0 0 ${map.width} ${map.height}`);
 		preview.setAttribute(
 			'aria-label',
-			`Generated ${size} map with ${map.planets.length} worlds, one starting world per side`,
+			`Generated ${size} ${campaign ? 'galaxy' : 'map'} with ${map.planets.length} ${unit}, one starting ${startingUnit} per side`,
 		);
 		preview.replaceChildren();
 		for (let i = 0; i < 100; i++)
@@ -214,7 +220,8 @@ export const createFrontMenu = async function (options: {
 					opacity: 0.6,
 				}),
 			);
-		for (const [name, x, y, radius, owner] of map.planets) {
+		for (const [name, x, y, planetRadius, owner] of map.planets) {
+			const radius = campaign ? 25 : planetRadius;
 			const node = svgElement('g', {});
 			const label = svgElement('title', {});
 			label.textContent = `${name} · ${owner === 'blue' ? 'You' : owner === 'red' ? 'Rival' : 'Neutral'}`;
@@ -232,26 +239,38 @@ export const createFrontMenu = async function (options: {
 						'stroke-opacity': 0.6,
 					}),
 				);
+			if (campaign) node.append(svgElement('ellipse', {
+				cx: x, cy: y, rx: 52, ry: 28, fill: 'none', stroke: COLORS[owner],
+				'stroke-width': 2, 'stroke-opacity': 0.7,
+			}));
 			node.append(
 				svgElement('circle', {
 					cx: x,
 					cy: y,
-					r: radius,
-					fill: COLORS[owner],
+					r: campaign ? 12 : radius,
+					fill: campaign ? '#fff2c4' : COLORS[owner],
 					'fill-opacity': owner === 'neutral' ? 0.6 : 1,
 				}),
 			);
 			preview.append(node);
 		}
 		const count = document.createElement('strong');
-		count.textContent = `${map.planets.length} worlds`;
+		count.textContent = `${map.planets.length} ${unit}`;
 		summary.replaceChildren(
 			count,
 			' · 1 rival',
 			document.createElement('br'),
-			'One starting world per side',
+			campaign ? 'Three planets per system · One starting system per side' : 'One starting world per side',
 		);
 		detail.textContent = MAP_SIZES[size].detail;
+		element('setup-title', HTMLHeadingElement).textContent = campaign ? 'Choose your campaign galaxy.' : 'Choose your galaxy.';
+		const intro = setup.querySelector('.intro');
+		if (intro) intro.textContent = campaign ? 'Expand between star systems. Fight for their planets.' : 'A new star map. The same objective: conquer every rival world.';
+		start.textContent = campaign ? 'Start campaign →' : 'Start conquest →';
+		for (const button of sizeButtons) {
+			const label = button.querySelector('small');
+			if (label && isMapSize(button.dataset.size)) label.textContent = `${MAP_SIZES[button.dataset.size].count} ${unit}`;
+		}
 		for (const button of sizeButtons)
 			button.setAttribute('aria-pressed', String(button.dataset.size === size));
 	};
@@ -313,19 +332,33 @@ export const createFrontMenu = async function (options: {
 			if (!current) throw new Error('Choose a local profile first.');
 			if (!resume && current.hasCampaignSave && !window.confirm(`Replace ${current.name}'s saved campaign? Its skirmish save will be kept.`)) return;
 			if (resume) await options.campaign.continue(current.id);
-			else await options.campaign.start(current.id);
+			else await options.campaign.start(current.id, createGeneratedCampaign(map));
 		} catch (error) {
 			failure = error instanceof Error ? error.message : 'Could not open campaign.';
 		} finally {
 			starting = false;
 			renderProfiles();
-			if (failure) menuProfileStatus.textContent = failure;
+			if (failure) {
+				menuProfileStatus.textContent = failure;
+				status.textContent = failure;
+			}
 		}
 	};
-	campaignStart.addEventListener('click', function () { void openCampaign(false); });
+	campaignStart.addEventListener('click', function () {
+		if (campaignStart.disabled) return;
+		setupMode = 'campaign';
+		map = freshMap(size);
+		status.textContent = '';
+		renderPreview();
+		void flow.setScreen('setup', {});
+	});
 	campaignContinue.addEventListener('click', function () { void openCampaign(true); });
 	newGame.addEventListener('click', function () {
-		if (!newGame.disabled) void flow.setScreen('setup', {});
+		if (newGame.disabled) return;
+		setupMode = 'skirmish';
+		status.textContent = '';
+		renderPreview();
+		void flow.setScreen('setup', {});
 	});
 	element('back', HTMLButtonElement).addEventListener('click', function () {
 		if (!starting) void flow.setScreen('title', {});
@@ -341,7 +374,7 @@ export const createFrontMenu = async function (options: {
 			size = button.dataset.size;
 			map = freshMap(size);
 			renderPreview();
-			status.textContent = `${MAP_SIZES[size].label} map generated: ${map.planets.length} worlds.`;
+			status.textContent = `${MAP_SIZES[size].label} map generated: ${map.planets.length} ${setupMode === 'campaign' ? 'systems' : 'worlds'}.`;
 		});
 	element('reroll', HTMLButtonElement).addEventListener('click', function () {
 		if (starting) return;
@@ -350,6 +383,7 @@ export const createFrontMenu = async function (options: {
 		status.textContent = 'New layout generated.';
 	});
 	start.addEventListener('click', async function () {
+		if (setupMode === 'campaign') { await openCampaign(false); return; }
 		const selected = profilePicker.getState().selectedProfile;
 		if (starting || !selected || !options.profiles) return;
 		starting = true;
