@@ -4,6 +4,7 @@
 	--campaign-text: #dce6ed; --campaign-muted: #8e9cae; --campaign-accent: #60d9ff; --campaign-line: #2a3e50;
 	position: fixed; inset: 0; overflow: hidden; color: var(--campaign-text); background: #080f19;
 	font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; isolation: isolate;
+	user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
 }
 .campaign-shell * { box-sizing: border-box; }
 .campaign-shell button, .campaign-shell input { font: inherit; }

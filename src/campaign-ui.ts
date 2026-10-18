@@ -42,6 +42,7 @@ export const createCampaignView = function (options: {
 	dispose: () => void;
 } {
 	const root = node('main', undefined, 'campaign-shell'); root.id = 'campaign'; root.hidden = true;
+	root.addEventListener('contextmenu', function (event) { event.preventDefault(); });
 	const galaxy = node('section', undefined, 'campaign-galaxy-view');
 	const space = node('div', undefined, 'campaign-space'); space.tabIndex = 0; space.setAttribute('aria-label', 'Galaxy map. Drag to pan, scroll or pinch to zoom.');
 	const world = node('div', undefined, 'campaign-world');
