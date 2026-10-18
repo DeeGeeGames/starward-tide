@@ -111,7 +111,7 @@ export const createCampaignView = function (options: {
 	const structure = function (): string {
 		return JSON.stringify([state?.phase, state?.paused, state?.pace, selection.selectedSystemId, selection.sourceSystemId, context,
 			state?.planets.map(function (planet) { return [planet.id, planet.factionId]; }),
-			context === 'orders' ? state?.expeditions.map(function (expedition) { return [expedition.id, expedition.status]; }) : null]);
+			context === 'orders' && state ? campaignOrdersView(state, selection.selectedSystemId, ordersPreference.showAll).expeditions.map(function (expedition) { return [expedition.id, expedition.status]; }) : null]);
 	};
 	const live = function (update: () => void): void { liveUpdates.push(update); update(); };
 	let camera = { x: 0, y: 0, scale: 1 };

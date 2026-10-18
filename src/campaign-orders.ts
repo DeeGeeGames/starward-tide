@@ -1,4 +1,4 @@
-import { isActiveExpedition } from './campaign-state';
+import { activePlayerExpeditions } from './campaign-state';
 import type { CampaignExpedition, CampaignState } from './campaign-state';
 
 export interface CampaignOrdersView {
@@ -35,7 +35,7 @@ export const campaignOrdersView = function (
 	showAll: boolean,
 ): CampaignOrdersView {
 	const selectedSystem = showAll ? undefined : state.systems.find(function (system) { return system.id === selectedSystemId; });
-	const active = state.expeditions.filter(isActiveExpedition);
+	const active = activePlayerExpeditions(state);
 	return {
 		scope: selectedSystem?.name ?? 'All routes',
 		scoped: selectedSystem !== undefined,

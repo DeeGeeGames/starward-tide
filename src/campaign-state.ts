@@ -164,6 +164,11 @@ export const commitExpedition = function (state: CampaignState, order: Expeditio
 export const isActiveExpedition = function (expedition: CampaignExpedition): boolean {
 	return expedition.status !== 'resolved' && expedition.status !== 'cancelled';
 };
+export const activePlayerExpeditions = function (state: CampaignState): CampaignExpedition[] {
+	return state.expeditions.filter(function (expedition) {
+		return expedition.factionId === 'blue' && isActiveExpedition(expedition);
+	});
+};
 export const expeditionArrival = function (expedition: CampaignExpedition): number {
 	return expedition.recalledTime === undefined ? expedition.arrivalTime : 2 * expedition.recalledTime - expedition.departureTime;
 };
