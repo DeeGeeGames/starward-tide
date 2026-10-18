@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { createCampaign } from './campaign-scenario';
-import { applyCampaignEncounterResult, commitExpedition, commitFactionTurn, resolveCampaignTurn } from './campaign-state';
+import { applyCampaignEncounterResult, commitExpedition, advanceCampaign, setCampaignPaused } from './campaign-state';
 import type { CampaignState } from './campaign-state';
 import { ENCOUNTER_COSTS } from './campaign-setup';
 import type { CampaignEncounterSetup } from './campaign-setup';
@@ -13,11 +13,11 @@ import { planets, units } from './game';
 import { CONFIG } from './config';
 
 const saved = function (campaign: CampaignState, encounterState?: CampaignSave['encounterState']): CampaignSave {
-	return parseCampaignSave({ schemaVersion: 1, mode: 'campaign', profileId: 'flow', savedAt: 100, campaign,
+	return parseCampaignSave({ schemaVersion: 2, mode: 'campaign', profileId: 'flow', savedAt: 100, campaign,
 		...(encounterState ? { encounterState } : {}) });
 };
 const resolve = function (state: CampaignState): CampaignState {
-	return resolveCampaignTurn(commitFactionTurn(commitFactionTurn(state, 'blue'), 'red'), state.turn);
+	return advanceCampaign(setCampaignPaused(state, false), 10);
 };
 const start = function (): CampaignState {
 	const fixture = createCampaign();
@@ -67,8 +67,8 @@ test('split invasion saves at every boundary, produces during combat and returns
 		for (let tick = 0; tick < 200; tick++) battle.world.update(CONFIG.step);
 		expect(planets(battle.world).every(function (entity) { return entity.components.planet.troops > 10; })).toBe(true);
 		expect(battle.world.getResource('match').time).toBeGreaterThan(9);
-		expect(active.planets.find(function (planet) { return planet.id === 'sol:1'; })?.depletion).toBe(100);
-		expect(active.planets.find(function (planet) { return planet.id === 'sirius:1'; })?.depletion).toBe(90);
+		expect(active.planets.find(function (planet) { return planet.id === 'sol:1'; })?.depletion).toBeCloseTo(89.9);
+		expect(active.planets.find(function (planet) { return planet.id === 'sirius:1'; })?.depletion).toBeCloseTo(79.9);
 		const midbattle = saved(active, { phase: 'battle', encounterId: 'encounter:flow', setup: allocation,
 			game: snapshot(battle), captureEvents: battle.runtime.getCaptureEvents() });
 		const resumed = midbattle.encounterState;
@@ -87,18 +87,18 @@ test('split invasion saves at every boundary, produces during combat and returns
 		expect(completed.encounterState?.phase).toBe('battle');
 		const result = restored.runtime.getResult(restored.world);
 		const returned = saved(applyCampaignEncounterResult(completed.campaign, result)).campaign;
-		expect(returned.turn).toBe(2);
-		expect(returned.phase).toBe('planning');
+		expect(returned.time).toBe(10);
+		expect(returned.phase).toBe('galaxy');
 		expect(returned.planets.filter(function (planet) { return planet.systemId === 'sirius'; })
-			.every(function (planet) { return planet.factionId === 'blue' && planet.depletion === 80 && planet.developmentBonusPoints === 0; })).toBe(true);
-		expect(returned.planets.find(function (planet) { return planet.id === 'sol:1'; })?.depletion).toBeCloseTo(89.8);
-		expect(returned.planets.find(function (planet) { return planet.id === 'sol:2'; })?.depletion).toBeCloseTo(39.8);
+			.every(function (planet) { return planet.factionId === 'blue' && Math.abs(planet.depletion - 79.9) < 0.00001 && planet.developmentBonusPoints === 1; })).toBe(true);
+		expect(returned.planets.find(function (planet) { return planet.id === 'sol:1'; })?.depletion).toBeCloseTo(89.9);
+		expect(returned.planets.find(function (planet) { return planet.id === 'sol:2'; })?.depletion).toBeCloseTo(39.9);
 		expect(applyCampaignEncounterResult(returned, result)).toBe(returned);
-		expect(resolveCampaignTurn(returned, 1)).toBe(returned);
+		expect(advanceCampaign(returned, 10)).toBe(returned);
 		const repeated = saved(resolve(returned)).campaign;
-		expect(repeated.turn).toBe(3);
-		expect(repeated.planets.find(function (planet) { return planet.id === 'sirius:1'; })?.developmentBonusPoints).toBe(2);
-		expect(repeated.planets.find(function (planet) { return planet.id === 'sirius:1'; })?.depletion).toBeCloseTo(69.8);
+		expect(repeated.time).toBe(10);
+		expect(repeated.planets.find(function (planet) { return planet.id === 'sirius:1'; })?.developmentBonusPoints).toBe(1);
+		expect(repeated.planets.find(function (planet) { return planet.id === 'sirius:1'; })?.depletion).toBeCloseTo(79.9);
 		expect(repeated.expeditions[0]?.points).toBe(150);
 	} finally { await battle.world.dispose(); await restored?.world.dispose(); }
 });
@@ -117,8 +117,8 @@ test('failed first landing spends committed expedition once, cleans remnants and
 		const returned = saved(applyCampaignEncounterResult(active, result)).campaign;
 		expect(returned.planets.filter(function (planet) { return planet.systemId === 'sirius'; })
 			.every(function (planet) { return planet.factionId === 'red' && planet.developmentBonusPoints === 2; })).toBe(true);
-		expect(returned.planets.find(function (planet) { return planet.id === 'sol:1'; })?.depletion).toBeCloseTo(89.8);
-		expect(returned.planets.find(function (planet) { return planet.id === 'sol:2'; })?.depletion).toBeCloseTo(39.8);
+		expect(returned.planets.find(function (planet) { return planet.id === 'sol:1'; })?.depletion).toBeCloseTo(89.9);
+		expect(returned.planets.find(function (planet) { return planet.id === 'sol:2'; })?.depletion).toBeCloseTo(39.9);
 		expect(returned.expeditions[0]?.points).toBe(150);
 		expect(returned.expeditions[0]?.status).toBe('resolved');
 		expect(applyCampaignEncounterResult(returned, result)).toBe(returned);

@@ -29,7 +29,8 @@ const factionLabel = function (owner: 'blue' | 'red' | null): string { return ow
 export const createCampaignView = function (options: {
 	order: (order: Omit<ExpeditionOrder, 'id' | 'factionId'>) => Promise<void>;
 	cancelOrder: (id: string) => Promise<void>;
-	endTurn: () => Promise<void>;
+	pause: () => Promise<void>;
+	pace: (pace: 0.5 | 1 | 2) => Promise<void>;
 	setup: (setup: CampaignEncounterSetup) => Promise<void>;
 	launch: (setup: CampaignEncounterSetup) => Promise<void>;
 	exit: () => Promise<void>;
@@ -39,7 +40,8 @@ export const createCampaignView = function (options: {
 	render: (state: CampaignState, setup: CampaignEncounterSetup | undefined) => void;
 	showSystem: (systemId: string) => void;
 	prepareEncounter: () => void;
-	showReport: (report: CampaignTransitionReport) => void;
+	notify: (message: string) => void;
+	showReport: (report: CampaignTransitionReport, open?: boolean) => void;
 	reset: () => void;
 	dispose: () => void;
 } {
@@ -65,6 +67,15 @@ export const createCampaignView = function (options: {
 	let pending = false;
 	let disposed = false;
 	const drafts = new Map<string, Map<string, number>>();
+	let renderedStructure = '';
+	let liveUpdates: (() => void)[] = [];
+	// Time and economic updates patch existing nodes, preserving focus, range drags, and map gestures.
+	const structure = function (): string {
+		return JSON.stringify([state?.phase, state?.paused, state?.pace, selectedSystem, sourceSystem, context,
+			state?.planets.map(function (planet) { return [planet.id, planet.factionId]; }),
+			context === 'orders' ? state?.expeditions.map(function (expedition) { return [expedition.id, expedition.status]; }) : null]);
+	};
+	const live = function (update: () => void): void { liveUpdates.push(update); update(); };
 	let camera = { x: 0, y: 0, scale: 1 };
 	const transform = function (): void {
 		world.style.transform = `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})`;
@@ -81,7 +92,7 @@ export const createCampaignView = function (options: {
 		let draft = drafts.get(systemId);
 		if (!draft) { draft = new Map(); drafts.set(systemId, draft); }
 		for (const planet of localPlanets(systemId)) {
-			if (planet.factionId !== 'blue' || planet.capturedTurn === state?.turn) { draft.delete(planet.id); continue; }
+			if (planet.factionId !== 'blue') { draft.delete(planet.id); continue; }
 			const maximum = Math.floor(availablePoints(developmentMaximum(planet), planet.depletion));
 			draft.set(planet.id, Math.min(maximum, draft.get(planet.id) ?? Math.min(10, maximum)));
 		}
@@ -89,11 +100,11 @@ export const createCampaignView = function (options: {
 	};
 	const run = async function (action: () => Promise<void>, success?: () => void): Promise<void> {
 		if (pending || disposed) return;
-		pending = true; root.inert = true;
+		pending = true; root.inert = true; notify('');
 		try {
 			if (state?.encounter) await setupView.flush();
 			await action();
-			if (!disposed) { success?.(); notify('Saved locally · campaign slot'); renderGalaxy(); }
+			if (!disposed) { success?.(); if (!state?.encounter || preparedEncounter !== state.encounter.id) renderGalaxy(); }
 		} catch (error) { if (!disposed) notify(error instanceof Error ? error.message : 'Campaign action failed.'); }
 		finally { pending = false; root.inert = false; }
 	};
@@ -104,7 +115,7 @@ export const createCampaignView = function (options: {
 		context = 'system'; renderGalaxy();
 	};
 	const sendTo = function (id: string): void {
-		if (!state || pending || state.phase !== 'planning' || state.readyFactions.includes('blue') || campaignWinner(state)) return;
+		if (!state || pending || state.phase !== 'galaxy' || campaignWinner(state)) return;
 		const source = state.systems.find(function (system) { return system.id === sourceSystem; });
 		const destination = state.systems.find(function (system) { return system.id === id; });
 		if (!source || !destination || source.id === id) { notify('Select a funding system, then send to another system.'); return; }
@@ -146,19 +157,17 @@ export const createCampaignView = function (options: {
 		const system = state.systems.find(function (item) { return item.id === selectedSystem; }); if (!system) return;
 		const local = localPlanets(system.id);
 		const owned = local.filter(function (planet) { return planet.factionId === 'blue'; });
-		const capturedThisTurn = local.some(function (planet) { return planet.capturedTurn === state?.turn; });
-		const canOrder = state.phase === 'planning' && !capturedThisTurn && !state.readyFactions.includes('blue') && !campaignWinner(state);
+		const canOrder = state.phase === 'galaxy' && !campaignWinner(state);
 		const unclaimed = local.every(function (planet) { return planet.factionId === null; });
 		heading(system.name);
-		const available = local.reduce(function (sum, planet) { return sum + availablePoints(developmentMaximum(planet), planet.depletion); }, 0);
-		panel.append(node('p', `${local.length} planets · ${amount(available)} points available`, 'campaign-muted'));
-		if (capturedThisTurn) panel.append(node('p', 'Conquered systems can issue orders next galaxy turn.', 'campaign-rule'));
+		const balances = node('p', undefined, 'campaign-muted'); panel.append(balances);
+		live(function () { balances.textContent = `${local.length} planets · ${amount(localPlanets(system.id).reduce(function (sum, planet) { return sum + availablePoints(developmentMaximum(planet), planet.depletion); }, 0))} points available`; });
 		if (owned.length) {
 			const draft = draftFor(system.id);
 			const presets = node('div', undefined, 'campaign-presets');
 			for (const percent of [25, 50, 100]) {
 				const preset = button(`${percent}%`, function () {
-				for (const planet of owned) draft.set(planet.id, Math.floor(availablePoints(developmentMaximum(planet), planet.depletion) * percent / 100));
+				for (const planet of localPlanets(system.id).filter(function (item) { return item.factionId === 'blue'; })) draft.set(planet.id, Math.floor(availablePoints(developmentMaximum(planet), planet.depletion) * percent / 100));
 				renderGalaxy();
 				});
 				preset.disabled = !canOrder; presets.append(preset);
@@ -170,7 +179,7 @@ export const createCampaignView = function (options: {
 			const summary = node('p', '', 'campaign-budget');
 			const updateSummary = function (): void {
 				const total = [...draft.values()].reduce(function (sum, value) { return sum + value; }, 0);
-				const ownAvailable = owned.reduce(function (sum, planet) { return sum + availablePoints(developmentMaximum(planet), planet.depletion); }, 0);
+				const ownAvailable = localPlanets(system.id).filter(function (planet) { return planet.factionId === 'blue'; }).reduce(function (sum, planet) { return sum + availablePoints(developmentMaximum(planet), planet.depletion); }, 0);
 				summary.textContent = `${amount(total)} points to send · ${amount(ownAvailable - total)} defense points remain`;
 			};
 			for (const planet of owned) {
@@ -185,22 +194,29 @@ export const createCampaignView = function (options: {
 				const plus = button('+', function () { change((draft.get(planet.id) ?? 0) + 1); });
 				minus.setAttribute('aria-label', `Decrease ${planet.name} allocation by one point`); plus.setAttribute('aria-label', `Increase ${planet.name} allocation by one point`);
 				const change = function (value: number): void {
+					const current = localPlanets(system.id).find(function (item) { return item.id === planet.id; });
+					if (!current) return;
+					const available = availablePoints(developmentMaximum(current), current.depletion);
+					const maximum = Math.floor(available); field.max = String(maximum);
 					draft.set(planet.id, Math.max(0, Math.min(maximum, value))); field.value = String(draft.get(planet.id) ?? 0);
-					output.textContent = `${field.value} / ${amount(availablePoints(developmentMaximum(planet), planet.depletion))}`;
+					output.textContent = `${field.value} / ${amount(available)}`;
 					minus.disabled = !canOrder || Number(field.value) <= 0; plus.disabled = !canOrder || Number(field.value) >= maximum; updateSummary();
 				};
 				field.addEventListener('input', function () { change(field.valueAsNumber); });
-				const controls = node('div', undefined, 'campaign-allocation-controls'); controls.append(minus, field, plus); row.append(rowTitle, controls); details.append(row); change(draft.get(planet.id) ?? 0);
+				const controls = node('div', undefined, 'campaign-allocation-controls'); controls.append(minus, field, plus); row.append(rowTitle, controls); details.append(row); live(function () { change(draft.get(planet.id) ?? 0); });
 			}
 			panel.append(details, summary);
 		}
-		if (local.some(function (planet) { return planet.factionId === 'blue' && planet.capturedTurn === state?.turn; })) panel.append(node('p', 'Newly conquered planets can fund expeditions next turn.', 'campaign-rule'));
-		for (const planet of local.filter(function (item) { return item.factionId !== 'blue' || item.capturedTurn === state?.turn; })) {
-			const row = node('div', undefined, 'campaign-planet-row'); row.append(node('span', `${planet.name} · ${factionLabel(planet.factionId)}`),
-				node('span', `${amount(availablePoints(developmentMaximum(planet), planet.depletion))} / ${amount(developmentMaximum(planet))}`)); panel.append(row);
+		for (const planet of local.filter(function (item) { return item.factionId !== 'blue'; })) {
+			const row = node('div', undefined, 'campaign-planet-row'); const balance = node('span');
+			row.append(node('span', `${planet.name} · ${factionLabel(planet.factionId)}`), balance); panel.append(row);
+			live(function () {
+				const current = localPlanets(system.id).find(function (item) { return item.id === planet.id; });
+				if (current) balance.textContent = `${amount(availablePoints(developmentMaximum(current), current.depletion))} / ${amount(developmentMaximum(current))}`;
+			});
 		}
 		const development = node('details', undefined, 'campaign-development'); development.append(node('summary', 'Development & recovery'),
-			node('p', `Each completed held turn: +${amount(state.rules.development.growthFraction * 100)}% baseline capacity, capped at +${amount(state.rules.development.capFraction * 100)}%; then ${amount(state.rules.recovery.fractionOfMaximum * 100)}% recovery. Captures remove ${amount(state.rules.development.captureLossFraction * 100)}% of development. Depletion persists.`)); panel.append(development);
+			node('p', `Each galaxy second: +${amount(state.rules.development.growthFraction * 100)}% baseline capacity, capped at +${amount(state.rules.development.capFraction * 100)}%; ${amount(state.rules.recovery.fractionOfMaximum * 100)}% recovery. Captures remove ${amount(state.rules.development.captureLossFraction * 100)}% of development. Depletion persists.`)); panel.append(development);
 		if (unclaimed) panel.append(node('p', `Minimum ${amount(neutralClaimMinimum(state, system.id))} points. First qualifying arrival claims all ${local.length} planets without battle; committed points remain spent.`, 'campaign-rule'));
 		else if (!owned.length) panel.append(node('p', 'Hostile arrivals start separate real-time encounters. The galaxy waits until each battle resolves.', 'campaign-rule'));
 		if (sourceSystem && sourceSystem !== system.id) panel.append(node('p', `Hold or right-click here to send from ${state.systems.find(function (item) { return item.id === sourceSystem; })?.name ?? sourceSystem}.`, 'campaign-rule'));
@@ -235,20 +251,27 @@ export const createCampaignView = function (options: {
 			const source = state.systems.find(function (item) { return item.id === expedition.sourceSystemId; });
 			const destination = state.systems.find(function (item) { return item.id === expedition.destinationSystemId; });
 			const row = node('section', undefined, 'campaign-order');
-			row.append(node('strong', `${source?.name ?? expedition.sourceSystemId} ${expedition.status === 'returning' ? '←' : '→'} ${destination?.name ?? expedition.destinationSystemId}`),
-				node('p', `${factionLabel(expedition.factionId)} · ${amount(expedition.points)} points · ${expedition.status === 'encounter' ? 'Arrived · resolving now' : `${expedition.status === 'returning' ? 'Returning · arrival' : 'arrival'} turn ${Math.ceil(expeditionArrival(expedition))}`}`, 'campaign-muted'),
+			const timing = node('p', undefined, 'campaign-muted');
+			live(function () {
+				if (state) timing.textContent = `${factionLabel(expedition.factionId)} · ${amount(expedition.points)} points · ${expedition.status === 'encounter' ? 'Arrived · resolving now' : `${expedition.status === 'returning' ? 'Returning · ' : ''}ETA ${amount(Math.max(0, expeditionArrival(expedition) - state.time))}s`}`;
+			});
+			row.append(node('strong', `${source?.name ?? expedition.sourceSystemId} ${expedition.status === 'returning' ? '←' : '→'} ${destination?.name ?? expedition.destinationSystemId}`), timing,
 				button(expedition.status === 'returning' ? 'Show source' : 'Show destination', function () { selectSystem(expedition.status === 'returning' ? expedition.sourceSystemId : expedition.destinationSystemId); }, 'campaign-wide'));
 			if (expedition.factionId === 'blue') {
-				const cancel = button(expedition.status === 'returning' ? 'Returning' : expedition.departureTurn === state.turn ? 'Cancel launch' : '↶ Recall', function () {
+				const cancel = button(expedition.status === 'returning' ? 'Returning' : expedition.departureTime === state.time ? 'Cancel launch' : '↶ Recall', function () {
 					void run(function () { return options.cancelOrder(expedition.id); });
 				}, 'campaign-wide');
-				cancel.disabled = !canCancelExpedition(state, expedition, 'blue') || Boolean(campaignWinner(state));
-				cancel.setAttribute('aria-label', `${cancel.textContent}: ${source?.name ?? expedition.sourceSystemId} → ${destination?.name ?? expedition.destinationSystemId}`);
+				live(function () {
+					if (!state) return;
+					cancel.textContent = expedition.status === 'returning' ? 'Returning' : expedition.departureTime === state.time ? 'Cancel launch' : '↶ Recall';
+					cancel.disabled = !canCancelExpedition(state, expedition, 'blue') || Boolean(campaignWinner(state));
+					cancel.setAttribute('aria-label', `${cancel.textContent}: ${source?.name ?? expedition.sourceSystemId} → ${destination?.name ?? expedition.destinationSystemId}`);
+				});
 				row.append(cancel);
 			}
 			panel.append(row);
 		}
-		panel.append(node('p', 'Cancel this turn’s launch to refund its source points. Recall traveling expeditions to return points to their contributing planets after the elapsed outbound travel time. Only planets you still own are replenished; surplus is lost.', 'campaign-rule'));
+		panel.append(node('p', 'Cancel a launch before galaxy time advances to refund its source points. Recall traveling expeditions to return points to their contributing planets after the elapsed outbound travel time. Only planets you still own are replenished; surplus is lost.', 'campaign-rule'));
 		if (state.encounter) panel.append(button('Prepare encounter', prepare, 'campaign-wide campaign-primary'));
 	};
 	const prepare = function (): void {
@@ -260,7 +283,7 @@ export const createCampaignView = function (options: {
 	const renderReport = function (): void {
 		if (!state || !report) return;
 		const winner = campaignWinner(state);
-		heading(report.outcome ? 'Battle resolved' : report.turnCompleted ? `Turn ${report.toTurn}` : 'Galaxy resolution');
+		heading(report.outcome ? 'Battle resolved' : report.timeAdvanced ? `Galaxy ${amount(report.toTime)}s` : 'Galaxy resolution');
 		panel.append(node('p', state.encounter ? 'Galaxy frozen · another encounter is ready' : winner ?
 			winner === 'blue' ? 'Campaign won · the rival has no planets or unresolved expeditions' : 'Campaign lost · your planets and expeditions are gone' :
 			'Resolution complete · galaxy orders are available', 'campaign-muted'));
@@ -278,38 +301,67 @@ export const createCampaignView = function (options: {
 			row.append(node('strong', change.after.name), node('p', `${factionLabel(change.before.factionId)} → ${factionLabel(change.after.factionId)} · available ${amount(change.before.availablePoints)} → ${amount(change.after.availablePoints)} · capacity ${amount(change.before.maximumPoints)} → ${amount(change.after.maximumPoints)}`, 'campaign-rule'));
 			panel.append(row);
 		}
-		if (state.encounter) panel.append(node('p', 'Later arrivals wait. No orders or turn recovery happen during combat.', 'campaign-rule'), button('Prepare encounter', prepare, 'campaign-wide campaign-primary'));
+		if (state.encounter) panel.append(node('p', 'Later arrivals wait. Galaxy time and recovery remain frozen during combat.', 'campaign-rule'), button('Prepare encounter', prepare, 'campaign-wide campaign-primary'));
 		else panel.append(button('Return to system', function () { context = 'system'; renderGalaxy(); }, 'campaign-wide'));
 	};
 	const renderGalaxy = function (): void {
 		if (!state || disposed) return;
+		renderedStructure = structure(); liveUpdates = [];
 		header.replaceChildren(); world.replaceChildren(); panel.replaceChildren();
 		const brand = node('span', 'Galaxy Conquest', 'campaign-brand');
 		const score = node('div', undefined, 'campaign-score');
+		const clock = node('span', undefined, 'campaign-clock');
+		live(function () { if (state) clock.textContent = `Galaxy ${amount(state.time)}s${state.encounter ? ' · Frozen' : state.paused ? ' · Paused' : ''}`; });
 		score.append(node('span', `● ${state.planets.filter(function (planet) { return planet.factionId === 'blue'; }).length} YOU`, 'campaign-blue'),
-			node('span', `Turn ${state.turn}${state.encounter ? ' · Frozen' : ''}`, 'campaign-turn'),
+			clock,
 			node('span', `● ${state.planets.filter(function (planet) { return planet.factionId === 'red'; }).length} RIVAL`, 'campaign-red'));
 		const actions = node('div', undefined, 'campaign-actions');
 		if (options.save) actions.append(button('Save', function () { void run(async function () { await options.save?.(); }); }, 'campaign-save'));
 		const orders = button(`Orders · ${state.expeditions.filter(isActiveExpedition).length}`, function () { context = context === 'orders' ? 'system' : 'orders'; renderGalaxy(); });
 		orders.setAttribute('aria-expanded', String(context === 'orders'));
-		const end = button(state.encounter ? 'Prepare encounter' : 'End turn', function () { if (state?.encounter) prepare(); else void run(options.endTurn); }, 'campaign-primary');
-		end.disabled = !state.encounter && (state.phase !== 'planning' || state.readyFactions.includes('blue') || Boolean(campaignWinner(state)));
+		live(function () { if (state) orders.textContent = `Orders · ${state.expeditions.filter(isActiveExpedition).length}`; });
+		const end = button(state.encounter ? 'Prepare encounter' : state.paused ? 'Resume' : 'Pause', function () { if (state?.encounter) prepare(); else void run(options.pause); }, 'campaign-primary');
+		end.disabled = !state.encounter && Boolean(campaignWinner(state));
+		if (!state.encounter) { end.setAttribute('aria-pressed', String(state.paused)); end.setAttribute('aria-label', state.paused ? 'Resume galaxy time' : 'Pause galaxy time'); }
+		const speeds = node('div', undefined, 'campaign-paces'); speeds.setAttribute('role', 'group'); speeds.setAttribute('aria-label', 'Galaxy pace');
+		for (const pace of [0.5, 1, 2] as const) {
+			const control = button(`${pace}×`, function () { void run(function () { return options.pace(pace); }); });
+			control.setAttribute('aria-pressed', String(state.pace === pace)); control.disabled = Boolean(state.encounter) || Boolean(campaignWinner(state)); speeds.append(control);
+		}
 		const menu = button('☰', function () { context = context === 'menu' ? 'system' : 'menu'; renderGalaxy(); }, 'campaign-menu'); menu.setAttribute('aria-label', 'Campaign menu'); menu.setAttribute('aria-expanded', String(context === 'menu'));
-		actions.append(orders, end, menu); header.append(brand, score, actions);
+		actions.append(orders, end, speeds, menu); header.append(brand, score, actions);
 		const bounds = galaxyBounds();
 		world.style.width = `${bounds.width}px`;
 		world.style.height = `${bounds.height}px`;
-		const routes = svg('svg', { viewBox: `0 0 ${bounds.width} ${bounds.height}`, 'aria-hidden': 'true', class: 'campaign-routes' });
-		for (const expedition of state.expeditions.filter(isActiveExpedition)) {
-			const source = state.systems.find(function (item) { return item.id === expedition.sourceSystemId; });
-			const destination = state.systems.find(function (item) { return item.id === expedition.destinationSystemId; });
-			if (!source || !destination) continue;
-			const a = position(source); const b = position(destination);
-			const line = svg('line', { x1: String(a.x), y1: String(a.y), x2: String(b.x), y2: String(b.y), stroke: expedition.factionId === 'blue' ? '#60d9ff' : '#ff867e' });
-			const label = svg('text', { x: String((a.x + b.x) / 2 + 12), y: String((a.y + b.y) / 2 - 12) }); label.textContent = `${expedition.status === 'returning' ? '↶ ' : ''}${amount(expedition.points)}`; routes.append(line, label);
-		}
-		world.append(routes);
+		let routeStructure = '';
+		let routes: SVGSVGElement | undefined;
+		let routeUpdates: (() => void)[] = [];
+		live(function () {
+			if (!state) return;
+			const active = state.expeditions.filter(isActiveExpedition);
+			const nextStructure = JSON.stringify(active.map(function (expedition) { return [expedition.id, expedition.status]; }));
+			if (nextStructure !== routeStructure || !routes) {
+				routeStructure = nextStructure; routeUpdates = []; routes?.remove();
+				routes = svg('svg', { viewBox: `0 0 ${bounds.width} ${bounds.height}`, 'aria-hidden': 'true', class: 'campaign-routes' });
+				for (const expedition of state.expeditions.filter(isActiveExpedition)) {
+					const source = state.systems.find(function (item) { return item.id === expedition.sourceSystemId; });
+					const destination = state.systems.find(function (item) { return item.id === expedition.destinationSystemId; });
+					if (!source || !destination) continue;
+					const a = position(source); const b = position(destination);
+					const line = svg('line', { x1: String(a.x), y1: String(a.y), x2: String(b.x), y2: String(b.y), stroke: expedition.factionId === 'blue' ? '#60d9ff' : '#ff867e' });
+					const moving = svg('circle', { r: '4', fill: expedition.factionId === 'blue' ? '#60d9ff' : '#ff867e' });
+					routeUpdates.push(function () {
+						if (!state) return;
+						const distanceTime = expedition.recalledTime === undefined ? state.time - expedition.departureTime : 2 * expedition.recalledTime - state.time - expedition.departureTime;
+						const fraction = Math.max(0, Math.min(1, distanceTime / (expedition.arrivalTime - expedition.departureTime)));
+						moving.setAttribute('cx', String(a.x + (b.x - a.x) * fraction)); moving.setAttribute('cy', String(a.y + (b.y - a.y) * fraction));
+					});
+					const label = svg('text', { x: String((a.x + b.x) / 2 + 12), y: String((a.y + b.y) / 2 - 12) }); label.textContent = `${expedition.status === 'returning' ? '↶ ' : ''}${amount(expedition.points)}`; routes.append(line, label, moving);
+				}
+				world.prepend(routes);
+			}
+			for (const update of routeUpdates) update();
+		});
 		for (const [index, system] of state.systems.entries()) {
 			const planets = localPlanets(system.id); const owners = new Set(planets.map(function (planet) { return planet.factionId; }));
 			const owner = owners.size === 1 ? planets[0]?.factionId : undefined;
@@ -319,8 +371,8 @@ export const createCampaignView = function (options: {
 			marker.style.setProperty('--owner', owner === 'blue' ? '#60d9ff' : owner === 'red' ? '#ff867e' : owner === null ? '#8e9cae' : '#cbbcf1');
 			const minimum = owner === null ? neutralClaimMinimum(state, system.id) : undefined;
 			const source = state.systems.find(function (item) { return item.id === sourceSystem; });
-			const travel = source ? Math.ceil(Math.max(1, Math.hypot(system.x - source.x, system.y - source.y) / state.rules.travelSpeed)) : undefined;
-			marker.title = `${system.name} · ${minimum !== undefined ? `Claim minimum ${amount(minimum)} points` : owner === undefined ? 'Mixed ownership' : factionLabel(owner)}${travel !== undefined && source?.id !== system.id ? ` · ${travel} turn travel` : ''}`;
+			const travel = source ? Math.ceil(Math.max(state.rules.minimumTravelTime, Math.hypot(system.x - source.x, system.y - source.y) / state.rules.travelSpeed)) : undefined;
+			marker.title = `${system.name} · ${minimum !== undefined ? `Claim minimum ${amount(minimum)} points` : owner === undefined ? 'Mixed ownership' : factionLabel(owner)}${travel !== undefined && source?.id !== system.id ? ` · ${travel}s travel` : ''}`;
 			marker.setAttribute('aria-label', `${system.name}, ${owner === undefined ? 'mixed ownership' : factionLabel(owner)}, ${amount(points)} points${minimum !== undefined ? `, minimum claim ${amount(minimum)} points` : ''}`);
 			const art = svg('svg', { viewBox: '0 0 100 80', class: 'campaign-system-art', 'aria-hidden': 'true' });
 			for (const radius of [21, 34, 46]) art.append(svg('ellipse', { cx: '50', cy: '40', rx: String(radius), ry: String(radius * .55), transform: 'rotate(-25 50 40)', class: 'campaign-orbit' }));
@@ -330,6 +382,11 @@ export const createCampaignView = function (options: {
 				art.append(svg('circle', { cx: String(50 + Math.cos(angle) * radius), cy: String(40 + Math.sin(angle) * radius * .6), r: '3.5', fill: planet.factionId === 'blue' ? '#60d9ff' : planet.factionId === 'red' ? '#ff867e' : '#8e9cae', class: 'campaign-world-dot' }));
 			}
 			const copy = node('span', undefined, 'campaign-system-copy'); copy.append(node('strong', system.name), node('span', `${amount(points)} points`, 'campaign-system-points'), node('small', minimum !== undefined ? `UNCLAIMED · min ${amount(minimum)} points` : `${owner === undefined ? 'MIXED' : factionLabel(owner)} · ${planets.length} planets`)); marker.append(art, copy); world.append(marker);
+			live(function () {
+				const points = localPlanets(system.id).reduce(function (sum, planet) { return sum + availablePoints(developmentMaximum(planet), planet.depletion); }, 0);
+				const balance = copy.querySelector('.campaign-system-points'); if (balance) balance.textContent = `${amount(points)} points`;
+				marker.setAttribute('aria-label', `${system.name}, ${owner === undefined ? 'mixed ownership' : factionLabel(owner)}, ${amount(points)} points${minimum !== undefined ? `, minimum claim ${amount(minimum)} points` : ''}`);
+			});
 		}
 		panel.hidden = context === 'none';
 		if (context === 'system') renderSystem();
@@ -341,7 +398,7 @@ export const createCampaignView = function (options: {
 			if (options.save) panel.append(button('Save campaign', function () { void run(async function () { await options.save?.(); }); }, 'campaign-wide'));
 			if (report) panel.append(button('Last resolution', function () { context = 'report'; renderGalaxy(); }, 'campaign-wide'));
 			if (state.encounter) panel.append(button('Prepare encounter', prepare, 'campaign-wide campaign-primary'));
-			panel.append(button('Save & menu', function () { void run(options.exit); }, 'campaign-wide'), node('p', 'Select a funding system. Adjust contributions, then hold or right-click a destination. End turn resolves committed expeditions for both factions.', 'campaign-rule'));
+			panel.append(button('Save & menu', function () { void run(options.exit); }, 'campaign-wide'), node('p', 'Select a funding system. Adjust contributions, then hold or right-click a destination. Resume galaxy time to advance expeditions, recovery, and rival orders. Pause to plan without advancing time.', 'campaign-rule'));
 		}
 		const winner = campaignWinner(state);
 		hint.textContent = winner ? `${winner === 'blue' ? 'Campaign victory' : 'Campaign defeat'} · Open the menu to return` : state.encounter ? 'Galaxy frozen · Prepare the next encounter to continue' : 'Tap to inspect · Hold or right-click another system to send';
@@ -367,20 +424,23 @@ export const createCampaignView = function (options: {
 		if (state.encounter && setup && preparedEncounter === state.encounter.id) { galaxy.hidden = true; setupView.root.hidden = false; setupView.render(state, setup); return; }
 		galaxy.hidden = false; setupView.root.hidden = true;
 		if (!state.encounter) preparedEncounter = undefined;
-		renderGalaxy();
+		if (renderedStructure === structure()) { for (const update of liveUpdates) update(); }
+		else renderGalaxy();
 	};
 	return { root, render,
-		prepareEncounter: prepare,
+		prepareEncounter: prepare, notify,
 		showSystem: function (systemId): void { selectSystem(systemId); },
-		showReport: function (nextReport): void {
-			report = nextReport; preparedEncounter = undefined; input.cancel(); setupView.root.hidden = true; galaxy.hidden = false;
+		showReport: function (nextReport, open = true): void {
+			report = nextReport;
+			if (!open) return;
+			preparedEncounter = undefined; input.cancel(); setupView.root.hidden = true; galaxy.hidden = false;
 			if (nextReport.focusSystemId) selectedSystem = nextReport.focusSystemId;
 			context = 'report'; renderGalaxy();
 		},
 		reset: function (): void {
 			setupView.reset();
 			input.cancel(); drafts.clear(); state = undefined; selectedSystem = undefined; sourceSystem = undefined; report = undefined; encounterSetup = undefined; preparedEncounter = undefined;
-			context = 'system'; fitPending = true; camera = { x: 0, y: 0, scale: 1 }; notify(''); setupView.root.hidden = true; galaxy.hidden = false;
+			context = 'system'; renderedStructure = ''; liveUpdates = []; fitPending = true; camera = { x: 0, y: 0, scale: 1 }; notify(''); setupView.root.hidden = true; galaxy.hidden = false;
 		},
 		dispose: function (): void { disposed = true; input.dispose(); resize.disconnect(); setupView.dispose(); root.remove(); },
 	};

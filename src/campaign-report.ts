@@ -37,9 +37,9 @@ export interface CampaignResolvedExpedition {
 	readonly kind: 'claim' | 'friendly' | 'encounter' | 'resolved' | 'return';
 }
 export interface CampaignTransitionReport {
-	readonly fromTurn: number;
-	readonly toTurn: number;
-	readonly turnCompleted: boolean;
+	readonly fromTime: number;
+	readonly toTime: number;
+	readonly timeAdvanced: boolean;
 	readonly phase: CampaignState['phase'];
 	readonly focusSystemId: string | undefined;
 	readonly planets: readonly CampaignPlanetChange[];
@@ -54,7 +54,7 @@ const snapshot = function (planet: CampaignPlanet): CampaignPlanetReport {
 		maximumPoints, depletion: planet.depletion, availablePoints: availablePoints(maximumPoints, planet.depletion) };
 };
 
-/** Battle consequences only: later arrivals and the turn boundary have not happened. */
+/** Battle consequences only: later arrivals have not happened. */
 export const describeEncounterOutcome = function (
 	state: CampaignState,
 	result: CampaignEncounterResult,
@@ -73,7 +73,7 @@ export const describeEncounterOutcome = function (
 		const planet = planets.get(event.planetId);
 		if (!planet || planet.factionId === event.factionId || (event.factionId !== 'blue' && event.factionId !== 'red'))
 			throw new Error('Outcome capture events must change ownership of a known encounter planet.');
-		planets.set(planet.id, { ...planet, ...captureDevelopment(planet, event.factionId, state.turn, state.rules.development), factionId: event.factionId });
+		planets.set(planet.id, { ...planet, ...captureDevelopment(planet, event.factionId, state.time, state.rules.development), factionId: event.factionId });
 	}
 	const ownership = new Map(result.ownership.map(function (item) { return [item.planetId, item.factionId] as const; }));
 	if (ownership.size !== result.ownership.length || ownership.size !== originals.length ||
@@ -105,7 +105,7 @@ export const describeCampaignTransition = function (
 	const resolved = after.expeditions.filter(function (item) { return item.status === 'resolved' && !previouslyResolved.has(item.id); })
 		.toSorted(function (a, b) { return expeditionArrival(a) - expeditionArrival(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0); });
 	const resolvedExpeditions = resolved.map(function (expedition): CampaignResolvedExpedition {
-		if (expedition.recalledTurn !== undefined) return { expeditionId: expedition.id, systemId: expedition.sourceSystemId,
+		if (expedition.recalledTime !== undefined) return { expeditionId: expedition.id, systemId: expedition.sourceSystemId,
 			factionId: expedition.factionId, points: expedition.points, kind: 'return' };
 		const result = after.resolvedEncounters.find(function (item) { return item.encounterId === `encounter:${expedition.id}`; });
 		const local = before.planets.filter(function (planet) { return planet.systemId === expedition.destinationSystemId; });
@@ -122,7 +122,7 @@ export const describeCampaignTransition = function (
 		return { expeditionId: expedition.id, systemId: expedition.destinationSystemId, factionId: expedition.factionId,
 			points: expedition.points, kind };
 	});
-	return { fromTurn: before.turn, toTurn: after.turn, turnCompleted: after.turn > before.turn, phase: after.phase,
+	return { fromTime: before.time, toTime: after.time, timeAdvanced: after.time > before.time, phase: after.phase,
 		focusSystemId: outcome?.systemId ?? after.encounter?.systemId ?? resolvedExpeditions[0]?.systemId,
 		planets, resolvedExpeditions, ...(outcome ? { outcome } : {}) };
 };

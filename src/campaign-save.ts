@@ -1,4 +1,4 @@
-import { expeditionArrival, isActiveExpedition } from './campaign-state';
+import { expeditionArrival, isActiveExpedition, MINIMUM_CAMPAIGN_EVENT_SECONDS } from './campaign-state';
 import * as z from 'zod/mini';
 import type { CampaignState, CampaignEncounterResult } from './campaign-state';
 import { validateCampaignEncounterSetup } from './campaign-setup';
@@ -7,7 +7,7 @@ import type { GameSnapshot } from './save-state';
 import { availablePoints } from './campaign-points';
 import { gameSnapshotSchema, InvalidSaveError } from './save-state';
 
-export const CAMPAIGN_SAVE_SCHEMA_VERSION = 1;
+export const CAMPAIGN_SAVE_SCHEMA_VERSION = 2;
 
 export type SavedCampaignEncounter =
 	| { phase: 'allocation'; encounterId: string; setup: CampaignEncounterSetup }
@@ -34,14 +34,14 @@ const contribution = z.object({ planetId: id, points: integer });
 const planet = z.object({
 	id, systemId: id, name: id, factionId: owner,
 	baselinePoints: amount, developmentBonusPoints: amount, depletion: amount,
-	capturedTurn: z.nullable(integer), lastAppliedTurn: integer,
+	capturedTime: z.nullable(amount), lastAppliedTime: amount,
 });
 const expedition = z.object({
 	id, factionId: side, sourceSystemId: id, destinationSystemId: id,
 	contributions: z.array(contribution).check(z.maxLength(100)),
-	points: positiveInteger, departureTurn: positiveInteger, arrivalTime: amount,
+	points: positiveInteger, departureTime: amount, arrivalTime: amount,
 	status: z.enum(['traveling', 'returning', 'cancelled', 'encounter', 'resolved']),
-	recalledTurn: z.optional(positiveInteger),
+	recalledTime: z.optional(amount),
 });
 const encounter = z.object({
 	id, expeditionId: id, systemId: id, attacker: side, attackerPoints: positiveInteger,
@@ -59,7 +59,7 @@ const hasCampaignIntegrity = function (state: CampaignState): boolean {
 	const planets = new Map(state.planets.map(function (item) { return [item.id, item] as const; }));
 	const expeditions = new Map(state.expeditions.map(function (item) { return [item.id, item] as const; }));
 	if (systems.size !== state.systems.length || planets.size !== state.planets.length || expeditions.size !== state.expeditions.length ||
-		!unique(state.readyFactions) || !unique(state.resolvedEncounters.map(function (item) { return item.encounterId; }))) return false;
+		!unique(state.resolvedEncounters.map(function (item) { return item.encounterId; }))) return false;
 	for (const system of state.systems) {
 		const local = state.planets.filter(function (item) { return item.systemId === system.id; });
 		if (local.length !== system.map.planets.length || !unique(local.map(function (item) { return item.name; })) ||
@@ -67,27 +67,31 @@ const hasCampaignIntegrity = function (state: CampaignState): boolean {
 			local.some(function (item) { return !system.map.planets.some(function (seed) { return seed[0] === item.name; }); })) return false;
 	}
 	for (const item of state.planets) {
-		if (!systems.has(item.systemId) || item.lastAppliedTurn !== state.turn - 1 ||
-			(item.capturedTurn !== null && item.capturedTurn > state.turn) ||
+		if (!systems.has(item.systemId) || item.lastAppliedTime !== state.time ||
+			(item.capturedTime !== null && item.capturedTime > state.time) ||
 			item.developmentBonusPoints > item.baselinePoints * state.rules.development.capFraction ||
 			item.baselinePoints + item.developmentBonusPoints > Number.MAX_SAFE_INTEGER) return false;
 	}
 	for (const item of state.expeditions) {
 		const source = systems.get(item.sourceSystemId);
 		const destination = systems.get(item.destinationSystemId);
-		if (!source || !destination || source.id === destination.id || item.departureTurn > state.turn ||
+		if (!source || !destination || source.id === destination.id || item.departureTime > state.time ||
 			!unique(item.contributions.map(function (entry) { return entry.planetId; })) ||
 			item.points !== item.contributions.reduce(function (total, entry) { return total + entry.points; }, 0) ||
 			item.contributions.some(function (entry) { return planets.get(entry.planetId)?.systemId !== source.id; }) ||
-			item.arrivalTime !== item.departureTurn - 1 + Math.max(1, Math.hypot(destination.x - source.x, destination.y - source.y) / state.rules.travelSpeed)) return false;
-		if (item.recalledTurn !== undefined) {
-			if (!['returning', 'resolved'].includes(item.status) || item.recalledTurn <= item.departureTurn || item.recalledTurn > state.turn ||
-				item.recalledTurn - 1 >= item.arrivalTime || !Number.isSafeInteger(expeditionArrival(item))) return false;
+			item.arrivalTime !== item.departureTime + Math.max(state.rules.minimumTravelTime, Math.hypot(destination.x - source.x, destination.y - source.y) / state.rules.travelSpeed)) return false;
+		if (item.recalledTime !== undefined) {
+			if (!['returning', 'resolved'].includes(item.status) || item.recalledTime <= item.departureTime || item.recalledTime > state.time ||
+				item.recalledTime >= item.arrivalTime || !Number.isFinite(expeditionArrival(item)) || expeditionArrival(item) > Number.MAX_SAFE_INTEGER) return false;
 		} else if (item.status === 'returning') return false;
-		if ((item.status === 'encounter' || item.status === 'resolved') && expeditionArrival(item) > state.turn) return false;
+		if (isActiveExpedition(item) && expeditionArrival(item) < state.time) return false;
+		if ((item.status === 'encounter' || item.status === 'resolved') && expeditionArrival(item) > state.time) return false;
 	}
 	const active = state.expeditions.filter(function (item) { return item.status === 'encounter'; });
-	if (state.phase === 'planning' ? state.readyFactions.length > 2 : state.readyFactions.length !== 2) return false;
+	if (state.nextRivalTime < state.time || (state.phase === 'encounter' && !state.paused)) return false;
+	if (state.phase === 'galaxy' && state.expeditions.some(function (item) {
+		return (item.status === 'traveling' || item.status === 'returning') && expeditionArrival(item) <= state.time;
+	})) return false;
 	if ((state.phase === 'encounter') !== (state.encounter !== null)) return false;
 	if (!state.encounter) {
 		if (active.length !== 0) return false;
@@ -96,7 +100,7 @@ const hasCampaignIntegrity = function (state: CampaignState): boolean {
 		const order = expeditions.get(current.expeditionId);
 		const local = state.planets.filter(function (item) { return item.systemId === current.systemId; });
 		const firstDue = state.expeditions.filter(function (item) {
-			return isActiveExpedition(item) && expeditionArrival(item) <= state.turn;
+			return isActiveExpedition(item) && expeditionArrival(item) <= state.time;
 		}).toSorted(function (a, b) {
 			return expeditionArrival(a) - expeditionArrival(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 		})[0];
@@ -135,18 +139,19 @@ const hasCampaignIntegrity = function (state: CampaignState): boolean {
 };
 
 export const campaignStateSchema = z.object({
-	turn: positiveInteger,
-	phase: z.enum(['planning', 'resolving', 'encounter']),
+	time: amount, paused: z.boolean(), pace: z.union([z.literal(0.5), z.literal(1), z.literal(2)]), nextRivalTime: amount,
+	phase: z.enum(['galaxy', 'encounter']),
 	rules: z.object({
 		travelSpeed: z.number().check(z.gt(0), z.lte(Number.MAX_SAFE_INTEGER)),
-		neutralClaimFraction: z._default(fraction, 0.1),
+		minimumTravelTime: z.number().check(z.gte(MINIMUM_CAMPAIGN_EVENT_SECONDS), z.lte(Number.MAX_SAFE_INTEGER)),
+		rivalInterval: z.number().check(z.gte(MINIMUM_CAMPAIGN_EVENT_SECONDS), z.lte(Number.MAX_SAFE_INTEGER)),
+		neutralClaimFraction: fraction,
 		development: z.object({ growthFraction: fraction, capFraction: fraction, captureLossFraction: fraction }),
 		recovery: z.object({ fractionOfMaximum: fraction }),
 	}),
 	systems: z.array(z.object({ id, name: id, x: galaxyCoordinate, y: galaxyCoordinate, map: gameSnapshotSchema.shape.map })).check(z.minLength(1), z.maxLength(100)),
 	planets: z.array(planet).check(z.minLength(1), z.maxLength(10000)),
 	expeditions: z.array(expedition).check(z.maxLength(10000)),
-	readyFactions: z.array(side).check(z.maxLength(2)),
 	encounter: z.nullable(encounter),
 	resolvedEncounters: z.array(result).check(z.maxLength(10000)),
 }).check(z.refine(hasCampaignIntegrity)) satisfies z.ZodMiniType<CampaignState>;
@@ -229,6 +234,9 @@ export const parseCampaignSave = function (input: unknown, expectedProfileId?: s
 	if (typeof input === 'object' && input !== null && 'schemaVersion' in input &&
 		typeof input.schemaVersion === 'number' && input.schemaVersion > CAMPAIGN_SAVE_SCHEMA_VERSION)
 		throw new InvalidSaveError('This campaign was created by a newer game version. Its profile data was kept unchanged.');
+	if (typeof input === 'object' && input !== null && 'schemaVersion' in input &&
+		typeof input.schemaVersion === 'number' && input.schemaVersion < CAMPAIGN_SAVE_SCHEMA_VERSION)
+		throw new InvalidSaveError('Turn-based campaign saves are no longer supported. Start a new campaign. Its profile data was kept unchanged.');
 	const parsed = campaignSaveSchema.safeParse(input);
 	if (!parsed.success || (expectedProfileId !== undefined && parsed.data.profileId !== expectedProfileId))
 		throw new InvalidSaveError('Could not validate this saved campaign. Its profile data was kept unchanged.');

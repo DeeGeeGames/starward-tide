@@ -266,13 +266,13 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		panel.append(title);
 		if (drawer === 'orders') {
 			titleText.textContent = 'Orders';
-			panel.append(node('p', `Galaxy turn ${state.turn} remains frozen`, 'csu-sub'));
+			panel.append(node('p', `Galaxy time ${amount(state.time)}s remains frozen`, 'csu-sub'));
 			for (const expedition of state.expeditions.filter(isActiveExpedition)) {
 				const from = state.systems.find(function (item) { return item.id === expedition.sourceSystemId; });
 				const to = state.systems.find(function (item) { return item.id === expedition.destinationSystemId; });
 				const row = node('div', '', 'csu-order');
 				row.append(node('strong', `${from?.name ?? expedition.sourceSystemId} ${expedition.status === 'returning' ? '←' : '→'} ${to?.name ?? expedition.destinationSystemId} · ${amount(expedition.points)} points`),
-					node('small', expedition.id === encounter.expeditionId ? 'Arrived · resolving now' : `${expedition.status === 'returning' ? 'Returning · arrival' : 'Arrival'} turn ${Math.ceil(expeditionArrival(expedition))} · waits for galaxy resolution`));
+					node('small', expedition.id === encounter.expeditionId ? 'Arrived · resolving now' : `${expedition.status === 'returning' ? 'Returning · arrival' : 'Arrival'} in ${amount(Math.max(0, expeditionArrival(expedition) - state.time))}s · waits for galaxy resolution`));
 				panel.append(row);
 			}
 			panel.append(node('p', 'Later arrivals wait. Hostile arrivals start separate battles; friendly arrivals replenish points. No mid-battle reinforcements.', 'csu-rule'), button('Return to allocation', function () { openDrawer('allocation'); }, 'csu-wide'));
@@ -280,7 +280,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		}
 		if (drawer === 'menu') {
 			titleText.textContent = 'Game menu';
-			panel.append(node('p', `Encounter setup · galaxy turn ${state.turn} frozen`, 'csu-sub'), button('Return to allocation', function () { openDrawer('allocation'); }, 'csu-wide'),
+			panel.append(node('p', `Encounter setup · galaxy time ${amount(state.time)}s frozen`, 'csu-sub'), button('Return to allocation', function () { openDrawer('allocation'); }, 'csu-wide'),
 				button('Save & menu', function () { void run(options.exit); }, 'csu-wide'), node('p', 'Saving preserves this allocation. Continue returns to encounter setup.', 'csu-rule'));
 			return;
 		}
@@ -396,7 +396,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		heading.textContent = `${system?.name ?? encounter.systemId} · ${encounter.attacker === 'blue' ? 'Your expedition has arrived' : 'Rival invasion incoming'} · Select a planet to allocate starting forces`;
 		blue.textContent = `● ${encounter.planets.filter(function (planet) { return planet.factionId === 'blue'; }).length} YOU`;
 		red.textContent = `● ${encounter.planets.filter(function (planet) { return planet.factionId === 'red'; }).length} RIVAL`;
-		turn.textContent = `Turn ${state.turn} · Frozen`;
+		turn.textContent = `Galaxy ${amount(state.time)}s · Frozen`;
 		orders.textContent = `Orders · ${state.expeditions.filter(isActiveExpedition).length}`;
 		renderPanel(); updateMap(); fit();
 	};

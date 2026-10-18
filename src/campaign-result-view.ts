@@ -15,7 +15,7 @@ const owner = function (faction: string | null): string {
 
 /** A completed campaign encounter adds a summary without replacing tactical controls. */
 export const createCampaignResultView = function (parent: HTMLElement): {
-	render: (outcome: CampaignEncounterOutcome | undefined, turn: number) => void;
+	render: (outcome: CampaignEncounterOutcome | undefined, time: number) => void;
 	hide: () => void;
 	dispose: () => void;
 } {
@@ -25,12 +25,12 @@ export const createCampaignResultView = function (parent: HTMLElement): {
 	panel.hidden = true;
 	parent.append(panel);
 	let rendered: CampaignEncounterOutcome | undefined;
-	let renderedTurn: number | undefined;
-	const render = function (outcome: CampaignEncounterOutcome | undefined, turn: number): void {
+	let renderedTime: number | undefined;
+	const render = function (outcome: CampaignEncounterOutcome | undefined, time: number): void {
 		panel.hidden = !outcome;
-		if (!outcome || (rendered === outcome && renderedTurn === turn)) return;
+		if (!outcome || (rendered === outcome && renderedTime === time)) return;
 		rendered = outcome;
-		renderedTurn = turn;
+		renderedTime = time;
 		const won = outcome.winner === 'blue';
 		panel.classList.toggle('lost', !won);
 		const changedOwnership = outcome.planets.filter(function (change) { return change.before.factionId !== change.after.factionId; });
@@ -56,13 +56,13 @@ export const createCampaignResultView = function (parent: HTMLElement): {
 			panel.append(row);
 		}
 		panel.append(
-			node('p', `Galaxy turn ${turn} is still frozen. These balances precede remaining arrivals and turn recovery.`, 'campaign-result-note'),
-			node('p', 'Return to galaxy applies this result and resumes arrival resolution.', 'campaign-result-note'),
+			node('p', `Galaxy time ${amount(time)}s is frozen. These balances precede remaining arrivals.`, 'campaign-result-note'),
+			node('p', 'Return to galaxy applies this result and resolves queued arrivals. The galaxy returns paused.', 'campaign-result-note'),
 		);
 	};
 	return {
 		render,
-		hide: function () { panel.hidden = true; },
-		dispose: function () { panel.remove(); },
+		hide: function (): void { panel.hidden = true; },
+		dispose: function (): void { panel.remove(); },
 	};
 };

@@ -6,9 +6,9 @@ export interface PlanetDevelopment {
 	readonly developmentBonusPoints: number;
 	readonly depletion: number;
 	readonly factionId: string | null;
-	readonly capturedTurn: number | null;
-	/** Last completed boundary. New campaigns start at zero; the first boundary is one. */
-	readonly lastAppliedTurn: number;
+	readonly capturedTime: number | null;
+	/** Galaxy timestamp through which growth and recovery have been applied. */
+	readonly lastAppliedTime: number;
 }
 
 export interface DevelopmentPolicy {
@@ -22,9 +22,9 @@ const requireAmount = function (value: number): void {
 		throw new Error('Development points must be finite nonnegative numbers within the safe range.');
 };
 
-const requireTurn = function (turn: number): void {
-	if (!Number.isSafeInteger(turn) || turn < 0)
-		throw new Error('Galaxy turns must be nonnegative safe integers.');
+const requireTime = function (time: number): void {
+	if (!Number.isFinite(time) || time < 0 || time > Number.MAX_SAFE_INTEGER)
+		throw new Error('Galaxy time must be finite and nonnegative.');
 };
 
 const requireFaction = function (factionId: string | null): void {
@@ -50,8 +50,8 @@ const validatePlanet = function (planet: PlanetDevelopment, policy: DevelopmentP
 	validatePolicy(policy);
 	availablePoints(developmentMaximum(planet), planet.depletion);
 	requireFaction(planet.factionId);
-	requireTurn(planet.lastAppliedTurn);
-	if (planet.capturedTurn !== null) requireTurn(planet.capturedTurn);
+	requireTime(planet.lastAppliedTime);
+	if (planet.capturedTime !== null) requireTime(planet.capturedTime);
 	if (planet.developmentBonusPoints > planet.baselinePoints * policy.capFraction)
 		throw new Error('Development bonus exceeds its configured cap.');
 };
@@ -60,54 +60,44 @@ const validatePlanet = function (planet: PlanetDevelopment, policy: DevelopmentP
 export const captureDevelopment = function (
 	planet: PlanetDevelopment,
 	factionId: string | null,
-	turn: number,
+	time: number,
 	policy: DevelopmentPolicy,
 ): PlanetDevelopment {
 	validatePlanet(planet, policy);
 	requireFaction(factionId);
-	requireTurn(turn);
-	if (turn < planet.lastAppliedTurn || (planet.capturedTurn !== null && turn < planet.capturedTurn))
+	requireTime(time);
+	if (time < planet.lastAppliedTime || (planet.capturedTime !== null && time < planet.capturedTime))
 		throw new Error('Capture cannot move backwards in galaxy time.');
 	if (planet.factionId === factionId) return planet;
-	if (turn === planet.lastAppliedTurn)
-		throw new Error('Cannot capture during an already completed galaxy turn.');
 	return {
 		...planet,
 		factionId,
-		capturedTurn: turn,
+		capturedTime: time,
 		developmentBonusPoints: planet.developmentBonusPoints * (1 - policy.captureLossFraction),
 	};
 };
 
-/**
- * Apply one consecutive completed galaxy turn, growing capacity before recovery.
- * Capture turns recover but do not grow. Tactical duration never enters this calculation.
- */
-export const completeDevelopmentTurn = function (
+/** Integrate growth and recovery over galaxy seconds, including time beyond the growth cap. */
+export const advanceDevelopment = function (
 	planet: PlanetDevelopment,
-	turn: number,
+	time: number,
 	policy: DevelopmentPolicy,
 	recoveryPolicy: PointRecoveryPolicy,
 ): PlanetDevelopment {
 	validatePlanet(planet, policy);
-	requireTurn(turn);
-	// Validate recovery policy even on an idempotent replay.
+	requireTime(time);
 	recoverDepletion(planet.depletion, developmentMaximum(planet), recoveryPolicy);
-	if (planet.capturedTurn !== null && planet.capturedTurn > turn)
-		throw new Error('Cannot complete a boundary before the latest capture.');
-	if (turn < planet.lastAppliedTurn) throw new Error('Galaxy turn boundaries cannot move backwards.');
-	if (turn === planet.lastAppliedTurn) return planet;
-	if (turn !== planet.lastAppliedTurn + 1) throw new Error('Galaxy turn boundaries must be applied consecutively.');
-	const developmentBonusPoints = planet.factionId === null || planet.capturedTurn === turn
-		? planet.developmentBonusPoints
-		: Math.min(
-			planet.baselinePoints * policy.capFraction,
-			planet.developmentBonusPoints + planet.baselinePoints * policy.growthFraction,
-		);
-	const developed = { ...planet, developmentBonusPoints };
-	return {
-		...developed,
-		depletion: recoverDepletion(planet.depletion, developmentMaximum(developed), recoveryPolicy),
-		lastAppliedTurn: turn,
-	};
+	if (time < planet.lastAppliedTime || (planet.capturedTime !== null && time < planet.capturedTime))
+		throw new Error('Development cannot move backwards in galaxy time.');
+	if (time === planet.lastAppliedTime) return planet;
+	const elapsed = time - planet.lastAppliedTime;
+	const rate = planet.factionId === null ? 0 : planet.baselinePoints * policy.growthFraction;
+	const cap = planet.baselinePoints * policy.capFraction;
+	const growingSeconds = rate === 0 ? 0 : Math.min(elapsed, Math.max(0, cap - planet.developmentBonusPoints) / rate);
+	const developmentBonusPoints = Math.min(cap, planet.developmentBonusPoints + rate * growingSeconds);
+	const initialMaximum = developmentMaximum(planet);
+	const capacityIntegral = initialMaximum * elapsed + rate * growingSeconds * (elapsed - growingSeconds / 2);
+	return { ...planet, developmentBonusPoints,
+		depletion: Math.max(0, planet.depletion - capacityIntegral * recoveryPolicy.fractionOfMaximum),
+		lastAppliedTime: time };
 };
