@@ -706,7 +706,7 @@ let fullscreenPending = false;
 const syncFullscreen = function (): void {
 	const active = Boolean(document.fullscreenElement);
 	const label = active ? 'Exit fullscreen' : 'Enter fullscreen';
-	for (const button of fullscreenButtons) {
+	for (const button of document.querySelectorAll<HTMLButtonElement>('.fullscreen-icon-button')) {
 		button.setAttribute('aria-pressed', String(active));
 		button.setAttribute('aria-label', label);
 		button.innerHTML = `<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">${active
@@ -721,14 +721,16 @@ const syncFullscreen = function (): void {
 const toggleFullscreen = async function (): Promise<void> {
 	if (fullscreenPending) return;
 	fullscreenPending = true;
-	titleFullscreenStatus.textContent = '';
+	if (frontMenu.getCurrentScreen() === 'campaign') campaignView.notify('');
+	else titleFullscreenStatus.textContent = '';
 	syncFullscreen();
 	try {
 		if (document.fullscreenElement) await document.exitFullscreen();
 		else await document.documentElement.requestFullscreen();
 	} catch {
 		const message = 'Fullscreen could not change. Check browser permissions.';
-		if (app.hidden) titleFullscreenStatus.textContent = message;
+		if (frontMenu.getCurrentScreen() === 'campaign') campaignView.notify(message);
+		else if (app.hidden) titleFullscreenStatus.textContent = message;
 		else {
 			feedback(message);
 			refresh();
@@ -1079,6 +1081,8 @@ const enterCampaignBattle = function (setup: CampaignEncounterSetup): Promise<vo
 	});
 };
 const campaignView = createCampaignView({
+	toggleFullscreen: toggleFullscreen,
+	syncFullscreen: syncFullscreen,
 	order: async function (order) {
 		if (!campaignSession) return;
 		const state = commitExpedition(campaignSession.campaign, { ...order, id: createId(), factionId: 'blue' });

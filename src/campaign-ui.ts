@@ -47,6 +47,8 @@ export const createCampaignView = function (options: {
 	setup: (setup: CampaignEncounterSetup) => Promise<void>;
 	launch: (setup: CampaignEncounterSetup) => Promise<void>;
 	exit: () => Promise<void>;
+	toggleFullscreen: () => Promise<void>;
+	syncFullscreen: () => void;
 	save?: () => Promise<void>;
 }): {
 	root: HTMLElement;
@@ -517,8 +519,14 @@ export const createCampaignView = function (options: {
 		if (context === 'orders') renderOrders();
 		if (context === 'report') renderReport();
 		if (context === 'menu') {
-			heading(auxiliaryPanel, 'Game menu'); auxiliaryPanel.append(node('p', 'Campaign preview · saved locally in a separate campaign slot', 'campaign-muted'),
-				button('Return to galaxy', function () { context = 'none'; renderGalaxy('header:menu'); }, 'campaign-wide', 'menu:return'));
+			heading(auxiliaryPanel, 'Game menu');
+			auxiliaryPanel.append(node('p', 'Campaign preview · saved locally in a separate campaign slot', 'campaign-muted'));
+			const menuActions = node('div', undefined, 'campaign-menu-actions');
+			const fullscreen = button('', function () { void options.toggleFullscreen(); }, 'fullscreen-icon-button campaign-fullscreen', 'menu:fullscreen');
+			fullscreen.setAttribute('aria-pressed', 'false');
+			menuActions.append(fullscreen, button('Return to galaxy', function () { context = 'none'; renderGalaxy('header:menu'); }, 'campaign-menu-return', 'menu:return'));
+			auxiliaryPanel.append(menuActions);
+			options.syncFullscreen();
 			const lab = node('details', undefined, 'campaign-lab');
 			const labSummary = node('summary', 'Prototype lab'); labSummary.dataset.focusKey = 'menu:lab'; lab.append(labSummary);
 			lab.open = campaignLabOpen;
@@ -558,7 +566,7 @@ export const createCampaignView = function (options: {
 		return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || target.isContentEditable;
 	};
 	window.addEventListener('keydown', function (event) {
-		if (event.key !== 'Escape' || event.defaultPrevented || pending || root.hidden || galaxy.hidden || isEditableTarget(event.target)) return;
+		if (event.key !== 'Escape' || event.defaultPrevented || pending || root.hidden || galaxy.hidden || isEditableTarget(event.target) || document.fullscreenElement) return;
 		if (context === 'orders') {
 			event.preventDefault(); context = 'none'; renderGalaxy('header:orders');
 			return;
