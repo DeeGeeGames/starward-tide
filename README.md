@@ -11,7 +11,7 @@ Developer timing and a reusable crowded fixture are documented in [Performance d
 
 Open http://localhost:3000. `bun run check` runs lint, simulation tests, strict TypeScript checks, and a production build into `dist/`.
 
-GitHub Pages publishes the production build at https://david0178418.github.io/galaxy-conquest/. The [deployment workflow](.github/workflows/deploy.yml) runs checks, builds, and deploys on pushes to `main`; it can also be run manually from the Actions tab on `main`. Repository Settings → Pages must use **GitHub Actions** as the build source. Bundled asset URLs are relative, so the same build works under `/galaxy-conquest/` and at a domain root.
+GitHub Pages publishes the production build at https://david0178418.github.io/galaxy-conquest/. The [deployment workflow](.github/workflows/deploy.yml) runs checks, builds, and deploys on pushes to `master`; it can also be run manually from the Actions tab on `master`. Repository Settings → Pages must use **GitHub Actions** as the build source. Bundled asset URLs are relative, so the same build works under `/galaxy-conquest/` and at a domain root.
 
 The production build is an installable PWA. Open the standalone HTTPS site and use your browser's **Install app** command; on iPhone/iPad, use Safari's **Share → Add to Home Screen**. It opens in its own window using the existing GC icon. Installation availability depends on the browser; embedded player cards should be opened as the standalone site first.
 

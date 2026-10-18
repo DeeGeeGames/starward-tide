@@ -18,6 +18,12 @@ const node = function <K extends keyof HTMLElementTagNameMap>(tag: K, text?: str
 	return element;
 };
 const amount = function (value: number): string { return value.toLocaleString(undefined, { maximumFractionDigits: 1 }); };
+const wholeAmount = function (value: number): string { return value.toLocaleString(undefined, { maximumFractionDigits: 0 }); };
+const campaignPaceOptions = [
+	{ pace: 0.5, label: '0.5× · inspect' },
+	{ pace: 1, label: '1× · normal' },
+	{ pace: 2, label: '2× · fast' },
+] as const;
 const button = function (text: string, action: () => void, className?: string): HTMLButtonElement {
 	const element = node('button', text, className); element.type = 'button'; element.addEventListener('click', action); return element;
 };
@@ -65,6 +71,7 @@ export const createCampaignView = function (options: {
 	let selection: CampaignSelection = emptyCampaignSelection();
 	let context: 'system' | 'orders' | 'menu' | 'report' | 'none' = 'system';
 	const systemContext = function (): 'system' | 'none' { return selection.selectedSystemId === undefined ? 'none' : 'system'; };
+	let campaignLabOpen = false;
 	let report: CampaignTransitionReport | undefined;
 	let pending = false;
 	let disposed = false;
@@ -102,13 +109,17 @@ export const createCampaignView = function (options: {
 	};
 	const run = async function (action: () => Promise<void>, success?: () => void): Promise<void> {
 		if (pending || disposed) return;
+		const restorePaceFocus = document.activeElement === panel.querySelector<HTMLSelectElement>('.campaign-lab select');
 		pending = true; root.inert = true; notify('');
 		try {
 			if (state?.encounter) await setupView.flush();
 			await action();
 			if (!disposed) { success?.(); if (!state?.encounter || preparedEncounter !== state.encounter.id) renderGalaxy(); }
 		} catch (error) { if (!disposed) notify(error instanceof Error ? error.message : 'Campaign action failed.'); }
-		finally { pending = false; root.inert = false; }
+		finally {
+			pending = false; root.inert = false;
+			if (restorePaceFocus) panel.querySelector<HTMLSelectElement>('.campaign-lab select')?.focus();
+		}
 	};
 	const selectSystem = function (id: string): void {
 		if (!state?.systems.some(function (system) { return system.id === id; })) return;
@@ -334,13 +345,8 @@ export const createCampaignView = function (options: {
 		const end = button(state.encounter ? 'Prepare encounter' : state.paused ? 'Resume' : 'Pause', function () { if (state?.encounter) prepare(); else void run(options.pause); }, 'campaign-primary');
 		end.disabled = !state.encounter && Boolean(campaignWinner(state));
 		if (!state.encounter) { end.setAttribute('aria-pressed', String(state.paused)); end.setAttribute('aria-label', state.paused ? 'Resume galaxy time' : 'Pause galaxy time'); }
-		const speeds = node('div', undefined, 'campaign-paces'); speeds.setAttribute('role', 'group'); speeds.setAttribute('aria-label', 'Galaxy pace');
-		for (const pace of [0.5, 1, 2] as const) {
-			const control = button(`${pace}×`, function () { void run(function () { return options.pace(pace); }); });
-			control.setAttribute('aria-pressed', String(state.pace === pace)); control.disabled = Boolean(state.encounter) || Boolean(campaignWinner(state)); speeds.append(control);
-		}
 		const menu = button('☰', function () { context = context === 'menu' ? systemContext() : 'menu'; renderGalaxy(); }, 'campaign-menu'); menu.setAttribute('aria-label', 'Campaign menu'); menu.setAttribute('aria-expanded', String(context === 'menu'));
-		actions.append(orders, end, speeds, menu); header.append(brand, score, actions);
+		actions.append(orders, end, menu); header.append(brand, score, actions);
 		const bounds = galaxyBounds();
 		world.style.width = `${bounds.width}px`;
 		world.style.height = `${bounds.height}px`;
@@ -383,8 +389,8 @@ export const createCampaignView = function (options: {
 			const minimum = owner === null ? neutralClaimMinimum(state, system.id) : undefined;
 			const source = state.systems.find(function (item) { return item.id === selection.sourceSystemId; });
 			const travel = source ? Math.ceil(Math.max(state.rules.minimumTravelTime, Math.hypot(system.x - source.x, system.y - source.y) / state.rules.travelSpeed)) : undefined;
-			marker.title = `${system.name} · ${minimum !== undefined ? `Claim minimum ${amount(minimum)} points` : owner === undefined ? 'Mixed ownership' : factionLabel(owner)}${travel !== undefined && source?.id !== system.id ? ` · ${travel}s travel` : ''}`;
-			marker.setAttribute('aria-label', `${system.name}, ${owner === undefined ? 'mixed ownership' : factionLabel(owner)}, ${amount(points)} points${minimum !== undefined ? `, minimum claim ${amount(minimum)} points` : ''}`);
+			marker.title = `${system.name} · ${minimum !== undefined ? `Claim minimum ${wholeAmount(minimum)} points` : owner === undefined ? 'Mixed ownership' : factionLabel(owner)}${travel !== undefined && source?.id !== system.id ? ` · ${travel}s travel` : ''}`;
+			marker.setAttribute('aria-label', `${system.name}, ${owner === undefined ? 'mixed ownership' : factionLabel(owner)}, ${wholeAmount(points)} points${minimum !== undefined ? `, minimum claim ${wholeAmount(minimum)} points` : ''}`);
 			const art = svg('svg', { viewBox: '0 0 100 80', class: 'campaign-system-art', 'aria-hidden': 'true' });
 			for (const radius of [21, 34, 46]) art.append(svg('ellipse', { cx: '50', cy: '40', rx: String(radius), ry: String(radius * .55), transform: 'rotate(-25 50 40)', class: 'campaign-orbit' }));
 			art.append(svg('circle', { cx: '50', cy: '40', r: '19', class: 'campaign-star-halo' }), svg('path', { d: 'M50 23V57M33 40H67M39 29L61 51M39 51L61 29', class: 'campaign-star-ray' }), svg('circle', { cx: '50', cy: '40', r: '6', class: 'campaign-star-core' }));
@@ -392,11 +398,11 @@ export const createCampaignView = function (options: {
 				const angle = planetIndex * 2.4; const radius = 20 + planetIndex * 10;
 				art.append(svg('circle', { cx: String(50 + Math.cos(angle) * radius), cy: String(40 + Math.sin(angle) * radius * .6), r: '3.5', fill: planet.factionId === 'blue' ? '#60d9ff' : planet.factionId === 'red' ? '#ff867e' : '#8e9cae', class: 'campaign-world-dot' }));
 			}
-			const copy = node('span', undefined, 'campaign-system-copy'); copy.append(node('strong', system.name), node('span', `${amount(points)} points`, 'campaign-system-points'), node('small', minimum !== undefined ? `UNCLAIMED · min ${amount(minimum)} points` : `${owner === undefined ? 'MIXED' : factionLabel(owner)} · ${planets.length} planets`)); marker.append(art, copy); world.append(marker);
+			const copy = node('span', undefined, 'campaign-system-copy'); copy.append(node('strong', system.name), node('span', `${wholeAmount(points)} points`, 'campaign-system-points'), node('small', minimum !== undefined ? `UNCLAIMED · min ${wholeAmount(minimum)} points` : `${owner === undefined ? 'MIXED' : factionLabel(owner)} · ${planets.length} planets`)); marker.append(art, copy); world.append(marker);
 			live(function () {
 				const points = localPlanets(system.id).reduce(function (sum, planet) { return sum + availablePoints(developmentMaximum(planet), planet.depletion); }, 0);
-				const balance = copy.querySelector('.campaign-system-points'); if (balance) balance.textContent = `${amount(points)} points`;
-				marker.setAttribute('aria-label', `${system.name}, ${owner === undefined ? 'mixed ownership' : factionLabel(owner)}, ${amount(points)} points${minimum !== undefined ? `, minimum claim ${amount(minimum)} points` : ''}`);
+				const balance = copy.querySelector('.campaign-system-points'); if (balance) balance.textContent = `${wholeAmount(points)} points`;
+				marker.setAttribute('aria-label', `${system.name}, ${owner === undefined ? 'mixed ownership' : factionLabel(owner)}, ${wholeAmount(points)} points${minimum !== undefined ? `, minimum claim ${wholeAmount(minimum)} points` : ''}`);
 			});
 		}
 		panel.hidden = context === 'none';
@@ -406,6 +412,27 @@ export const createCampaignView = function (options: {
 		if (context === 'menu') {
 			heading('Game menu'); panel.append(node('p', 'Campaign preview · saved locally in a separate campaign slot', 'campaign-muted'),
 				button('Return to galaxy', function () { context = systemContext(); renderGalaxy(); }, 'campaign-wide'));
+			const lab = node('details', undefined, 'campaign-lab');
+			lab.append(node('summary', 'Prototype lab'));
+			lab.open = campaignLabOpen;
+			lab.addEventListener('toggle', function () { campaignLabOpen = lab.open; });
+			const paceLabel = node('label', 'Simulation pace');
+			const paceSelect = node('select');
+			for (const option of campaignPaceOptions) {
+				const item = node('option', option.label);
+				item.value = String(option.pace);
+				paceSelect.append(item);
+			}
+			paceSelect.value = String(state.pace);
+			paceSelect.disabled = Boolean(state.encounter) || Boolean(campaignWinner(state));
+			paceSelect.addEventListener('change', function () {
+				const option = campaignPaceOptions.find(function (candidate) { return String(candidate.pace) === paceSelect.value; });
+				if (option === undefined) return;
+				void run(function () { return options.pace(option.pace); });
+			});
+			paceLabel.append(paceSelect);
+			lab.append(paceLabel);
+			panel.append(lab);
 			if (options.save) panel.append(button('Save campaign', function () { void run(async function () { await options.save?.(); }); }, 'campaign-wide'));
 			if (report) panel.append(button('Last resolution', function () { context = 'report'; renderGalaxy(); }, 'campaign-wide'));
 			if (state.encounter) panel.append(button('Prepare encounter', prepare, 'campaign-wide campaign-primary'));
@@ -450,7 +477,7 @@ export const createCampaignView = function (options: {
 		reset: function (): void {
 			setupView.reset();
 			input.cancel(); drafts.clear(); state = undefined; selection = emptyCampaignSelection(); report = undefined; encounterSetup = undefined; preparedEncounter = undefined;
-			context = 'system'; renderedStructure = ''; liveUpdates = []; fitPending = true; camera = { x: 0, y: 0, scale: 1 }; notify(''); setupView.root.hidden = true; galaxy.hidden = false;
+			context = 'system'; campaignLabOpen = false; renderedStructure = ''; liveUpdates = []; fitPending = true; camera = { x: 0, y: 0, scale: 1 }; notify(''); setupView.root.hidden = true; galaxy.hidden = false;
 		},
 		dispose: function (): void { disposed = true; input.dispose(); resize.disconnect(); setupView.dispose(); root.remove(); },
 	};
