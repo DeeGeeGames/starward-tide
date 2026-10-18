@@ -2,11 +2,11 @@ import { expect, test } from 'bun:test';
 import { campaignWinner, commitCampaignRival, createCampaign, createGeneratedCampaign } from './campaign-scenario';
 import { generateMap, MAP_SIZES } from './maps';
 import { parseCampaignSave } from './campaign-save';
-import { applyCampaignEncounterResult, commitExpedition, commitFactionTurn, resolveCampaignTurn } from './campaign-state';
+import { applyCampaignEncounterResult, commitExpedition, advanceCampaign, setCampaignPaused } from './campaign-state';
 import type { CampaignState } from './campaign-state';
 
 const finish = function (state: CampaignState): CampaignState {
-	return resolveCampaignTurn(commitFactionTurn(commitFactionTurn(state, 'blue'), 'red'), state.turn);
+	return advanceCampaign(setCampaignPaused(state, false), 10);
 };
 
 test('fixture has two owned and two unclaimed three-planet systems and round-trips campaign validation', function () {
@@ -22,7 +22,7 @@ test('fixture has two owned and two unclaimed three-planet systems and round-tri
 		['sol', 100, 100], ['sirius', 200, 100], ['deneb', 100, 200], ['arcturus', 200, 200],
 	]);
 	expect(state.planets.every(function (planet) { return planet.baselinePoints === 100; })).toBe(true);
-	const save = { schemaVersion: 1, mode: 'campaign' as const, profileId: 'p', savedAt: 100, campaign: state };
+	const save = { schemaVersion: 2, mode: 'campaign' as const, profileId: 'p', savedAt: 100, campaign: state };
 	expect(parseCampaignSave(save)).toEqual(save);
 	expect(createCampaign()).toEqual(state);
 });
@@ -31,14 +31,13 @@ test('rival commits half its source budget once, using stable planets without ov
 	const start = createCampaign();
 	const next = commitCampaignRival(start);
 	expect(next.expeditions).toHaveLength(1);
-	expect(next.expeditions[0]?.id).toBe('rival:1');
+	expect(next.expeditions[0]?.id).toBe('rival:10');
 	expect(next.expeditions[0]?.points).toBe(150);
-	expect(next.expeditions[0]?.arrivalTime).toBe(1);
+	expect(next.expeditions[0]?.arrivalTime).toBe(10);
 	expect(next.expeditions[0]?.destinationSystemId).toBe('arcturus');
 	expect(next.expeditions[0]?.contributions).toEqual([{ planetId: 'sirius:1', points: 100 }, { planetId: 'sirius:2', points: 50 }]);
 	expect(commitCampaignRival(next)).toBe(next);
 	expect(start.planets.every(function (planet) { return planet.depletion === 0; })).toBe(true);
-	expect(commitCampaignRival(commitFactionTurn(start, 'red')).expeditions).toHaveLength(0);
 });
 
 test('rival targets nearest hostile system and breaks equal distances with stable identities', function () {
@@ -62,23 +61,24 @@ test('zero and individually unspendable fractional budgets produce no order', fu
 	}
 });
 
-test('rival floors half an odd balance and can issue another order on the next completed turn', function () {
+test('rival floors odd balances and schedules only one decision per interval', function () {
 	const start = createCampaign();
 	const odd = { ...start, planets: start.planets.map(function (planet) {
 		return planet.id === 'sirius:1' ? { ...planet, depletion: 1 } : planet;
 	}) };
 	expect(commitCampaignRival(odd).expeditions[0]?.points).toBe(149);
-	const battle = finish(commitCampaignRival(start));
-	expect(battle.phase).toBe('planning');
-	const reloaded = parseCampaignSave({ schemaVersion: 1, mode: 'campaign', profileId: 'claim', savedAt: 100, campaign: battle }).campaign;
-	expect(reloaded).toEqual(battle);
-	expect(resolveCampaignTurn(reloaded, 1)).toBe(reloaded);
-	const nextTurn = battle;
-	const next = commitCampaignRival(nextTurn);
-	expect(next.turn).toBe(2);
-	expect(next.expeditions.at(-1)?.id).toBe('rival:2');
-	expect(next.expeditions.at(-1)?.points).toBe(150);
-	expect(commitCampaignRival(next)).toBe(next);
+	const before = advanceCampaign(setCampaignPaused(start, false), 9.9);
+	expect(before.expeditions).toHaveLength(0);
+	const first = advanceCampaign(before, 0.1);
+	expect(first.expeditions).toHaveLength(1);
+	expect(first.expeditions[0]?.id).toBe('rival:10');
+	expect(first.expeditions[0]?.departureTime).toBe(10);
+	expect(first.expeditions[0]?.arrivalTime).toBe(20);
+	const next = advanceCampaign(first, 10);
+	expect(next.expeditions).toHaveLength(2);
+	expect(next.expeditions.at(-1)?.id).toBe('rival:20');
+	expect(next.nextRivalTime).toBe(30);
+	expect(parseCampaignSave({ schemaVersion: 2, mode: 'campaign', profileId: 'rival', savedAt: 100, campaign: next }).campaign).toEqual(next);
 });
 
 test('rival skips unaffordable neutral colonization without increasing its half-budget', function () {
@@ -103,7 +103,7 @@ test('planet loss does not eliminate a faction while relief remains in flight or
 	expect(campaignWinner({ ...resolved, planets: resolved.planets.map(function (planet) { return { ...planet, factionId: 'red' as const }; }) })).toBe('red');
 });
 
-test('the last encounter result returns to planning and then declares campaign victory', function () {
+test('the last encounter result returns paused and declares campaign victory', function () {
 	const start = createCampaign();
 	const state = finish(commitExpedition(start, { id: 'attack', factionId: 'blue', sourceSystemId: 'sol', destinationSystemId: 'sirius',
 		contributions: [{ planetId: 'sol:1', points: 100 }] }));
@@ -112,7 +112,7 @@ test('the last encounter result returns to planning and then declares campaign v
 	const final = applyCampaignEncounterResult(state, { encounterId: 'encounter:attack',
 		captureEvents: target.map(function (planet) { return { planetId: planet.id, factionId: 'blue' as const }; }),
 		ownership: target.map(function (planet) { return { planetId: planet.id, factionId: 'blue' as const }; }) });
-	expect(final.phase).toBe('planning');
+	expect(final.phase).toBe('galaxy');
 	expect(campaignWinner(final)).toBe('blue');
 });
 
@@ -135,7 +135,7 @@ for (const size of ['small', 'medium', 'large'] as const) {
 			}
 			expect(campaign.planets.filter(function (planet) { return planet.factionId === null; }))
 				.toHaveLength((MAP_SIZES[size].count - 2) * 3);
-			const save = { schemaVersion: 1, mode: 'campaign' as const, profileId: 'generated', savedAt: 100, campaign };
+			const save = { schemaVersion: 2, mode: 'campaign' as const, profileId: 'generated', savedAt: 100, campaign };
 			expect(parseCampaignSave(save)).toEqual(save);
 			expect(createGeneratedCampaign(preview)).toEqual(campaign);
 			expect(layout).toEqual(preview);

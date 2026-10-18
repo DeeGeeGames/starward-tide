@@ -21,7 +21,7 @@
 .campaign-shell .campaign-header { position: absolute; z-index: 5; inset: max(10px, env(safe-area-inset-top)) 10px auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; }
 .campaign-brand { font: 500 18px system-ui, sans-serif; white-space: nowrap; }
 .campaign-score { display: flex; align-items: center; gap: 12px; white-space: nowrap; font-size: 12px; }
-.campaign-blue { color: #60d9ff; }.campaign-red { color: #ff867e; }.campaign-turn { color: var(--campaign-muted); }
+.campaign-blue { color: #60d9ff; }.campaign-red { color: #ff867e; }.campaign-clock { color: var(--campaign-muted); }
 .campaign-actions { display: flex; gap: 5px; }.campaign-actions button { font-size: 10px; padding: 0 9px; }.campaign-actions .campaign-menu { font-size: 20px; width: 44px; padding: 0; }
 .campaign-hint { position: absolute; z-index: 3; top: 78px; left: 10px; max-width: calc(100% - 20px); padding: 7px 9px; margin: 0; border-radius: 5px; background: #080f19d9; color: #a7bac9; font-size: 10px; pointer-events: none; }
 .campaign-context { position: absolute; z-index: 4; right: 10px; top: 122px; width: 280px; max-height: calc(100% - 140px); overflow: auto; padding: 12px; }
@@ -50,3 +50,19 @@
 .campaign-overview .campaign-orbit { stroke: var(--owner); }
 
 .campaign-dense .campaign-system:not(.selected) .campaign-system-copy { display: none; }
+
+.campaign-clock { font-variant-numeric: tabular-nums; min-width: 130px; text-align: center; }
+.campaign-paces { display: flex; gap: 3px; }
+.campaign-paces button[aria-pressed=true] { color: #a5ebff; border-color: #60d9ff; background: #153346; }
+@media (max-width: 700px) {
+	.campaign-shell .campaign-header { flex-wrap: wrap; justify-content: center; }
+	.campaign-score { justify-content: center; width: 100%; }
+	.campaign-actions { justify-content: center; }
+	.campaign-actions .campaign-paces button { padding: 0 7px; }
+	.campaign-hint { top: 116px; }
+	.campaign-context { top: 151px; max-height: calc(100% - 170px); }
+}
+@media (max-width: 600px) {
+	.campaign-context { top: auto; max-height: min(405px, 51vh); }
+	.campaign-notice { top: 145px; }
+}

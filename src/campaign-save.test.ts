@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { parseCampaignSave, isSupportedCampaignSave } from './campaign-save';
 import type { CampaignSave } from './campaign-save';
-import { CAMPAIGN_RULES, cancelExpedition, applyCampaignEncounterResult, commitExpedition, commitFactionTurn, resolveCampaignTurn } from './campaign-state';
+import { CAMPAIGN_RULES, MINIMUM_CAMPAIGN_EVENT_SECONDS, cancelExpedition, applyCampaignEncounterResult, commitExpedition, advanceCampaign, setCampaignPaused } from './campaign-state';
 import type { CampaignState } from './campaign-state';
 import { InvalidSaveError } from './save-state';
 import { createDefaultEncounterSetup } from './campaign-setup';
@@ -13,30 +13,30 @@ const makeSave = function (): CampaignSave {
 	const map = { width: 100, height: 100, planets: [
 		['One', 20, 20, 10, 'blue', 0, 1] as const, ['Two', 70, 70, 10, 'red', 0, 1] as const,
 	] };
-	const campaign: CampaignState = { turn: 1, phase: 'planning', rules: CAMPAIGN_RULES,
+	const campaign: CampaignState = { time: 0, paused: true, pace: 1, nextRivalTime: 10, phase: 'galaxy', rules: CAMPAIGN_RULES,
 		systems: [{ id: 'home', name: 'Home', x: 0, y: 0, map }, { id: 'away', name: 'Away', x: 100, y: 0, map }],
 		planets: ['home', 'away'].flatMap(function (systemId) {
 			return ['One', 'Two'].map(function (name) {
 				return { id: `${systemId}:${name}`, systemId, name, factionId: systemId === 'home' ? 'blue' as const : 'red' as const,
-					baselinePoints: 100, developmentBonusPoints: 0, depletion: 0, capturedTurn: null, lastAppliedTurn: 0 };
+					baselinePoints: 100, developmentBonusPoints: 0, depletion: 0, capturedTime: null, lastAppliedTime: 0 };
 			});
-		}), expeditions: [], readyFactions: [], encounter: null, resolvedEncounters: [] };
-	return { schemaVersion: 1, mode: 'campaign', profileId: 'profile', savedAt: 100, campaign };
+		}), expeditions: [], encounter: null, resolvedEncounters: [] };
+	return { schemaVersion: 2, mode: 'campaign', profileId: 'profile', savedAt: 100, campaign };
 };
 const startEncounter = function (save: CampaignSave): CampaignSave {
 	const state = commitExpedition(save.campaign, { id: 'first', factionId: 'blue', sourceSystemId: 'home', destinationSystemId: 'away',
 		contributions: [{ planetId: 'home:One', points: 40 }] });
-	return { ...save, campaign: resolveCampaignTurn(commitFactionTurn(commitFactionTurn(state, 'blue'), 'red'), 1) };
+	return { ...save, campaign: advanceCampaign(setCampaignPaused(state, false), 10) };
 };
 
-test('planning, committed, active encounter and resolved campaign saves round-trip without spending twice', function () {
+test('paused, running, active encounter and resolved campaign saves round-trip without spending twice', function () {
 	const initial = makeSave();
 	expect(parseCampaignSave(initial, 'profile')).toEqual(initial);
 	const active = startEncounter(initial);
 	expect(active.campaign.phase).toBe('encounter');
 	const restored = parseCampaignSave(active);
 	expect(restored).toEqual(active);
-	expect(restored.campaign.planets.find(function (planet) { return planet.id === 'home:One'; })?.depletion).toBe(40);
+	expect(restored.campaign.planets.find(function (planet) { return planet.id === 'home:One'; })?.depletion).toBeCloseTo(29.9);
 	const result = { encounterId: 'encounter:first', captureEvents: [], ownership: [
 		{ planetId: 'away:One', factionId: 'red' as const }, { planetId: 'away:Two', factionId: 'red' as const },
 	] };
@@ -47,7 +47,7 @@ test('planning, committed, active encounter and resolved campaign saves round-tr
 
 test('campaign saves reject unsupported versions, wrong modes/profiles and unrecognized tactical formats', function () {
 	const valid = makeSave();
-	for (const input of [null, {}, { ...valid, schemaVersion: 0 }, { ...valid, schemaVersion: 2 }, { ...valid, mode: 'skirmish' },
+	for (const input of [null, {}, { ...valid, schemaVersion: 1 }, { ...valid, schemaVersion: 3 }, { ...valid, mode: 'skirmish' },
 		{ ...valid, tactical: { unsupported: true } }, { ...valid, savedAt: Infinity }]) {
 		expect(isSupportedCampaignSave(input)).toBe(false);
 		expect(function () { parseCampaignSave(input); }).toThrow(InvalidSaveError);
@@ -55,7 +55,7 @@ test('campaign saves reject unsupported versions, wrong modes/profiles and unrec
 	expect(function () { parseCampaignSave(valid, 'other'); }).toThrow(InvalidSaveError);
 });
 
-test('campaign validation rejects broken identities, budgets, phase and turn idempotency records', function () {
+test('campaign validation rejects broken identities, budgets, phase and clock records', function () {
 	const active = startEncounter(makeSave());
 	const state = active.campaign;
 	const firstPlanet = state.planets[0];
@@ -63,10 +63,11 @@ test('campaign validation rejects broken identities, budgets, phase and turn ide
 	if (!firstPlanet || !firstOrder || !state.encounter) throw new Error('Missing fixture entities');
 	const invalidStates = [
 		{ ...state, planets: [...state.planets, firstPlanet] },
-		{ ...state, readyFactions: ['blue', 'blue'] },
-		{ ...state, phase: 'planning' },
+		{ ...state, paused: false },
+		{ ...state, nextRivalTime: 9 },
+		{ ...state, phase: 'galaxy' },
 		{ ...state, encounter: null },
-		{ ...state, planets: [{ ...firstPlanet, lastAppliedTurn: state.turn }, ...state.planets.slice(1)] },
+		{ ...state, planets: [{ ...firstPlanet, lastAppliedTime: state.time - 1 }, ...state.planets.slice(1)] },
 		{ ...state, planets: [{ ...firstPlanet, developmentBonusPoints: 99 }, ...state.planets.slice(1)] },
 		{ ...state, expeditions: [{ ...firstOrder, points: 41 }] },
 		{ ...state, expeditions: [{ ...firstOrder, arrivalTime: 2 }] },
@@ -92,7 +93,7 @@ test('saved active encounters cannot bypass earlier unresolved due arrivals', fu
 		contributions: [{ planetId: 'home:One', points: 20 }] });
 	const second = commitExpedition(first, { id: 'z', factionId: 'blue', sourceSystemId: 'home', destinationSystemId: 'away',
 		contributions: [{ planetId: 'home:One', points: 20 }] });
-	const state = resolveCampaignTurn(commitFactionTurn(commitFactionTurn(second, 'blue'), 'red'), 1);
+	const state = advanceCampaign(setCampaignPaused(second, false), 10);
 	if (!state.encounter) throw new Error('Missing encounter');
 	expect(isSupportedCampaignSave({ ...initial, campaign: state })).toBe(true);
 	const corrupt = { ...state, encounter: { ...state.encounter, id: 'encounter:z', expeditionId: 'z' },
@@ -164,7 +165,7 @@ test('tactical snapshots resume existing forces and point commitments without re
 			restored.encounterState.captureEvents);
 		try {
 			expect(units(resumed.world).map(function (item) { return item.components.unit; })).toEqual(game.units.map(function (item) { return item.unit; }));
-			expect(restored.campaign.planets.find(function (planet) { return planet.id === 'home:One'; })?.depletion).toBe(40);
+			expect(restored.campaign.planets.find(function (planet) { return planet.id === 'home:One'; })?.depletion).toBeCloseTo(29.9);
 		} finally { await resumed.world.dispose(); }
 		for (const encounterState of [
 			{ ...save.encounterState, phase: 'battle', encounterId: encounter.id, setup, game: { ...game, scenario: 'invasion' }, captureEvents: [] },
@@ -241,18 +242,6 @@ test('a genuine battle containing a neutral planet round-trips and restores', as
 	} finally { await battle.world.dispose(); }
 });
 
-test('saves predating configurable neutral claims load with the approved default', function () {
-	const save = makeSave();
-	const rules = { travelSpeed: save.campaign.rules.travelSpeed, development: save.campaign.rules.development,
-		recovery: save.campaign.rules.recovery };
-	const legacy = { ...save, campaign: { ...save.campaign, rules } };
-	const before = structuredClone(legacy);
-	const restored = parseCampaignSave(legacy);
-	expect(restored.campaign.rules.neutralClaimFraction).toBe(0.1);
-	expect(legacy).toEqual(before);
-	expect(parseCampaignSave(restored)).toEqual(restored);
-});
-
 test('neutral claim fractions round-trip configured values and reject invalid values', function () {
 	const save = makeSave();
 	for (const neutralClaimFraction of [0, 0.1, 0.25, 1]) {
@@ -274,15 +263,50 @@ test('cancelled and recalled expeditions round-trip without duplicate refunds or
 	expect(cancelExpedition(restored, order.id, 'blue')).toBe(restored);
 	expect(commitExpedition(restored, order)).toBe(restored);
 	const traveling = commitExpedition(restored, { ...order, id: 'recall' });
-	const next = resolveCampaignTurn(commitFactionTurn(commitFactionTurn(traveling, 'blue'), 'red'), 1);
+	const next = advanceCampaign(setCampaignPaused(traveling, false), 2);
 	const returning = cancelExpedition(next, 'recall', 'blue');
 	const recalledSave = parseCampaignSave({ ...save, campaign: returning });
 	expect(recalledSave.campaign).toEqual(returning);
-	const completed = resolveCampaignTurn(commitFactionTurn(commitFactionTurn(returning, 'blue'), 'red'), 2);
+	const completed = advanceCampaign(returning, 2);
 	expect(parseCampaignSave({ ...save, campaign: completed }).campaign).toEqual(completed);
 	for (const invalid of [
-		{ ...returning, expeditions: returning.expeditions.map(function (item) { return item.id === 'recall' ? { ...item, recalledTurn: undefined } : item; }) },
-		{ ...returning, expeditions: returning.expeditions.map(function (item) { return item.id === 'recall' ? { ...item, recalledTurn: 1 } : item; }) },
-		{ ...returning, expeditions: returning.expeditions.map(function (item) { return item.id === 'recall' ? { ...item, recalledTurn: 3 } : item; }) },
+		{ ...returning, expeditions: returning.expeditions.map(function (item) { return item.id === 'recall' ? { ...item, recalledTime: undefined } : item; }) },
+		{ ...returning, expeditions: returning.expeditions.map(function (item) { return item.id === 'recall' ? { ...item, recalledTime: 0 } : item; }) },
+		{ ...returning, expeditions: returning.expeditions.map(function (item) { return item.id === 'recall' ? { ...item, recalledTime: 3 } : item; }) },
 	]) expect(isSupportedCampaignSave({ ...save, campaign: invalid })).toBe(false);
+});
+
+test('old turn-based saves require a new campaign without mutating the saved data', function () {
+	const legacy = { ...makeSave(), schemaVersion: 1 };
+	const before = structuredClone(legacy);
+	expect(function () { parseCampaignSave(legacy); }).toThrow('Start a new campaign');
+	expect(legacy).toEqual(before);
+});
+
+test('save validation rejects clock drift, overdue active arrivals and invalid pace', function () {
+	const save = makeSave();
+	const active = startEncounter(save);
+	const state = active.campaign;
+	for (const campaign of [
+		{ ...state, pace: 3 },
+		{ ...state, time: -1 },
+		{ ...state, time: Infinity },
+		{ ...state, nextRivalTime: state.time - 0.1 },
+		{ ...state, paused: false },
+		{ ...state, time: state.time + 1, nextRivalTime: state.time + 1,
+			planets: state.planets.map(function (planet) { return { ...planet, lastAppliedTime: state.time + 1 }; }) },
+	]) expect(isSupportedCampaignSave({ ...active, campaign })).toBe(false);
+	for (const pace of [0.5, 1, 2]) expect(isSupportedCampaignSave({ ...save, campaign: { ...save.campaign, pace } })).toBe(true);
+});
+
+
+test('saved timing rules enforce the supported minimum event interval', function () {
+	const save = makeSave();
+	for (const field of ['rivalInterval', 'minimumTravelTime'] as const) {
+		for (const interval of [0, Number.MIN_VALUE, MINIMUM_CAMPAIGN_EVENT_SECONDS / 2])
+			expect(isSupportedCampaignSave({ ...save, campaign: { ...save.campaign,
+				rules: { ...save.campaign.rules, [field]: interval } } })).toBe(false);
+		expect(isSupportedCampaignSave({ ...save, campaign: { ...save.campaign,
+			rules: { ...save.campaign.rules, [field]: MINIMUM_CAMPAIGN_EVENT_SECONDS } } })).toBe(true);
+	}
 });

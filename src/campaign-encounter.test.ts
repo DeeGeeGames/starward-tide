@@ -167,10 +167,10 @@ test('invalid encounter identity mappings and impossible all-eliminated states f
 
 const invasionState = function (): CampaignState {
 	return {
-		turn: 1, phase: 'encounter', rules: CAMPAIGN_RULES, readyFactions: ['blue', 'red'], planets: [], resolvedEncounters: [],
+		time: 10, paused: true, pace: 1, nextRivalTime: 10, phase: 'encounter', rules: CAMPAIGN_RULES, planets: [], resolvedEncounters: [],
 		systems: [{ id: 'home', name: 'Home', x: 0, y: 0, map }, { id: 'away', name: 'Away', x: 100, y: 0, map }],
 		expeditions: [{ id: 'expedition', factionId: 'blue', sourceSystemId: 'home', destinationSystemId: 'away',
-			contributions: [{ planetId: 'source', points: 100 }], points: 100, departureTurn: 1, arrivalTime: 1, status: 'encounter' }],
+			contributions: [{ planetId: 'source', points: 100 }], points: 100, departureTime: 0, arrivalTime: 10, status: 'encounter' }],
 		encounter: { id: 'battle', expeditionId: 'expedition', systemId: 'away', attacker: 'blue', attackerPoints: 100,
 			planets: [{ planetId: 'away:home', name: 'Home', factionId: 'red', points: 0 },
 				{ planetId: 'away:target', name: 'Target', factionId: 'red', points: 0 }] },

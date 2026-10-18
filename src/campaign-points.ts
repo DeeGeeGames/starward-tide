@@ -97,7 +97,7 @@ export interface PointRecoveryPolicy {
 
 /**
  * Reduce absolute depletion once without rounding or changing the maximum.
- * The caller owns end-of-turn scheduling and idempotency; no clock is consulted.
+ * The caller owns scheduling and idempotency; no clock is consulted.
  */
 export const recoverDepletion = function (
 	depletion: number,

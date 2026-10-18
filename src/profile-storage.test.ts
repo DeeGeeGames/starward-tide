@@ -10,8 +10,8 @@ import {
 import type { ProfileDatabase, StoredProfile } from './profile-storage';
 import { SAVE_SCHEMA_VERSION } from './save-state';
 import type { ConquestSave } from './save-state';
-import type { CampaignSave } from './campaign-save';
-import { CAMPAIGN_RULES, commitExpedition, commitFactionTurn, resolveCampaignTurn } from './campaign-state';
+import { CAMPAIGN_SAVE_SCHEMA_VERSION, type CampaignSave } from './campaign-save';
+import { CAMPAIGN_RULES, commitExpedition, advanceCampaign, setCampaignPaused } from './campaign-state';
 import { createDefaultEncounterSetup } from './campaign-setup';
 import { createCampaignBattle } from './campaign-encounter';
 import { captureConquestSave } from './game-save';
@@ -330,13 +330,13 @@ const makeCampaignSave = function (profileId: string, savedAt: number): Campaign
 	const map = { width: 100, height: 100, planets: [
 		['One', 20, 20, 10, 'blue', 0, 1] as const, ['Two', 70, 70, 10, 'red', 0, 1] as const,
 	] };
-	return { schemaVersion: 1, mode: 'campaign', profileId, savedAt, campaign: {
-		turn: 1, phase: 'planning', rules: CAMPAIGN_RULES,
+	return { schemaVersion: CAMPAIGN_SAVE_SCHEMA_VERSION, mode: 'campaign', profileId, savedAt, campaign: {
+		time: 0, paused: true, pace: 1, nextRivalTime: CAMPAIGN_RULES.rivalInterval, phase: 'galaxy', rules: CAMPAIGN_RULES,
 		systems: [{ id: 'home', name: 'Home', x: 0, y: 0, map }],
 		planets: ['One', 'Two'].map(function (name) {
 			return { id: name, name, systemId: 'home', factionId: 'blue' as const,
-				baselinePoints: 100, developmentBonusPoints: 0, depletion: 0, capturedTurn: null, lastAppliedTurn: 0 };
-		}), expeditions: [], readyFactions: [], encounter: null, resolvedEncounters: [],
+				baselinePoints: 100, developmentBonusPoints: 0, depletion: 0, capturedTime: null, lastAppliedTime: 0 };
+		}), expeditions: [], encounter: null, resolvedEncounters: [],
 	} };
 };
 
@@ -360,7 +360,7 @@ test('campaign writes and skirmish writes use separate slots and preserve profil
 test('malformed and unsupported campaign loads do not change either stored slot', async function () {
 	const database = new MemoryProfileDatabase();
 	const repository = new ProfileRepository(database);
-	for (const campaignSave of [null, 'invalid', { ...makeCampaignSave('unknown', 100), schemaVersion: 2 },
+	for (const campaignSave of [null, 'invalid', { ...makeCampaignSave('unknown', 100), schemaVersion: CAMPAIGN_SAVE_SCHEMA_VERSION + 1 },
 		makeCampaignSave('different-profile', 200)]) {
 		const profile = await repository.createProfile('Saved');
 		await repository.saveProfile(makeSave(profile.id, 100));
@@ -388,7 +388,7 @@ test('campaign snapshots clone before shared-queue waits and failed saves preser
 	const input = makeCampaignSave(profile.id, 200);
 	const saving = repository.saveCampaign(input);
 	input.savedAt = 999;
-	const invalid = repository.saveCampaign({ ...input, schemaVersion: 2 });
+	const invalid = repository.saveCampaign({ ...input, schemaVersion: CAMPAIGN_SAVE_SCHEMA_VERSION + 1 });
 	await expect(invalid).rejects.toThrow();
 	release?.();
 	await Promise.all([renaming, saving]);
@@ -415,7 +415,7 @@ test('separate campaign slot stores allocation drafts and active battles without
 		})] };
 	const committed = commitExpedition(expanded, { id: 'one', factionId: 'blue', sourceSystemId: 'home', destinationSystemId: 'away',
 		contributions: [{ planetId: 'One', points: 40 }] });
-	const campaign = resolveCampaignTurn(commitFactionTurn(commitFactionTurn(committed, 'blue'), 'red'), 1);
+	const campaign = advanceCampaign(setCampaignPaused(committed, false), CAMPAIGN_RULES.minimumTravelTime);
 	if (!campaign.encounter) throw new Error('Missing encounter');
 	const setup = createDefaultEncounterSetup(campaign.encounter);
 	const draft: CampaignSave = { ...save, campaign, encounterState: { phase: 'allocation', encounterId: campaign.encounter.id, setup } };

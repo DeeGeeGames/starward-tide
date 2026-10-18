@@ -28,12 +28,13 @@ import { createCampaignResultView } from './campaign-result-view';
 import { describeCampaignTransition, describeEncounterOutcome } from './campaign-report';
 import type { CampaignEncounterOutcome } from './campaign-report';
 import { v4 as createId } from 'uuid';
-import { commitCampaignRival, campaignWinner } from './campaign-scenario';
-import { cancelExpedition, commitExpedition, commitFactionTurn, resolveCampaignTurn, applyCampaignEncounterResult } from './campaign-state';
+import { campaignWinner } from './campaign-scenario';
+import { cancelExpedition, commitExpedition, advanceCampaign, setCampaignPaused, applyCampaignEncounterResult } from './campaign-state';
 import type { CampaignState } from './campaign-state';
 import { createDefaultEncounterSetup } from './campaign-setup';
 import type { CampaignEncounterSetup } from './campaign-setup';
 import { createCampaignBattle } from './campaign-encounter';
+import { createCampaignLaunch } from './campaign-launch';
 import type { CampaignEncounterRuntime } from './campaign-encounter';
 import { CAMPAIGN_SAVE_SCHEMA_VERSION } from './campaign-save';
 import type { CampaignSave } from './campaign-save';
@@ -121,6 +122,7 @@ let profileStorageMessage: string | null = null;
 let hasActiveConquest = false;
 let queuedAutosave: number | undefined;
 let campaignSession: CampaignSave | undefined;
+const campaignLaunch = createCampaignLaunch();
 let campaignRuntime: CampaignEncounterRuntime | undefined;
 let campaignOutcome: CampaignEncounterOutcome | undefined;
 const campaignResultView = createCampaignResultView(app);
@@ -211,6 +213,7 @@ const sameMap = function (left: StarMap, right: StarMap): boolean {
 	);
 };
 const saveCurrentProfile = async function (): Promise<void> {
+	await campaignLaunch.settled();
 	if (!hasActiveConquest) return;
 	if (!profileRepository || activeProfileId === null)
 		throw new Error('Select a local profile before saving this conquest.');
@@ -226,9 +229,13 @@ const saveCurrentProfile = async function (): Promise<void> {
 		};
 		try {
 			await profileRepository.saveCampaign(save);
-			if (campaignSession === session) campaignSession = save;
-			updateSaveStatus(savedStatus(save.savedAt));
-		} catch (error) { updateSaveStatus(`Save failed · ${saveErrorMessage(error)}`); throw error; }
+			// The in-memory campaign remains authoritative while this snapshot writes.
+			if (activeProfileId === profileId) updateSaveStatus(savedStatus(save.savedAt));
+		} catch (error) {
+			if (campaignSession?.profileId === profileId && campaignSession.campaign.systems === session.campaign.systems)
+				updateSaveStatus(`Save failed · ${saveErrorMessage(error)}`);
+			throw error;
+		}
 		return;
 	}
 	const capture = function (): ReturnType<typeof captureConquestSave> { return captureConquestSave(
@@ -515,7 +522,7 @@ const refreshContent = function (): void {
 		: 'Pause action to issue orders and change production';
 	const result = match.winner
 		? campaignSession
-			? `${match.winner === 'blue' ? 'Encounter won' : 'Encounter lost'} · Return to the galaxy to resolve the turn.`
+			? `${match.winner === 'blue' ? 'Encounter won' : 'Encounter lost'} · Return to the galaxy to resolve the encounter.`
 			: match.winner === 'blue'
 			? 'All rival worlds captured. You win. Restart to play again.'
 			: 'Your last world has fallen. Restart to try again.'
@@ -532,7 +539,7 @@ const refreshContent = function (): void {
 	if (campaignSession?.campaign.encounter && campaignRuntime && match.winner) {
 		if (campaignOutcome?.encounterId !== campaignSession.campaign.encounter.id)
 			campaignOutcome = describeEncounterOutcome(campaignSession.campaign, campaignRuntime.getResult(world), match.winner);
-		campaignResultView.render(campaignOutcome, campaignSession.campaign.turn);
+		campaignResultView.render(campaignOutcome, campaignSession.campaign.time);
 	} else campaignResultView.hide();
 	const key = match.notices
 		.map(function (n) {
@@ -923,6 +930,13 @@ const frame = function (now: number): void {
 	const dt = Math.min(Math.max((now - previous) / 1000, 0), 0.1);
 	previous = now;
 	diagnostics?.frame(now);
+	if (!busy && !document.hidden && frontMenu.getCurrentScreen() === 'campaign') {
+		advanceGalaxy(dt);
+		if (now - lastRefresh > 100) {
+			renderCampaign();
+			lastRefresh = now;
+		}
+	}
 	if (!busy && frontMenu.getCurrentScreen() === 'playing') {
 		// Keep rendering and command input live while simulation time is frozen.
 		if (!world.getResource('match').paused) {
@@ -979,57 +993,110 @@ const campaignSaveForState = function (state: CampaignState, profileId: string):
 };
 const persistCampaign = async function (save: CampaignSave): Promise<void> {
 	if (!profileRepository) throw new Error('Local profile storage is unavailable.');
-	await profileRepository.saveCampaign(save);
+	// Publish before awaiting storage so later frames and commands build on this state.
+	// ProfileRepository clones synchronously and queues writes in submission order.
 	campaignSession = save;
 	activeProfileId = save.profileId;
 	hasActiveConquest = true;
+	await profileRepository.saveCampaign(save);
+};
+const persistCampaignAction = async function (save: CampaignSave): Promise<void> {
+	try { await persistCampaign(save); }
+	catch (error) {
+		if (campaignSession?.profileId !== save.profileId || campaignSession.campaign.systems !== save.campaign.systems) return;
+		// The command is accepted in memory. Resolving lets the UI clear its draft,
+		// avoiding a duplicate expedition when storage alone needs another attempt.
+		pauseGalaxy();
+		renderCampaign();
+		const message = `Changes applied, but saving failed. Use Save campaign to retry. ${saveErrorMessage(error)}`;
+		updateSaveStatus(message);
+		campaignView.notify(message);
+	}
 };
 const renderCampaign = function (): void {
 	if (!campaignSession) return;
 	campaignView.render(campaignSession.campaign, campaignSession.encounterState?.setup);
 };
-const enterCampaignBattle = async function (setup: CampaignEncounterSetup): Promise<void> {
+const pauseGalaxy = function (): void {
+	if (!campaignSession || campaignSession.campaign.paused) return;
+	campaignSession = { ...campaignSession, campaign: setCampaignPaused(campaignSession.campaign, true) };
+};
+const advanceGalaxy = function (elapsed: number): void {
 	const session = campaignSession;
-	if (!session || !profileRepository) throw new Error('No campaign is active.');
-	const resumed = session.encounterState?.phase === 'battle' ? session.encounterState : undefined;
-	const battle = await createCampaignBattle(session.campaign, setup, resumed?.game, resumed?.captureEvents);
-	let installed = false;
-	try {
-		battle.world.getResource('match').paused = resumed ? true : document.hidden;
-		const pace = resumed?.game.pace ?? 1;
-		const snapshot = captureConquestSave(battle.world, battle.map, 'skirmish', pace, session.profileId).game;
-		const encounter = session.campaign.encounter;
-		if (!encounter) throw new Error('No encounter is active.');
-		const save: CampaignSave = { ...session, savedAt: Date.now(), encounterState: { phase: 'battle', encounterId: encounter.id, setup,
-			game: snapshot, captureEvents: battle.runtime.getCaptureEvents() } };
-		await profileRepository.saveCampaign(save);
-		await installGame({ game: battle.world, map: battle.map, scenario: 'skirmish', profileId: session.profileId, pace,
-			paused: snapshot.match.paused, hiddenPause: document.hidden, savedAt: save.savedAt, campaign: { save, runtime: battle.runtime } });
-		installed = true;
-		await frontMenu.setScreen('playing', {});
-	} finally { if (!installed) await battle.world.dispose(); }
+	if (!session || session.campaign.paused || session.campaign.encounter) return;
+	const before = session.campaign;
+	const next = advanceCampaign(before, elapsed * before.pace);
+	if (next === before) return;
+	const nextSave = campaignSaveForState(next, session.profileId);
+	campaignSession = nextSave;
+	const expeditionEvent = next.expeditions.length !== before.expeditions.length || next.expeditions.some(function (expedition, index) {
+		const prior = before.expeditions[index];
+		return expedition.id !== prior?.id || expedition.status !== prior.status;
+	});
+	if (!expeditionEvent && !next.encounter && !campaignWinner(next)) return;
+	renderCampaign();
+	campaignView.showReport(describeCampaignTransition(before, next), false);
+	if (next.encounter) campaignView.prepareEncounter();
+	void persistCampaign(nextSave).catch(function (error) {
+		if (campaignSession?.profileId !== session.profileId || campaignSession.campaign.systems !== before.systems) return;
+		pauseGalaxy();
+		renderCampaign();
+		const message = `Save failed · ${saveErrorMessage(error)}`;
+		updateSaveStatus(message);
+		campaignView.notify(message);
+	});
+};
+const enterCampaignBattle = function (setup: CampaignEncounterSetup): Promise<void> {
+	return campaignLaunch.run(async function () {
+		const wasBusy = busy;
+		busy = true;
+		try {
+			const session = campaignSession;
+			if (!session || !profileRepository) throw new Error('No campaign is active.');
+			const resumed = session.encounterState?.phase === 'battle' ? session.encounterState : undefined;
+			const battle = await createCampaignBattle(session.campaign, setup, resumed?.game, resumed?.captureEvents);
+			let installed = false;
+			try {
+				battle.world.getResource('match').paused = resumed ? true : document.hidden;
+				const pace = resumed?.game.pace ?? 1;
+				const snapshot = captureConquestSave(battle.world, battle.map, 'skirmish', pace, session.profileId).game;
+				const encounter = session.campaign.encounter;
+				if (!encounter) throw new Error('No encounter is active.');
+				const save: CampaignSave = { ...session, savedAt: Date.now(), encounterState: { phase: 'battle', encounterId: encounter.id, setup,
+					game: snapshot, captureEvents: battle.runtime.getCaptureEvents() } };
+				await profileRepository.saveCampaign(save);
+				await installGame({ game: battle.world, map: battle.map, scenario: 'skirmish', profileId: session.profileId, pace,
+					paused: snapshot.match.paused, hiddenPause: document.hidden, savedAt: save.savedAt, campaign: { save, runtime: battle.runtime } });
+				installed = true;
+				await frontMenu.setScreen('playing', {});
+			} finally { if (!installed) await battle.world.dispose(); }
+		} finally { busy = wasBusy; }
+	});
 };
 const campaignView = createCampaignView({
 	order: async function (order) {
 		if (!campaignSession) return;
 		const state = commitExpedition(campaignSession.campaign, { ...order, id: createId(), factionId: 'blue' });
-		await persistCampaign(campaignSaveForState(state, campaignSession.profileId));
+		await persistCampaignAction(campaignSaveForState(state, campaignSession.profileId));
 		renderCampaign();
 	},
 	cancelOrder: async function (id) {
 		if (!campaignSession || campaignWinner(campaignSession.campaign)) return;
 		const state = cancelExpedition(campaignSession.campaign, id, 'blue');
-		await persistCampaign(campaignSaveForState(state, campaignSession.profileId));
+		await persistCampaignAction(campaignSaveForState(state, campaignSession.profileId));
 		renderCampaign();
 	},
-	endTurn: async function () {
-		if (!campaignSession || campaignWinner(campaignSession.campaign)) return;
-		const state = campaignSession.campaign;
-		const committed = commitFactionTurn(commitFactionTurn(commitCampaignRival(state), 'red'), 'blue');
-		const next = resolveCampaignTurn(committed, state.turn);
-		await persistCampaign(campaignSaveForState(next, campaignSession.profileId));
+	pause: async function () {
+		const session = campaignSession;
+		if (!session || campaignWinner(session.campaign) || session.campaign.encounter) return;
+		await persistCampaignAction(campaignSaveForState(setCampaignPaused(session.campaign, !session.campaign.paused), session.profileId));
 		renderCampaign();
-		campaignView.showReport(describeCampaignTransition(state, next));
+	},
+	pace: async function (pace) {
+		const session = campaignSession;
+		if (!session || session.campaign.encounter) return;
+		await persistCampaignAction(campaignSaveForState({ ...session.campaign, pace }, session.profileId));
+		renderCampaign();
 	},
 	setup: async function (setup) {
 		const session = campaignSession;
@@ -1037,8 +1104,11 @@ const campaignView = createCampaignView({
 		await persistCampaign({ ...session, savedAt: Date.now(), encounterState: { phase: 'allocation', encounterId: session.campaign.encounter.id, setup } });
 	},
 	launch: enterCampaignBattle,
-	save: saveCurrentProfile,
-	exit: async function () { await saveCurrentProfile(); await frontMenu.setScreen('title', {}); },
+	save: async function () {
+		await saveCurrentProfile();
+		campaignView.notify('Saved locally · campaign slot');
+	},
+	exit: async function () { pauseGalaxy(); await saveCurrentProfile(); await frontMenu.setScreen('title', {}); },
 });
 campaignReturn.addEventListener('click', async function () {
 	if (busy || !campaignSession || !campaignRuntime || !world.getResource('match').winner) return;
@@ -1051,26 +1121,35 @@ campaignReturn.addEventListener('click', async function () {
 		const outcome = campaignOutcome ?? describeEncounterOutcome(before, result, winner);
 		const state = applyCampaignEncounterResult(before, result);
 		const report = describeCampaignTransition(before, state, outcome);
-		await persistCampaign(campaignSaveForState(state, campaignSession.profileId));
+		let persistenceError: unknown;
+		try { await persistCampaign(campaignSaveForState(state, campaignSession.profileId)); }
+		catch (error) { persistenceError = error; }
+		// The result has already applied to memory. Leave the completed tactical world
+		// even when storage fails so it cannot render against the next encounter.
 		campaignRuntime = undefined;
 		campaignOutcome = undefined;
 		campaignResultView.hide();
 		await frontMenu.setScreen('campaign', {});
 		campaignView.showSystem(outcome.systemId);
 		campaignView.showReport(report);
+		if (state.encounter) campaignView.prepareEncounter();
+		if (persistenceError !== undefined) {
+			const message = `Save failed · ${saveErrorMessage(persistenceError)}`;
+			updateSaveStatus(message);
+			campaignView.notify(message);
+		}
 	} catch (error) { feedback(saveErrorMessage(error)); }
 	finally { busy = false; campaignReturn.disabled = false; }
 });
 const openCampaignSave = async function (save: CampaignSave): Promise<void> {
 	if (campaignSession?.profileId !== save.profileId) campaignView.reset();
 	campaignOutcome = undefined;
-	campaignSession = save; campaignRuntime = undefined; hasActiveConquest = true; activeProfileId = save.profileId;
+	campaignSession = { ...save, campaign: setCampaignPaused(save.campaign, true) };
+	campaignRuntime = undefined; hasActiveConquest = true; activeProfileId = save.profileId;
 	if (save.encounterState?.phase === 'battle') await enterCampaignBattle(save.encounterState.setup);
 	else {
-		if (save.campaign.phase === 'resolving') {
-			await persistCampaign(campaignSaveForState(resolveCampaignTurn(save.campaign, save.campaign.turn), save.profileId));
-		} else if (save.campaign.encounter && !save.encounterState) {
-			await persistCampaign(campaignSaveForState(save.campaign, save.profileId));
+		if (save.campaign.encounter && !save.encounterState) {
+			await persistCampaign(campaignSaveForState(campaignSession.campaign, save.profileId));
 		}
 		await frontMenu.setScreen('campaign', {});
 		if (campaignSession?.campaign.encounter) campaignView.prepareEncounter();
@@ -1115,6 +1194,7 @@ const frontMenu = await createFrontMenu({
 		saveGameButton.disabled = true;
 	},
 	onMenu: function () {
+		pauseGalaxy();
 		campaignResultView.hide();
 		campaignView.root.hidden = true;
 		campaignReturn.hidden = true;
@@ -1141,7 +1221,8 @@ const frontMenu = await createFrontMenu({
 });
 
 const autosaveTimer = window.setInterval(function () {
-	if (busy || frontMenu.getCurrentScreen() !== 'playing') return;
+	const screen = frontMenu.getCurrentScreen();
+	if (busy || (screen !== 'playing' && screen !== 'campaign')) return;
 	void saveCurrentProfile().catch(function () {});
 }, 15_000);
 saveGameButton.addEventListener('click', function () {
@@ -1166,6 +1247,13 @@ element('setup-game', HTMLButtonElement).addEventListener('click', async functio
 	await frontMenu.setScreen('setup', {});
 });
 document.addEventListener('visibilitychange', function () {
+	previous = performance.now();
+	if (document.hidden && frontMenu.getCurrentScreen() === 'campaign') {
+		pauseGalaxy();
+		renderCampaign();
+		void saveCurrentProfile().catch(function () {});
+		return;
+	}
 	if (frontMenu.getCurrentScreen() !== 'playing') return;
 	if (document.hidden) {
 		mapInput.cancel();
