@@ -16,6 +16,7 @@ const node = function <K extends keyof HTMLElementTagNameMap>(tag: K, text?: str
 	return element;
 };
 const amount = function (value: number): string { return value.toLocaleString(undefined, { maximumFractionDigits: 1 }); };
+const wholeAmount = function (value: number): string { return value.toLocaleString(undefined, { maximumFractionDigits: 0 }); };
 const button = function (text: string, action: () => void, className?: string): HTMLButtonElement {
 	const element = node('button', text, className); element.type = 'button'; element.addEventListener('click', action); return element;
 };
@@ -372,8 +373,8 @@ export const createCampaignView = function (options: {
 			const minimum = owner === null ? neutralClaimMinimum(state, system.id) : undefined;
 			const source = state.systems.find(function (item) { return item.id === sourceSystem; });
 			const travel = source ? Math.ceil(Math.max(state.rules.minimumTravelTime, Math.hypot(system.x - source.x, system.y - source.y) / state.rules.travelSpeed)) : undefined;
-			marker.title = `${system.name} · ${minimum !== undefined ? `Claim minimum ${amount(minimum)} points` : owner === undefined ? 'Mixed ownership' : factionLabel(owner)}${travel !== undefined && source?.id !== system.id ? ` · ${travel}s travel` : ''}`;
-			marker.setAttribute('aria-label', `${system.name}, ${owner === undefined ? 'mixed ownership' : factionLabel(owner)}, ${amount(points)} points${minimum !== undefined ? `, minimum claim ${amount(minimum)} points` : ''}`);
+			marker.title = `${system.name} · ${minimum !== undefined ? `Claim minimum ${wholeAmount(minimum)} points` : owner === undefined ? 'Mixed ownership' : factionLabel(owner)}${travel !== undefined && source?.id !== system.id ? ` · ${travel}s travel` : ''}`;
+			marker.setAttribute('aria-label', `${system.name}, ${owner === undefined ? 'mixed ownership' : factionLabel(owner)}, ${wholeAmount(points)} points${minimum !== undefined ? `, minimum claim ${wholeAmount(minimum)} points` : ''}`);
 			const art = svg('svg', { viewBox: '0 0 100 80', class: 'campaign-system-art', 'aria-hidden': 'true' });
 			for (const radius of [21, 34, 46]) art.append(svg('ellipse', { cx: '50', cy: '40', rx: String(radius), ry: String(radius * .55), transform: 'rotate(-25 50 40)', class: 'campaign-orbit' }));
 			art.append(svg('circle', { cx: '50', cy: '40', r: '19', class: 'campaign-star-halo' }), svg('path', { d: 'M50 23V57M33 40H67M39 29L61 51M39 51L61 29', class: 'campaign-star-ray' }), svg('circle', { cx: '50', cy: '40', r: '6', class: 'campaign-star-core' }));
@@ -381,11 +382,11 @@ export const createCampaignView = function (options: {
 				const angle = planetIndex * 2.4; const radius = 20 + planetIndex * 10;
 				art.append(svg('circle', { cx: String(50 + Math.cos(angle) * radius), cy: String(40 + Math.sin(angle) * radius * .6), r: '3.5', fill: planet.factionId === 'blue' ? '#60d9ff' : planet.factionId === 'red' ? '#ff867e' : '#8e9cae', class: 'campaign-world-dot' }));
 			}
-			const copy = node('span', undefined, 'campaign-system-copy'); copy.append(node('strong', system.name), node('span', `${amount(points)} points`, 'campaign-system-points'), node('small', minimum !== undefined ? `UNCLAIMED · min ${amount(minimum)} points` : `${owner === undefined ? 'MIXED' : factionLabel(owner)} · ${planets.length} planets`)); marker.append(art, copy); world.append(marker);
+			const copy = node('span', undefined, 'campaign-system-copy'); copy.append(node('strong', system.name), node('span', `${wholeAmount(points)} points`, 'campaign-system-points'), node('small', minimum !== undefined ? `UNCLAIMED · min ${wholeAmount(minimum)} points` : `${owner === undefined ? 'MIXED' : factionLabel(owner)} · ${planets.length} planets`)); marker.append(art, copy); world.append(marker);
 			live(function () {
 				const points = localPlanets(system.id).reduce(function (sum, planet) { return sum + availablePoints(developmentMaximum(planet), planet.depletion); }, 0);
-				const balance = copy.querySelector('.campaign-system-points'); if (balance) balance.textContent = `${amount(points)} points`;
-				marker.setAttribute('aria-label', `${system.name}, ${owner === undefined ? 'mixed ownership' : factionLabel(owner)}, ${amount(points)} points${minimum !== undefined ? `, minimum claim ${amount(minimum)} points` : ''}`);
+				const balance = copy.querySelector('.campaign-system-points'); if (balance) balance.textContent = `${wholeAmount(points)} points`;
+				marker.setAttribute('aria-label', `${system.name}, ${owner === undefined ? 'mixed ownership' : factionLabel(owner)}, ${wholeAmount(points)} points${minimum !== undefined ? `, minimum claim ${wholeAmount(minimum)} points` : ''}`);
 			});
 		}
 		panel.hidden = context === 'none';
