@@ -25,6 +25,7 @@
 .campaign-actions { display: flex; gap: 5px; }.campaign-actions button { font-size: 10px; padding: 0 9px; }.campaign-actions .campaign-menu { font-size: 20px; width: 44px; padding: 0; }
 .campaign-hint { position: absolute; z-index: 3; top: 78px; left: 10px; max-width: calc(100% - 20px); padding: 7px 9px; margin: 0; border-radius: 5px; background: #080f19d9; color: #a7bac9; font-size: 10px; pointer-events: none; }
 .campaign-context { position: absolute; z-index: 4; right: 10px; top: 122px; width: 280px; max-height: calc(100% - 140px); overflow: auto; padding: 12px; }
+.campaign-shell:has(.campaign-auxiliary-panel:not([hidden])) .campaign-system-panel { display: none; }
 .campaign-context-title { display: flex; justify-content: space-between; align-items: center; gap: 10px; }.campaign-context h2 { font: 500 28px system-ui, sans-serif; margin: 8px 0; }.campaign-context .campaign-close { width: 32px; min-height: 32px; padding: 0; border: 0; background: none; font-size: 21px; color: var(--campaign-muted); }
 .campaign-muted { font-size: 10px; color: #9aafbf; line-height: 1.6; margin: 4px 0 10px; }.campaign-label { font-size: 10px; color: #b3c3d1; margin: 12px 0 6px; }
 .campaign-presets { display: flex; gap: 5px; }.campaign-presets button { flex: 1; min-width: 0; font-size: 10px; padding: 0 4px; }
