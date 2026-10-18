@@ -24,6 +24,9 @@ import type { Game } from './game';
 import { openProfileRepository } from './profile-storage';
 import type { ProfileRepository, ProfileSummary } from './profile-storage';
 import { createCampaignView } from './campaign-ui';
+import { createCampaignResultView } from './campaign-result-view';
+import { describeCampaignTransition, describeEncounterOutcome } from './campaign-report';
+import type { CampaignEncounterOutcome } from './campaign-report';
 import { v4 as createId } from 'uuid';
 import { createCampaign, commitCampaignRival, campaignWinner } from './campaign-scenario';
 import { commitExpedition, commitFactionTurn, resolveCampaignTurn, applyCampaignEncounterResult } from './campaign-state';
@@ -119,6 +122,8 @@ let hasActiveConquest = false;
 let queuedAutosave: number | undefined;
 let campaignSession: CampaignSave | undefined;
 let campaignRuntime: CampaignEncounterRuntime | undefined;
+let campaignOutcome: CampaignEncounterOutcome | undefined;
+const campaignResultView = createCampaignResultView(app);
 const campaignPreviewEnabled = new URLSearchParams(location.search).get('campaign') === '1';
 try {
 	profileRepository = await openProfileRepository();
@@ -251,7 +256,7 @@ const queueAutosave = function (): void {
 	if (queuedAutosave !== undefined) window.clearTimeout(queuedAutosave);
 	queuedAutosave = window.setTimeout(function () {
 		queuedAutosave = undefined;
-		if (busy) return;
+		if (busy || frontMenu.getCurrentScreen() !== 'playing') return;
 		void saveCurrentProfile().catch(function () {});
 	}, 800);
 };
@@ -522,6 +527,11 @@ const refreshContent = function (): void {
 				: '');
 	banner.style.display = bannerMessage.textContent ? 'block' : 'none';
 	campaignReturn.hidden = !campaignSession || !match.winner;
+	if (campaignSession?.campaign.encounter && campaignRuntime && match.winner) {
+		if (campaignOutcome?.encounterId !== campaignSession.campaign.encounter.id)
+			campaignOutcome = describeEncounterOutcome(campaignSession.campaign, campaignRuntime.getResult(world), match.winner);
+		campaignResultView.render(campaignOutcome, campaignSession.campaign.turn);
+	} else campaignResultView.hide();
 	const key = match.notices
 		.map(function (n) {
 			return `${n.time}:${n.text}`;
@@ -734,6 +744,8 @@ const installGame = async function (
 	world = installation.game;
 	campaignSession = installation.campaign?.save;
 	campaignRuntime = installation.campaign?.runtime;
+	campaignOutcome = undefined;
+	campaignResultView.hide();
 	attachDiagnostics();
 	try {
 		world.getResource('match').paused = installation.paused;
@@ -1009,6 +1021,7 @@ const campaignView = createCampaignView({
 		const next = resolveCampaignTurn(committed, state.turn);
 		await persistCampaign(campaignSaveForState(next, campaignSession.profileId));
 		renderCampaign();
+		campaignView.showReport(describeCampaignTransition(state, next));
 	},
 	setup: async function (setup) {
 		const session = campaignSession;
@@ -1016,20 +1029,33 @@ const campaignView = createCampaignView({
 		await persistCampaign({ ...session, savedAt: Date.now(), encounterState: { phase: 'allocation', encounterId: session.campaign.encounter.id, setup } });
 	},
 	launch: enterCampaignBattle,
+	save: saveCurrentProfile,
 	exit: async function () { await saveCurrentProfile(); await frontMenu.setScreen('title', {}); },
 });
 campaignReturn.addEventListener('click', async function () {
 	if (busy || !campaignSession || !campaignRuntime || !world.getResource('match').winner) return;
 	busy = true; campaignReturn.disabled = true;
 	try {
-		const state = applyCampaignEncounterResult(campaignSession.campaign, campaignRuntime.getResult(world));
+		const before = campaignSession.campaign;
+		const winner = world.getResource('match').winner;
+		if (!winner) return;
+		const result = campaignRuntime.getResult(world);
+		const outcome = campaignOutcome ?? describeEncounterOutcome(before, result, winner);
+		const state = applyCampaignEncounterResult(before, result);
+		const report = describeCampaignTransition(before, state, outcome);
 		await persistCampaign(campaignSaveForState(state, campaignSession.profileId));
 		campaignRuntime = undefined;
+		campaignOutcome = undefined;
+		campaignResultView.hide();
 		await frontMenu.setScreen('campaign', {});
+		campaignView.showSystem(outcome.systemId);
+		campaignView.showReport(report);
 	} catch (error) { feedback(saveErrorMessage(error)); }
 	finally { busy = false; campaignReturn.disabled = false; }
 });
 const openCampaignSave = async function (save: CampaignSave): Promise<void> {
+	if (campaignSession?.profileId !== save.profileId) campaignView.reset();
+	campaignOutcome = undefined;
 	campaignSession = save; campaignRuntime = undefined; hasActiveConquest = true; activeProfileId = save.profileId;
 	if (save.encounterState?.phase === 'battle') await enterCampaignBattle(save.encounterState.setup);
 	else {
@@ -1039,6 +1065,7 @@ const openCampaignSave = async function (save: CampaignSave): Promise<void> {
 			await persistCampaign(campaignSaveForState(save.campaign, save.profileId));
 		}
 		await frontMenu.setScreen('campaign', {});
+		if (campaignSession?.campaign.encounter) campaignView.prepareEncounter();
 	}
 };
 const frontMenu = await createFrontMenu({
@@ -1048,6 +1075,7 @@ const frontMenu = await createFrontMenu({
 	continue: continueProfile,
 	campaign: campaignPreviewEnabled ? {
 		start: async function (profileId): Promise<void> {
+			campaignView.reset();
 			const save = campaignSaveForState(createCampaign(), profileId);
 			if (!profileRepository) throw new Error('Local profile storage is unavailable.');
 			await profileRepository.saveCampaign(save);
@@ -1071,11 +1099,15 @@ const frontMenu = await createFrontMenu({
 		activeProfileId = profileId;
 		campaignSession = undefined;
 		campaignRuntime = undefined;
+		campaignOutcome = undefined;
+		campaignResultView.hide();
+		campaignView.reset();
 		hasActiveConquest = false;
 		updateSaveStatus(profileId ? 'No active conquest' : 'Not saved');
 		saveGameButton.disabled = true;
 	},
 	onMenu: function () {
+		campaignResultView.hide();
 		campaignView.root.hidden = true;
 		campaignReturn.hidden = true;
 		mapInput.cancel();
@@ -1083,6 +1115,7 @@ const frontMenu = await createFrontMenu({
 		hiddenPause = false;
 	},
 	onCampaign: function () {
+		campaignResultView.hide();
 		mapInput.cancel();
 		world.getResource('match').paused = true;
 		campaignReturn.hidden = true;
@@ -1230,5 +1263,6 @@ window.addEventListener('pagehide', function (event) {
 	void world.dispose();
 	void frontMenu.dispose();
 	campaignView.dispose();
+	campaignResultView.dispose();
 	profileRepository?.close();
 });
