@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { applyCampaignEncounterResult, CAMPAIGN_RULES, commitExpedition, commitFactionTurn, neutralClaimMinimum, resolveCampaignTurn } from './campaign-state';
+import { applyCampaignEncounterResult, cancelExpedition, expeditionArrival, isActiveExpedition, CAMPAIGN_RULES, commitExpedition, commitFactionTurn, neutralClaimMinimum, resolveCampaignTurn } from './campaign-state';
 import type { CampaignState, CampaignPlanet, ExpeditionOrder } from './campaign-state';
 import type { StarMap } from './maps';
 
@@ -243,4 +243,86 @@ test('insufficient legacy in-flight neutral arrival resolves spent without claim
 	expect(completed.expeditions[0]?.status).toBe('resolved');
 	expect(completed.expeditions[0]?.points).toBe(1);
 	expect(completed.planets.filter(function (planet) { return planet.systemId === 'away'; }).every(function (planet) { return planet.factionId === null; })).toBe(true);
+});
+
+test('cancelling an unlaunched expedition refunds each source once and preserves other commitments', function () {
+	const first = { ...order('cancel'), contributions: [{ planetId: 'h1', points: 30 }, { planetId: 'h2', points: 20 }] };
+	const committed = commitExpedition(commitExpedition(initial(), first), order('keep', 15));
+	expect(cancelExpedition(committed, 'cancel', 'red')).toBe(committed);
+	const cancelled = cancelExpedition(committed, 'cancel', 'blue');
+	expect(cancelled.planets.slice(0, 2).map(function (planet) { return planet.depletion; })).toEqual([15, 0]);
+	expect(cancelled.expeditions.filter(isActiveExpedition).map(function (item) { return item.id; })).toEqual(['keep']);
+	expect(cancelExpedition(cancelled, 'cancel', 'blue')).toBe(cancelled);
+	expect(commitExpedition(cancelled, first)).toBe(cancelled);
+	expect(cancelExpedition(committed, 'missing', 'blue')).toBe(committed);
+	expect(cancelExpedition(commitFactionTurn(committed, 'blue'), 'cancel', 'blue').planets).toBe(committed.planets);
+	const withoutOther = cancelExpedition(cancelled, 'keep', 'blue');
+	expect(finish(withoutOther).encounter).toBeNull();
+	expect(committed.planets[0]?.depletion).toBe(45);
+});
+
+test('recall returns after elapsed travel time, replenishes original owned sources and never reaches the target', function () {
+	const start = initial();
+	const longRoute = { ...start, systems: start.systems.map(function (system) { return system.id === 'away' ? { ...system, x: 500 } : system; }),
+		rules: { ...CAMPAIGN_RULES, recovery: { fractionOfMaximum: 0 } } };
+	const committed = commitExpedition(longRoute, { ...order('recall'), contributions: [{ planetId: 'h1', points: 30 }, { planetId: 'h2', points: 20 }] });
+	const turn3 = finish(finish(committed));
+	expect(turn3.turn).toBe(3);
+	const recalled = cancelExpedition(turn3, 'recall', 'blue');
+	const expedition = recalled.expeditions[0];
+	if (!expedition) throw new Error('Missing recalled order');
+	expect(expedition.status).toBe('returning');
+	expect(expeditionArrival(expedition)).toBe(4);
+	expect(recalled.planets).toBe(turn3.planets);
+	expect(cancelExpedition(recalled, 'recall', 'blue')).toBe(recalled);
+	const partiallyLost = { ...recalled, planets: recalled.planets.map(function (planet) {
+		return planet.id === 'h2' ? { ...planet, factionId: 'red' as const } : planet;
+	}) };
+	const waiting = finish(partiallyLost);
+	expect(waiting.expeditions[0]?.status).toBe('returning');
+	const returned = finish(waiting);
+	expect(returned.expeditions[0]?.status).toBe('resolved');
+	expect(returned.planets[0]?.depletion).toBe(0);
+	expect(returned.planets[1]?.depletion).toBe(20);
+	expect(finish(returned).encounter).toBeNull();
+	expect(cancelExpedition(returned, 'recall', 'blue')).toBe(returned);
+});
+
+test('encounter and resolving phases freeze cancellation and recall', function () {
+	const committed = commitExpedition(initial(), order('battle'));
+	const encounter = finish(committed);
+	expect(cancelExpedition(encounter, 'battle', 'blue')).toBe(encounter);
+	const resolving: CampaignState = { ...committed, phase: 'resolving' };
+	expect(cancelExpedition(resolving, 'battle', 'blue')).toBe(resolving);
+});
+
+test('returns respect same-turn encounter ordering and resume without a second refund', function () {
+	for (const returnFirst of [true, false]) {
+		const start = initial();
+		const home = start.systems[0];
+		if (!home) throw new Error('Missing home system');
+		const state: CampaignState = { ...start,
+			rules: { ...CAMPAIGN_RULES, recovery: { fractionOfMaximum: 0 } },
+			systems: [...start.systems.map(function (system) { return system.id === 'away' ? { ...system, x: 500 } : system; }),
+				{ ...home, id: 'nearby', name: 'Nearby', x: 100 }],
+			planets: [...start.planets, makePlanet('n1', 'nearby', 'One', 'red')],
+		};
+		const id = returnFirst ? 'a-return' : 'z-return';
+		const outbound = finish(commitExpedition(state, order(id, 30)));
+		const recalled = cancelExpedition(outbound, id, 'blue');
+		const invaded = commitExpedition(recalled, { id: 'm-invasion', factionId: 'red', sourceSystemId: 'nearby', destinationSystemId: 'home',
+			contributions: [{ planetId: 'n1', points: 10 }] });
+		const battle = finish(invaded);
+		expect(battle.phase).toBe('encounter');
+		expect(battle.expeditions.find(function (item) { return item.id === id; })?.status).toBe(returnFirst ? 'resolved' : 'returning');
+		expect(battle.planets[0]?.depletion).toBe(returnFirst ? 0 : 30);
+		const result = { encounterId: 'encounter:m-invasion', captureEvents: [], ownership: [
+			{ planetId: 'h1', factionId: 'blue' as const }, { planetId: 'h2', factionId: 'blue' as const },
+		] };
+		const completed = applyCampaignEncounterResult(battle, result);
+		expect(completed.turn).toBe(3);
+		expect(completed.planets[0]?.depletion).toBe(0);
+		expect(completed.expeditions.find(function (item) { return item.id === id; })?.status).toBe('resolved');
+		expect(applyCampaignEncounterResult(completed, result)).toBe(completed);
+	}
 });

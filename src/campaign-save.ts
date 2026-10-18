@@ -1,3 +1,4 @@
+import { expeditionArrival, isActiveExpedition } from './campaign-state';
 import * as z from 'zod/mini';
 import type { CampaignState, CampaignEncounterResult } from './campaign-state';
 import { validateCampaignEncounterSetup } from './campaign-setup';
@@ -39,7 +40,8 @@ const expedition = z.object({
 	id, factionId: side, sourceSystemId: id, destinationSystemId: id,
 	contributions: z.array(contribution).check(z.maxLength(100)),
 	points: positiveInteger, departureTurn: positiveInteger, arrivalTime: amount,
-	status: z.enum(['traveling', 'encounter', 'resolved']),
+	status: z.enum(['traveling', 'returning', 'cancelled', 'encounter', 'resolved']),
+	recalledTurn: z.optional(positiveInteger),
 });
 const encounter = z.object({
 	id, expeditionId: id, systemId: id, attacker: side, attackerPoints: positiveInteger,
@@ -78,7 +80,11 @@ const hasCampaignIntegrity = function (state: CampaignState): boolean {
 			item.points !== item.contributions.reduce(function (total, entry) { return total + entry.points; }, 0) ||
 			item.contributions.some(function (entry) { return planets.get(entry.planetId)?.systemId !== source.id; }) ||
 			item.arrivalTime !== item.departureTurn - 1 + Math.max(1, Math.hypot(destination.x - source.x, destination.y - source.y) / state.rules.travelSpeed)) return false;
-		if (item.status !== 'traveling' && item.arrivalTime > state.turn) return false;
+		if (item.recalledTurn !== undefined) {
+			if (!['returning', 'resolved'].includes(item.status) || item.recalledTurn <= item.departureTurn || item.recalledTurn > state.turn ||
+				item.recalledTurn - 1 >= item.arrivalTime || !Number.isSafeInteger(expeditionArrival(item))) return false;
+		} else if (item.status === 'returning') return false;
+		if ((item.status === 'encounter' || item.status === 'resolved') && expeditionArrival(item) > state.turn) return false;
 	}
 	const active = state.expeditions.filter(function (item) { return item.status === 'encounter'; });
 	if (state.phase === 'planning' ? state.readyFactions.length > 2 : state.readyFactions.length !== 2) return false;
@@ -90,9 +96,9 @@ const hasCampaignIntegrity = function (state: CampaignState): boolean {
 		const order = expeditions.get(current.expeditionId);
 		const local = state.planets.filter(function (item) { return item.systemId === current.systemId; });
 		const firstDue = state.expeditions.filter(function (item) {
-			return item.status !== 'resolved' && item.arrivalTime <= state.turn;
+			return isActiveExpedition(item) && expeditionArrival(item) <= state.turn;
 		}).toSorted(function (a, b) {
-			return a.arrivalTime - b.arrivalTime || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+			return expeditionArrival(a) - expeditionArrival(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 		})[0];
 		if (active.length !== 1 || !order || firstDue?.id !== order.id || order.status !== 'encounter' ||
 			current.id !== `encounter:${order.id}` || current.systemId !== order.destinationSystemId ||

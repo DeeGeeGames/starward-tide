@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { parseCampaignSave, isSupportedCampaignSave } from './campaign-save';
 import type { CampaignSave } from './campaign-save';
-import { CAMPAIGN_RULES, applyCampaignEncounterResult, commitExpedition, commitFactionTurn, resolveCampaignTurn } from './campaign-state';
+import { CAMPAIGN_RULES, cancelExpedition, applyCampaignEncounterResult, commitExpedition, commitFactionTurn, resolveCampaignTurn } from './campaign-state';
 import type { CampaignState } from './campaign-state';
 import { InvalidSaveError } from './save-state';
 import { createDefaultEncounterSetup } from './campaign-setup';
@@ -128,7 +128,6 @@ test('galaxy coordinates support negative positions without changing travel arit
 	expect(parseCampaignSave(active)).toEqual(active);
 });
 
-
 test('allocation drafts round-trip with validated budgets, targets and active encounter identity', function () {
 	const active = startEncounter(makeSave());
 	const encounter = active.campaign.encounter;
@@ -242,7 +241,6 @@ test('a genuine battle containing a neutral planet round-trips and restores', as
 	} finally { await battle.world.dispose(); }
 });
 
-
 test('saves predating configurable neutral claims load with the approved default', function () {
 	const save = makeSave();
 	const rules = { travelSpeed: save.campaign.rules.travelSpeed, development: save.campaign.rules.development,
@@ -263,4 +261,28 @@ test('neutral claim fractions round-trip configured values and reject invalid va
 	}
 	for (const neutralClaimFraction of [-1, 1.01, NaN, Infinity, null, '0.1'])
 		expect(isSupportedCampaignSave({ ...save, campaign: { ...save.campaign, rules: { ...save.campaign.rules, neutralClaimFraction } } })).toBe(false);
+});
+
+test('cancelled and recalled expeditions round-trip without duplicate refunds or revival', function () {
+	const save = makeSave();
+	const state = { ...save.campaign, rules: { ...save.campaign.rules, travelSpeed: 20 } };
+	const order = { id: 'cancel', factionId: 'blue' as const, sourceSystemId: 'home', destinationSystemId: 'away',
+		contributions: [{ planetId: 'home:One', points: 40 }] };
+	const cancelled = cancelExpedition(commitExpedition(state, order), order.id, 'blue');
+	const restored = parseCampaignSave({ ...save, campaign: cancelled }).campaign;
+	expect(restored).toEqual(cancelled);
+	expect(cancelExpedition(restored, order.id, 'blue')).toBe(restored);
+	expect(commitExpedition(restored, order)).toBe(restored);
+	const traveling = commitExpedition(restored, { ...order, id: 'recall' });
+	const next = resolveCampaignTurn(commitFactionTurn(commitFactionTurn(traveling, 'blue'), 'red'), 1);
+	const returning = cancelExpedition(next, 'recall', 'blue');
+	const recalledSave = parseCampaignSave({ ...save, campaign: returning });
+	expect(recalledSave.campaign).toEqual(returning);
+	const completed = resolveCampaignTurn(commitFactionTurn(commitFactionTurn(returning, 'blue'), 'red'), 2);
+	expect(parseCampaignSave({ ...save, campaign: completed }).campaign).toEqual(completed);
+	for (const invalid of [
+		{ ...returning, expeditions: returning.expeditions.map(function (item) { return item.id === 'recall' ? { ...item, recalledTurn: undefined } : item; }) },
+		{ ...returning, expeditions: returning.expeditions.map(function (item) { return item.id === 'recall' ? { ...item, recalledTurn: 1 } : item; }) },
+		{ ...returning, expeditions: returning.expeditions.map(function (item) { return item.id === 'recall' ? { ...item, recalledTurn: 3 } : item; }) },
+	]) expect(isSupportedCampaignSave({ ...save, campaign: invalid })).toBe(false);
 });

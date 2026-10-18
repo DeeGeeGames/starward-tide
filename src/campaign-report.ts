@@ -1,6 +1,6 @@
 import type { Side } from './config';
 import type { CampaignEncounterResult, CampaignPlanet, CampaignState } from './campaign-state';
-import { neutralClaimMinimum } from './campaign-state';
+import { expeditionArrival, neutralClaimMinimum } from './campaign-state';
 import { captureDevelopment, developmentMaximum } from './campaign-development';
 import { availablePoints } from './campaign-points';
 
@@ -34,7 +34,7 @@ export interface CampaignResolvedExpedition {
 	readonly systemId: string;
 	readonly factionId: Side;
 	readonly points: number;
-	readonly kind: 'claim' | 'friendly' | 'encounter' | 'resolved';
+	readonly kind: 'claim' | 'friendly' | 'encounter' | 'resolved' | 'return';
 }
 export interface CampaignTransitionReport {
 	readonly fromTurn: number;
@@ -103,8 +103,10 @@ export const describeCampaignTransition = function (
 	const ownership = new Map(before.planets.map(function (planet) { return [planet.id, planet.factionId] as const; }));
 	const previouslyResolved = new Set(before.expeditions.filter(function (item) { return item.status === 'resolved'; }).map(function (item) { return item.id; }));
 	const resolved = after.expeditions.filter(function (item) { return item.status === 'resolved' && !previouslyResolved.has(item.id); })
-		.toSorted(function (a, b) { return a.arrivalTime - b.arrivalTime || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0); });
+		.toSorted(function (a, b) { return expeditionArrival(a) - expeditionArrival(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0); });
 	const resolvedExpeditions = resolved.map(function (expedition): CampaignResolvedExpedition {
+		if (expedition.recalledTurn !== undefined) return { expeditionId: expedition.id, systemId: expedition.sourceSystemId,
+			factionId: expedition.factionId, points: expedition.points, kind: 'return' };
 		const result = after.resolvedEncounters.find(function (item) { return item.encounterId === `encounter:${expedition.id}`; });
 		const local = before.planets.filter(function (planet) { return planet.systemId === expedition.destinationSystemId; });
 		let kind: CampaignResolvedExpedition['kind'] = 'resolved';

@@ -1,3 +1,4 @@
+import { isActiveExpedition, expeditionArrival } from './campaign-state';
 import { zoomCamera } from './camera';
 import type { Camera } from './camera';
 import { createMapInput } from './map-input';
@@ -266,12 +267,12 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		if (drawer === 'orders') {
 			titleText.textContent = 'Orders';
 			panel.append(node('p', `Galaxy turn ${state.turn} remains frozen`, 'csu-sub'));
-			for (const expedition of state.expeditions.filter(function (item) { return item.status !== 'resolved'; })) {
+			for (const expedition of state.expeditions.filter(isActiveExpedition)) {
 				const from = state.systems.find(function (item) { return item.id === expedition.sourceSystemId; });
 				const to = state.systems.find(function (item) { return item.id === expedition.destinationSystemId; });
 				const row = node('div', '', 'csu-order');
-				row.append(node('strong', `${from?.name ?? expedition.sourceSystemId} → ${to?.name ?? expedition.destinationSystemId} · ${amount(expedition.points)} points`),
-					node('small', expedition.id === encounter.expeditionId ? 'Arrived · resolving now' : `Arrival turn ${Math.ceil(expedition.arrivalTime)} · waits for galaxy resolution`));
+				row.append(node('strong', `${from?.name ?? expedition.sourceSystemId} ${expedition.status === 'returning' ? '←' : '→'} ${to?.name ?? expedition.destinationSystemId} · ${amount(expedition.points)} points`),
+					node('small', expedition.id === encounter.expeditionId ? 'Arrived · resolving now' : `${expedition.status === 'returning' ? 'Returning · arrival' : 'Arrival'} turn ${Math.ceil(expeditionArrival(expedition))} · waits for galaxy resolution`));
 				panel.append(row);
 			}
 			panel.append(node('p', 'Later arrivals wait. Hostile arrivals start separate battles; friendly arrivals replenish points. No mid-battle reinforcements.', 'csu-rule'), button('Return to allocation', function () { openDrawer('allocation'); }, 'csu-wide'));
@@ -396,7 +397,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		blue.textContent = `● ${encounter.planets.filter(function (planet) { return planet.factionId === 'blue'; }).length} YOU`;
 		red.textContent = `● ${encounter.planets.filter(function (planet) { return planet.factionId === 'red'; }).length} RIVAL`;
 		turn.textContent = `Turn ${state.turn} · Frozen`;
-		orders.textContent = `Orders · ${state.expeditions.filter(function (expedition) { return expedition.status !== 'resolved'; }).length}`;
+		orders.textContent = `Orders · ${state.expeditions.filter(isActiveExpedition).length}`;
 		renderPanel(); updateMap(); fit();
 	};
 	const reset = function (): void {
