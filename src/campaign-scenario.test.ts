@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
-import { campaignWinner, commitCampaignRival, createCampaign } from './campaign-scenario';
+import { campaignWinner, commitCampaignRival, createCampaign, createGeneratedCampaign } from './campaign-scenario';
+import { generateMap, MAP_SIZES } from './maps';
 import { parseCampaignSave } from './campaign-save';
 import { applyCampaignEncounterResult, commitExpedition, commitFactionTurn, resolveCampaignTurn } from './campaign-state';
 import type { CampaignState } from './campaign-state';
@@ -114,3 +115,33 @@ test('the last encounter result returns to planning and then declares campaign v
 	expect(final.phase).toBe('planning');
 	expect(campaignWinner(final)).toBe('blue');
 });
+
+for (const size of ['small', 'medium', 'large'] as const) {
+	test(`${size} campaign launches the generated arrangement with equal starting systems and persists it`, function () {
+		for (const seed of [0, 8041, 8042, 4294967295]) {
+			const layout = generateMap(size, seed);
+			const preview = structuredClone(layout);
+			const campaign = createGeneratedCampaign(layout);
+			expect(campaign.systems).toHaveLength(MAP_SIZES[size].count);
+			expect(campaign.planets).toHaveLength(MAP_SIZES[size].count * 3);
+			expect(new Set(campaign.systems.map(function (system) { return system.id; })).size).toBe(campaign.systems.length);
+			expect(campaign.systems.map(function (system) { return [system.name, system.x, system.y]; }))
+				.toEqual(layout.planets.map(function ([name, x, y]) { return [name, x, y]; }));
+			for (const side of ['blue', 'red'] as const) {
+				const owned = campaign.planets.filter(function (planet) { return planet.factionId === side; });
+				expect(owned).toHaveLength(3);
+				expect(new Set(owned.map(function (planet) { return planet.systemId; })).size).toBe(1);
+				expect(owned.every(function (planet) { return planet.baselinePoints === 100; })).toBe(true);
+			}
+			expect(campaign.planets.filter(function (planet) { return planet.factionId === null; }))
+				.toHaveLength((MAP_SIZES[size].count - 2) * 3);
+			const save = { schemaVersion: 1, mode: 'campaign' as const, profileId: 'generated', savedAt: 100, campaign };
+			expect(parseCampaignSave(save)).toEqual(save);
+			expect(createGeneratedCampaign(preview)).toEqual(campaign);
+			expect(layout).toEqual(preview);
+			const ordered = commitCampaignRival(campaign);
+			expect(ordered.expeditions).toHaveLength(1);
+			expect(function () { finish(ordered); }).not.toThrow();
+		}
+	});
+}

@@ -28,7 +28,7 @@ import { createCampaignResultView } from './campaign-result-view';
 import { describeCampaignTransition, describeEncounterOutcome } from './campaign-report';
 import type { CampaignEncounterOutcome } from './campaign-report';
 import { v4 as createId } from 'uuid';
-import { createCampaign, commitCampaignRival, campaignWinner } from './campaign-scenario';
+import { commitCampaignRival, campaignWinner } from './campaign-scenario';
 import { cancelExpedition, commitExpedition, commitFactionTurn, resolveCampaignTurn, applyCampaignEncounterResult } from './campaign-state';
 import type { CampaignState } from './campaign-state';
 import { createDefaultEncounterSetup } from './campaign-setup';
@@ -1082,9 +1082,9 @@ const frontMenu = await createFrontMenu({
 	},
 	continue: continueProfile,
 	campaign: campaignPreviewEnabled ? {
-		start: async function (profileId): Promise<void> {
+		start: async function (profileId, campaign): Promise<void> {
 			campaignView.reset();
-			const save = campaignSaveForState(createCampaign(), profileId);
+			const save = campaignSaveForState(campaign, profileId);
 			if (!profileRepository) throw new Error('Local profile storage is unavailable.');
 			await profileRepository.saveCampaign(save);
 			await openCampaignSave(save);
