@@ -29,6 +29,7 @@ import { describeCampaignTransition, describeEncounterOutcome } from './campaign
 import type { CampaignEncounterOutcome } from './campaign-report';
 import { v4 as createId } from 'uuid';
 import { campaignWinner } from './campaign-scenario';
+import { formatElapsedTime } from './time-format';
 import { cancelExpedition, commitExpedition, advanceCampaign, setCampaignPaused, applyCampaignEncounterResult } from './campaign-state';
 import type { CampaignState } from './campaign-state';
 import { createDefaultEncounterSetup } from './campaign-setup';
@@ -172,13 +173,6 @@ const icons: Record<Production, string> = {
 	troops: '▥',
 	ships: '◆',
 	guns: '✣',
-};
-const timeLabel = function (seconds: number): string {
-	return `${Math.floor(seconds / 60)
-		.toString()
-		.padStart(2, '0')}:${Math.floor(seconds % 60)
-		.toString()
-		.padStart(2, '0')}`;
 };
 const feedback = function (text: string): void {
 	orderMessage = text;
@@ -517,7 +511,7 @@ const refreshContent = function (): void {
 			return e.components.planet.owner === 'red';
 		}).length,
 	);
-	clock.textContent = timeLabel(match.time);
+	clock.textContent = formatElapsedTime(match.time);
 	pause.textContent = match.paused ? '▷' : 'Ⅱ';
 	pause.setAttribute('aria-label', match.paused ? 'Resume game' : 'Pause game');
 	pause.setAttribute('aria-pressed', String(match.paused));
@@ -556,7 +550,7 @@ const refreshContent = function (): void {
 			...match.notices.slice(0, 3).map(function (n) {
 				const row = document.createElement('p');
 				row.style.borderColor = COLORS[n.side];
-				row.textContent = `${timeLabel(n.time)} ${n.text}`;
+				row.textContent = `${formatElapsedTime(n.time)} ${n.text}`;
 				return row;
 			}),
 		);
