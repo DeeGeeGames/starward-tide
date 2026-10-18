@@ -39,6 +39,7 @@ export interface CampaignSetupViewOptions {
 export interface CampaignSetupView {
 	root: HTMLElement;
 	render: (state: CampaignState, setup: CampaignEncounterSetup) => void;
+	setSaveStatus: (message: string) => void;
 	flush: () => Promise<void>;
 	reset: () => void;
 	dispose: () => void;
@@ -66,6 +67,9 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 	const turn = node('span', '', 'csu-turn');
 	const red = node('span', '', 'csu-red');
 	score.append(blue, turn, red);
+	const saveStatus = node('span', 'Not saved', 'csu-save-status');
+	saveStatus.setAttribute('role', 'status');
+	saveStatus.setAttribute('aria-live', 'polite');
 	const actions = node('div', '', 'csu-actions');
 	const save = button('Save', function () { void run(async function () { await options.save?.(); status.textContent = 'Encounter saved locally'; }); }, 'csu-save');
 	const orders = button('Orders', function () { openDrawer(drawer === 'orders' ? 'allocation' : 'orders'); });
@@ -78,7 +82,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 	const menu = button('☰', function () { openDrawer(drawer === 'menu' ? 'allocation' : 'menu'); }, 'csu-menu');
 	menu.setAttribute('aria-label', 'Encounter menu');
 	actions.append(save, orders, launch, menu);
-	header.append(brand, score, actions);
+	header.append(brand, score, saveStatus, actions);
 	const heading = node('p', '', 'csu-heading');
 	const panel = node('aside', '', 'csu-panel');
 	panel.id = 'campaign-setup-panel';
@@ -280,8 +284,9 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		}
 		if (drawer === 'menu') {
 			titleText.textContent = 'Game menu';
-			panel.append(node('p', `Encounter setup · galaxy time ${amount(state.time)}s frozen`, 'csu-sub'), button('Return to allocation', function () { openDrawer('allocation'); }, 'csu-wide'),
-				button('Save & menu', function () { void run(options.exit); }, 'csu-wide'), node('p', 'Saving preserves this allocation. Continue returns to encounter setup.', 'csu-rule'));
+			panel.append(node('p', `Encounter setup · galaxy time ${amount(state.time)}s frozen`, 'csu-sub'), button('Return to allocation', function () { openDrawer('allocation'); }, 'csu-wide'));
+			if (options.save) panel.append(button('Save campaign', function () { void run(async function () { await options.save?.(); status.textContent = 'Encounter saved locally'; }); }, 'csu-wide'));
+			panel.append(button('Save & menu', function () { void run(options.exit); }, 'csu-wide'), node('p', 'Saving preserves this allocation. Continue returns to encounter setup.', 'csu-rule'));
 			return;
 		}
 		const planet = encounter.planets.find(function (item) { return item.planetId === selected; });
@@ -422,5 +427,11 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		root.hidden = true;
 		applyCamera();
 	};
-	return { root, render, flush, reset, dispose: function (): void { disposed = true; resize.disconnect(); input.dispose(); root.remove(); } };
+	const setSaveStatus = function (message: string): void {
+		const failed = /save failed|saving failed/i.test(message);
+		saveStatus.textContent = message;
+		saveStatus.title = message;
+		saveStatus.dataset.state = failed ? 'error' : message === 'Saving…' ? 'saving' : 'saved';
+	};
+	return { root, render, setSaveStatus, flush, reset, dispose: function (): void { disposed = true; resize.disconnect(); input.dispose(); root.remove(); } };
 };

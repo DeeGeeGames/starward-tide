@@ -84,6 +84,7 @@ const multiButton = element('multi', HTMLButtonElement);
 const saveGameButton = element('save-game', HTMLButtonElement);
 const saveStatus = element('save-status', HTMLSpanElement);
 const menuSaveStatus = element('save-status-menu', HTMLParagraphElement);
+let campaignSaveStatusRevision = 0;
 const campaignReturn = document.createElement('button');
 campaignReturn.id = 'campaign-return';
 campaignReturn.textContent = 'Return to galaxy';
@@ -190,9 +191,29 @@ const saveErrorMessage = function (error: unknown): string {
 const updateSaveStatus = function (message: string): void {
 	saveStatus.textContent = message;
 	menuSaveStatus.textContent = message;
+	campaignView.setSaveStatus(message);
 };
 const savedStatus = function (savedAt: number): string {
 	return `Saved ${new Date(savedAt).toLocaleString()}`;
+};
+const saveCampaignWithStatus = async function (
+	save: CampaignSave,
+	isCurrent: () => boolean,
+	retryInstruction = campaignRuntime ? 'Use Save on the game HUD to retry.' : 'Use Save campaign in the menu to retry.',
+): Promise<void> {
+	const repository = profileRepository;
+	if (!repository) throw new Error('Local profile storage is unavailable.');
+	const revision = ++campaignSaveStatusRevision;
+	updateSaveStatus('Saving…');
+	try {
+		await repository.saveCampaign(save);
+		if (revision === campaignSaveStatusRevision && isCurrent()) updateSaveStatus(savedStatus(save.savedAt));
+	} catch (error) {
+		if (revision === campaignSaveStatusRevision && isCurrent()) {
+			updateSaveStatus(`Save failed · ${saveErrorMessage(error)} ${retryInstruction}`);
+		}
+		throw error;
+	}
 };
 const sameMap = function (left: StarMap, right: StarMap): boolean {
 	return (
@@ -225,15 +246,10 @@ const saveCurrentProfile = async function (): Promise<void> {
 				captureEvents: campaignRuntime.getCaptureEvents(),
 			} } : {}),
 		};
-		try {
-			await profileRepository.saveCampaign(save);
-			// The in-memory campaign remains authoritative while this snapshot writes.
-			if (activeProfileId === profileId) updateSaveStatus(savedStatus(save.savedAt));
-		} catch (error) {
-			if (campaignSession?.profileId === profileId && campaignSession.campaign.systems === session.campaign.systems)
-				updateSaveStatus(`Save failed · ${saveErrorMessage(error)}`);
-			throw error;
-		}
+		await saveCampaignWithStatus(save, function () {
+			return activeProfileId === profileId && campaignSession?.profileId === profileId &&
+				campaignSession.campaign.systems === session.campaign.systems;
+		});
 		return;
 	}
 	const capture = function (): ReturnType<typeof captureConquestSave> { return captureConquestSave(
@@ -999,7 +1015,10 @@ const persistCampaign = async function (save: CampaignSave): Promise<void> {
 	campaignSession = save;
 	activeProfileId = save.profileId;
 	hasActiveConquest = true;
-	await profileRepository.saveCampaign(save);
+	await saveCampaignWithStatus(save, function () {
+		return activeProfileId === save.profileId && campaignSession?.profileId === save.profileId &&
+			campaignSession.campaign.systems === save.campaign.systems;
+	});
 };
 const persistCampaignAction = async function (save: CampaignSave): Promise<void> {
 	try { await persistCampaign(save); }
@@ -1010,7 +1029,6 @@ const persistCampaignAction = async function (save: CampaignSave): Promise<void>
 		pauseGalaxy();
 		renderCampaign();
 		const message = `Changes applied, but saving failed. Use Save campaign to retry. ${saveErrorMessage(error)}`;
-		updateSaveStatus(message);
 		campaignView.notify(message);
 	}
 };
@@ -1043,7 +1061,6 @@ const advanceGalaxy = function (elapsed: number): void {
 		pauseGalaxy();
 		renderCampaign();
 		const message = `Save failed · ${saveErrorMessage(error)}`;
-		updateSaveStatus(message);
 		campaignView.notify(message);
 	});
 };
@@ -1065,7 +1082,11 @@ const enterCampaignBattle = function (setup: CampaignEncounterSetup): Promise<vo
 				if (!encounter) throw new Error('No encounter is active.');
 				const save: CampaignSave = { ...session, savedAt: Date.now(), encounterState: { phase: 'battle', encounterId: encounter.id, setup,
 					game: snapshot, captureEvents: battle.runtime.getCaptureEvents() } };
-				await profileRepository.saveCampaign(save);
+				try { await persistCampaign(save); }
+				catch (error) {
+					if (campaignSession === save) campaignSession = session;
+					throw error;
+				}
 				await installGame({ game: battle.world, map: battle.map, scenario: 'skirmish', profileId: session.profileId, pace,
 					paused: snapshot.match.paused, hiddenPause: document.hidden, savedAt: save.savedAt, campaign: { save, runtime: battle.runtime } });
 				installed = true;
@@ -1137,8 +1158,8 @@ campaignReturn.addEventListener('click', async function () {
 		campaignView.showReport(report);
 		if (state.encounter) campaignView.prepareEncounter();
 		if (persistenceError !== undefined) {
+			updateSaveStatus(`Save failed · ${saveErrorMessage(persistenceError)} Use Save campaign in the menu to retry.`);
 			const message = `Save failed · ${saveErrorMessage(persistenceError)}`;
-			updateSaveStatus(message);
 			campaignView.notify(message);
 		}
 	} catch (error) { feedback(saveErrorMessage(error)); }
@@ -1149,6 +1170,7 @@ const openCampaignSave = async function (save: CampaignSave): Promise<void> {
 	campaignOutcome = undefined;
 	campaignSession = { ...save, campaign: setCampaignPaused(save.campaign, true) };
 	campaignRuntime = undefined; hasActiveConquest = true; activeProfileId = save.profileId;
+	updateSaveStatus(savedStatus(save.savedAt));
 	if (save.encounterState?.phase === 'battle') await enterCampaignBattle(save.encounterState.setup);
 	else {
 		if (save.campaign.encounter && !save.encounterState) {
@@ -1168,7 +1190,11 @@ const frontMenu = await createFrontMenu({
 			campaignView.reset();
 			const save = campaignSaveForState(campaign, profileId);
 			if (!profileRepository) throw new Error('Local profile storage is unavailable.');
-			await profileRepository.saveCampaign(save);
+			try {
+				await saveCampaignWithStatus(save, function () { return activeProfileId === profileId; }, 'Use Start campaign to retry.');
+			} catch (error) {
+				throw new Error(`${saveErrorMessage(error)} Start campaign to retry.`, { cause: error });
+			}
 			await openCampaignSave(save);
 		},
 		continue: async function (profileId): Promise<void> {
@@ -1186,6 +1212,7 @@ const frontMenu = await createFrontMenu({
 		await saveCurrentProfile();
 	},
 	onProfileChange: function (profileId) {
+		campaignSaveStatusRevision++;
 		activeProfileId = profileId;
 		campaignSession = undefined;
 		campaignRuntime = undefined;

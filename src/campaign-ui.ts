@@ -56,6 +56,7 @@ export const createCampaignView = function (options: {
 	render: (state: CampaignState, setup: CampaignEncounterSetup | undefined) => void;
 	showSystem: (systemId: string) => void;
 	prepareEncounter: () => void;
+	setSaveStatus: (message: string) => void;
 	notify: (message: string) => void;
 	showReport: (report: CampaignTransitionReport, open?: boolean) => void;
 	reset: () => void;
@@ -68,6 +69,10 @@ export const createCampaignView = function (options: {
 	const world = node('div', undefined, 'campaign-world');
 	space.append(world);
 	const header = node('header', undefined, 'campaign-header');
+	const saveStatus = node('span', 'Not saved', 'campaign-save-status');
+	saveStatus.setAttribute('role', 'status'); saveStatus.setAttribute('aria-live', 'polite');
+	const menuSaveStatus = node('p', 'Not saved', 'campaign-save-status-menu');
+	menuSaveStatus.setAttribute('aria-live', 'off');
 	const hint = node('p', 'Tap to inspect · Hold or right-click another system to send', 'campaign-hint');
 	const panel = node('aside', undefined, 'campaign-context campaign-system-panel'); panel.setAttribute('aria-label', 'System commands');
 	const auxiliaryPanel = node('aside', undefined, 'campaign-context campaign-auxiliary-panel'); auxiliaryPanel.setAttribute('aria-label', 'Campaign panel');
@@ -124,6 +129,14 @@ export const createCampaignView = function (options: {
 		world.classList.toggle('campaign-overview', camera.scale < 0.65);
 	};
 	const notify = function (message: string): void { status.textContent = message; status.hidden = !message; };
+	const setSaveStatus = function (message: string): void {
+		const failed = /save failed|saving failed/i.test(message);
+		saveStatus.textContent = failed ? 'Save failed · Retry from menu' : message;
+		saveStatus.title = message;
+		menuSaveStatus.textContent = message;
+		for (const element of [saveStatus, menuSaveStatus]) element.dataset.state = failed ? 'error' : message === 'Saving…' ? 'saving' : 'saved';
+		setupView.setSaveStatus(message);
+	};
 	const localPlanets = function (systemId: string): CampaignState['planets'] {
 		return state?.planets.filter(function (planet) { return planet.systemId === systemId; }) ?? [];
 	};
@@ -455,7 +468,7 @@ export const createCampaignView = function (options: {
 			const closing = context === 'menu'; context = closing ? 'none' : 'menu';
 			renderGalaxy(closing ? 'header:menu' : 'auxiliary:close');
 		}, 'campaign-menu', 'header:menu'); menu.setAttribute('aria-label', 'Campaign menu'); menu.setAttribute('aria-expanded', String(context === 'menu'));
-		actions.append(orders, end, menu); header.append(brand, score, actions);
+		actions.append(orders, end, menu); header.append(brand, score, saveStatus, actions);
 		const bounds = galaxyBounds();
 		world.style.width = `${bounds.width}px`;
 		world.style.height = `${bounds.height}px`;
@@ -521,7 +534,7 @@ export const createCampaignView = function (options: {
 		if (context === 'report') renderReport();
 		if (context === 'menu') {
 			heading(auxiliaryPanel, 'Game menu');
-			auxiliaryPanel.append(node('p', 'Campaign preview · saved locally in a separate campaign slot', 'campaign-muted'));
+			auxiliaryPanel.append(node('p', 'Campaign preview · saved locally in a separate campaign slot', 'campaign-muted'), menuSaveStatus);
 			const menuActions = node('div', undefined, 'campaign-menu-actions');
 			const fullscreen = button('', function () { void options.toggleFullscreen(); }, 'fullscreen-icon-button campaign-fullscreen', 'menu:fullscreen');
 			fullscreen.setAttribute('aria-pressed', 'false');
@@ -600,7 +613,7 @@ export const createCampaignView = function (options: {
 		if (renderedStructure === structure()) { for (const update of liveUpdates) update(); }
 		else renderGalaxy();
 	};
-	return { root, render,
+	return { root, render, setSaveStatus,
 		prepareEncounter: prepare, notify,
 		showSystem: function (systemId): void { focusSystem(systemId); },
 		showReport: function (nextReport, open = true): void {
