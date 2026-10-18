@@ -291,6 +291,30 @@ const spawnTraveler = function (
 	});
 };
 
+test('loaded and empty troop transports travel half as fast as ships for both sides', async function () {
+	for (const owner of ['blue', 'red'] as const) {
+		const world = await quietWorld();
+		try {
+			for (const entity of units(world)) world.removeEntity(entity.id);
+			const target = named(world, owner === 'blue' ? 'Terra' : 'Vega');
+			const x = target.components.planet.x + 200;
+			const y = target.components.planet.y + 200;
+			const ship = spawnTraveler(world, owner, 'ship', x, y, target.id);
+			const loaded = spawnTraveler(world, owner, 'transport', x, y, target.id, 10);
+			const empty = spawnTraveler(world, owner, 'transport', x, y, target.id);
+			step(world, 20);
+			const distanceTraveled = function (entity: ReturnType<typeof units>[number]): number {
+				return Math.hypot(entity.components.unit.x - x, entity.components.unit.y - y);
+			};
+			expect(distanceTraveled(ship)).toBeCloseTo(23.75);
+			expect(distanceTraveled(loaded)).toBeCloseTo(distanceTraveled(ship) / 2);
+			expect(distanceTraveled(empty)).toBeCloseTo(distanceTraveled(ship) / 2);
+		} finally {
+			await world.dispose();
+		}
+	}
+});
+
 test('a same-tick AI redispatch keeps an arriving ship in the spatial index', async function () {
 	const world = await createGame();
 	try {
