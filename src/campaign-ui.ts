@@ -27,8 +27,10 @@ const campaignPaceOptions = [
 	{ pace: 1, label: '1× · normal' },
 	{ pace: 2, label: '2× · fast' },
 ] as const;
-const button = function (text: string, action: () => void, className?: string): HTMLButtonElement {
-	const element = node('button', text, className); element.type = 'button'; element.addEventListener('click', action); return element;
+const button = function (text: string, action: () => void, className?: string, focusKey?: string): HTMLButtonElement {
+	const element = node('button', text, className); element.type = 'button'; element.addEventListener('click', action);
+	if (focusKey) element.dataset.focusKey = focusKey;
+	return element;
 };
 const svg = function <K extends keyof SVGElementTagNameMap>(tag: K, attributes: Record<string, string>): SVGElementTagNameMap[K] {
 	const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
@@ -59,7 +61,7 @@ export const createCampaignView = function (options: {
 	const root = node('main', undefined, 'campaign-shell'); root.id = 'campaign'; root.hidden = true;
 	root.addEventListener('contextmenu', function (event) { event.preventDefault(); });
 	const galaxy = node('section', undefined, 'campaign-galaxy-view');
-	const space = node('div', undefined, 'campaign-space'); space.tabIndex = 0; space.setAttribute('aria-label', 'Galaxy map. Drag to pan, scroll or pinch to zoom.');
+	const space = node('div', undefined, 'campaign-space'); space.tabIndex = 0; space.dataset.focusKey = 'galaxy:map'; space.setAttribute('aria-label', 'Galaxy map. Drag to pan, scroll or pinch to zoom.');
 	const world = node('div', undefined, 'campaign-world');
 	space.append(world);
 	const header = node('header', undefined, 'campaign-header');
@@ -81,8 +83,28 @@ export const createCampaignView = function (options: {
 	let disposed = false;
 	let activePreset: CampaignPresetPercentage | null = 50;
 	const drafts = new Map<string, Map<string, number>>();
+	const contributionDisclosure = new Map<string, boolean>();
+	const developmentDisclosure = new Map<string, boolean>();
 	let renderedStructure = '';
 	let liveUpdates: (() => void)[] = [];
+	const focusEvents = new AbortController();
+	const activeFocusKey = function (): string | undefined {
+		const active = document.activeElement;
+		return active instanceof HTMLElement && root.contains(active) ? active.dataset.focusKey : undefined;
+	};
+	const focusByKey = function (key: string): boolean {
+		const target = Array.from(root.querySelectorAll<HTMLElement>('[data-focus-key]')).find(function (element) {
+			return element.dataset.focusKey === key && !element.matches(':disabled') && !element.closest('[hidden], [inert]');
+		});
+		if (!target) return false;
+		target.focus();
+		return document.activeElement === target;
+	};
+	const restoreFocus = function (key: string | undefined): void {
+		if (!key || focusByKey(key)) return;
+		const fallbackKey = !auxiliaryPanel.hidden ? 'auxiliary:close' : !panel.hidden ? 'system:close' : 'galaxy:map';
+		if (!focusByKey(fallbackKey)) space.focus();
+	};
 	// Time and economic updates patch existing nodes, preserving focus, range drags, and map gestures.
 	const structure = function (): string {
 		return JSON.stringify([state?.phase, state?.paused, state?.pace, selection.selectedSystemId, selection.sourceSystemId, context,
@@ -135,7 +157,7 @@ export const createCampaignView = function (options: {
 	};
 	const run = async function (action: () => Promise<void>, success?: () => void): Promise<void> {
 		if (pending || disposed) return;
-		const restorePaceFocus = document.activeElement === auxiliaryPanel.querySelector<HTMLSelectElement>('.campaign-lab select');
+		const restoreFocusKey = activeFocusKey();
 		pending = true; root.inert = true; notify('');
 		try {
 			if (state?.encounter) await setupView.flush();
@@ -144,7 +166,7 @@ export const createCampaignView = function (options: {
 		} catch (error) { if (!disposed) notify(error instanceof Error ? error.message : 'Campaign action failed.'); }
 		finally {
 			pending = false; root.inert = false;
-			if (restorePaceFocus) auxiliaryPanel.querySelector<HTMLSelectElement>('.campaign-lab select')?.focus();
+			restoreFocus(restoreFocusKey);
 		}
 	};
 	const selectSystem = function (id: string): void {
@@ -155,7 +177,7 @@ export const createCampaignView = function (options: {
 	const focusSystem = function (id: string): void {
 		if (!state?.systems.some(function (system) { return system.id === id; })) return;
 		selection = focusCampaignSystem(selection, state, id);
-		context = 'none'; renderGalaxy();
+		context = 'none'; renderGalaxy(`system:${id}`);
 	};
 	const sendTo = function (id: string): void {
 		if (!state || pending || state.phase !== 'galaxy' || campaignWinner(state)) return;
@@ -196,11 +218,18 @@ export const createCampaignView = function (options: {
 				y: camera.y + (anchor.y - world.offsetTop - camera.y) * (1 - ratio), scale }; transform();
 		},
 	});
-	const closePanel = function (): void { context = 'none'; renderGalaxy(); };
-	const clearSelection = function (): void { selection = clearCampaignSelection(); context = 'none'; renderGalaxy(); };
+	const closePanel = function (): void {
+		const openerFocusKey = context === 'orders' ? 'header:orders' : 'header:menu';
+		context = 'none'; renderGalaxy(openerFocusKey);
+	};
+	const clearSelection = function (): void {
+		const selectedSystemId = selection.selectedSystemId;
+		selection = clearCampaignSelection(); context = 'none';
+		renderGalaxy(selectedSystemId ? `system:${selectedSystemId}` : 'galaxy:map');
+	};
 	const heading = function (target: HTMLElement, title: string, close: () => void = closePanel, closeLabel = 'Close panel'): void {
 		const row = node('div', undefined, 'campaign-context-title');
-		const control = button('×', close, 'campaign-close'); control.setAttribute('aria-label', closeLabel);
+		const control = button('×', close, 'campaign-close', target === panel ? 'system:close' : 'auxiliary:close'); control.setAttribute('aria-label', closeLabel);
 		row.append(node('h2', title), control); target.append(row);
 	};
 	const renderSystem = function (): void {
@@ -221,7 +250,7 @@ export const createCampaignView = function (options: {
 				const preset = button(`${percent}%`, function () {
 				activePreset = percent;
 				renderGalaxy();
-				});
+				}, undefined, `system:preset:${percent}`);
 				preset.disabled = !canOrder; preset.setAttribute('aria-pressed', String(activePreset === percent));
 				presetButtons.push(preset); presets.append(preset);
 			}
@@ -235,8 +264,11 @@ export const createCampaignView = function (options: {
 			updatePresetStatus();
 			panel.append(node('p', 'SEND AMOUNT · SOURCE POINTS', 'campaign-label'), presets, presetStatus,
 				node('p', 'Hold or right-click another system to send immediately. Unclaimed systems require their listed minimum.', 'campaign-rule'));
-			const details = node('details', undefined, 'campaign-contributions'); details.open = window.matchMedia('(min-width: 601px)').matches;
-			details.append(node('summary', 'Planet contributions · send / available'));
+			const details = node('details', undefined, 'campaign-contributions');
+			details.open = contributionDisclosure.get(system.id) ?? window.matchMedia('(min-width: 601px)').matches;
+			details.addEventListener('toggle', function () { contributionDisclosure.set(system.id, details.open); });
+			const contributionSummary = node('summary', 'Planet contributions · send / available'); contributionSummary.dataset.focusKey = 'system:contributions';
+			details.append(contributionSummary);
 			const summary = node('p', '', 'campaign-budget');
 			const allocationUpdates: (() => void)[] = [];
 			const updateSummary = function (): void {
@@ -261,11 +293,11 @@ export const createCampaignView = function (options: {
 				const row = node('section', undefined, 'campaign-allocation-row');
 				const label = node('label', planet.name); const field = node('input'); field.type = 'range'; field.min = '0'; field.max = String(maximum); field.step = '1';
 				field.disabled = !canOrder;
-				field.id = `campaign-contribution-${planet.id}`; label.htmlFor = field.id; field.setAttribute('aria-label', `${planet.name} contribution`);
+				field.id = `campaign-contribution-${planet.id}`; field.dataset.focusKey = `system:allocation:${planet.id}:range`; label.htmlFor = field.id; field.setAttribute('aria-label', `${planet.name} contribution`);
 				const output = node('output'); output.htmlFor = field.id;
 				const rowTitle = node('div', undefined, 'campaign-allocation-label'); rowTitle.append(label, output);
-				const minus = button('−', function () { setCustomAllocation(planet.id, field.valueAsNumber - 1); });
-				const plus = button('+', function () { setCustomAllocation(planet.id, field.valueAsNumber + 1); });
+				const minus = button('−', function () { setCustomAllocation(planet.id, field.valueAsNumber - 1); }, undefined, `system:allocation:${planet.id}:minus`);
+				const plus = button('+', function () { setCustomAllocation(planet.id, field.valueAsNumber + 1); }, undefined, `system:allocation:${planet.id}:plus`);
 				minus.setAttribute('aria-label', `Decrease ${planet.name} allocation by one point`); plus.setAttribute('aria-label', `Increase ${planet.name} allocation by one point`);
 				const update = function (): void {
 					const current = localPlanets(system.id).find(function (item) { return item.id === planet.id; });
@@ -291,7 +323,10 @@ export const createCampaignView = function (options: {
 				if (current) balance.textContent = `${amount(availablePoints(developmentMaximum(current), current.depletion))} / ${amount(developmentMaximum(current))}`;
 			});
 		}
-		const development = node('details', undefined, 'campaign-development'); development.append(node('summary', 'Development & recovery'),
+		const development = node('details', undefined, 'campaign-development');
+		development.open = developmentDisclosure.get(system.id) ?? false;
+		development.addEventListener('toggle', function () { developmentDisclosure.set(system.id, development.open); });
+		const developmentSummary = node('summary', 'Development & recovery'); developmentSummary.dataset.focusKey = 'system:development'; development.append(developmentSummary,
 			node('p', `Each galaxy second: +${amount(state.rules.development.growthFraction * 100)}% baseline capacity, capped at +${amount(state.rules.development.capFraction * 100)}%; ${amount(state.rules.recovery.fractionOfMaximum * 100)}% recovery. Captures remove ${amount(state.rules.development.captureLossFraction * 100)}% of development. Depletion persists.`)); panel.append(development);
 		if (unclaimed) panel.append(node('p', `Minimum ${amount(neutralClaimMinimum(state, system.id))} points. First qualifying arrival claims all ${local.length} planets without battle; committed points remain spent.`, 'campaign-rule'));
 		else if (!owned.length) panel.append(node('p', 'Hostile arrivals start separate real-time encounters. The galaxy waits until each battle resolves.', 'campaign-rule'));
@@ -323,9 +358,8 @@ export const createCampaignView = function (options: {
 		auxiliaryPanel.append(node('p', `${ordersView.expeditions.length} active expeditions${state.phase === 'encounter' ? ' · galaxy frozen' : ''}`, 'campaign-muted'));
 		if (ordersView.scoped) auxiliaryPanel.append(button('Show all', function () {
 			ordersPreference = showAllCampaignOrders(ordersPreference);
-			renderGalaxy();
-			auxiliaryPanel.querySelector<HTMLButtonElement>('.campaign-close')?.focus();
-		}, 'campaign-wide'));
+			renderGalaxy('auxiliary:close');
+		}, 'campaign-wide', 'orders:show-all'));
 		if (!ordersView.expeditions.length) auxiliaryPanel.append(node('p', ordersView.scoped ? 'No active expeditions for this system.' : 'No active expeditions.', 'campaign-rule'));
 		for (const expedition of ordersView.expeditions) {
 			const source = state.systems.find(function (item) { return item.id === expedition.sourceSystemId; });
@@ -336,11 +370,11 @@ export const createCampaignView = function (options: {
 				if (state) timing.textContent = `${factionLabel(expedition.factionId)} · ${amount(expedition.points)} points · ${expedition.status === 'encounter' ? 'Arrived · resolving now' : `${expedition.status === 'returning' ? 'Returning · ' : ''}ETA ${amount(Math.max(0, expeditionArrival(expedition) - state.time))}s`}`;
 			});
 			row.append(node('strong', `${source?.name ?? expedition.sourceSystemId} ${expedition.status === 'returning' ? '←' : '→'} ${destination?.name ?? expedition.destinationSystemId}`), timing,
-				button(expedition.status === 'returning' ? 'Show source' : 'Show destination', function () { focusSystem(expedition.status === 'returning' ? expedition.sourceSystemId : expedition.destinationSystemId); }, 'campaign-wide'));
+				button(expedition.status === 'returning' ? 'Show source' : 'Show destination', function () { focusSystem(expedition.status === 'returning' ? expedition.sourceSystemId : expedition.destinationSystemId); }, 'campaign-wide', `order:${expedition.id}:show`));
 			if (expedition.factionId === 'blue') {
 				const cancel = button(expedition.status === 'returning' ? 'Returning' : expedition.departureTime === state.time ? 'Cancel launch' : '↶ Recall', function () {
 					void run(function () { return options.cancelOrder(expedition.id); });
-				}, 'campaign-wide');
+				}, 'campaign-wide', `order:${expedition.id}:cancel`);
 				live(function () {
 					if (!state) return;
 					cancel.textContent = expedition.status === 'returning' ? 'Returning' : expedition.departureTime === state.time ? 'Cancel launch' : '↶ Recall';
@@ -352,7 +386,7 @@ export const createCampaignView = function (options: {
 			auxiliaryPanel.append(row);
 		}
 		auxiliaryPanel.append(node('p', 'Cancel a launch before galaxy time advances to refund its source points. Recall traveling expeditions to return points to their contributing planets after the elapsed outbound travel time. Only planets you still own are replenished; surplus is lost.', 'campaign-rule'));
-		if (state.encounter) auxiliaryPanel.append(button('Prepare encounter', prepare, 'campaign-wide campaign-primary'));
+		if (state.encounter) auxiliaryPanel.append(button('Prepare encounter', prepare, 'campaign-wide campaign-primary', 'orders:prepare-encounter'));
 	};
 	const prepare = function (): void {
 		if (!state?.encounter || !encounterSetup) return;
@@ -381,11 +415,12 @@ export const createCampaignView = function (options: {
 			row.append(node('strong', change.after.name), node('p', `${factionLabel(change.before.factionId)} → ${factionLabel(change.after.factionId)} · available ${amount(change.before.availablePoints)} → ${amount(change.after.availablePoints)} · capacity ${amount(change.before.maximumPoints)} → ${amount(change.after.maximumPoints)}`, 'campaign-rule'));
 			auxiliaryPanel.append(row);
 		}
-		if (state.encounter) auxiliaryPanel.append(node('p', 'Later arrivals wait. Galaxy time and recovery remain frozen during combat.', 'campaign-rule'), button('Prepare encounter', prepare, 'campaign-wide campaign-primary'));
-		else auxiliaryPanel.append(button('Return to system', function () { context = 'none'; renderGalaxy(); }, 'campaign-wide'));
+		if (state.encounter) auxiliaryPanel.append(node('p', 'Later arrivals wait. Galaxy time and recovery remain frozen during combat.', 'campaign-rule'), button('Prepare encounter', prepare, 'campaign-wide campaign-primary', 'report:prepare-encounter'));
+		else auxiliaryPanel.append(button('Return to system', function () { context = 'none'; renderGalaxy('header:menu'); }, 'campaign-wide', 'report:return'));
 	};
-	const renderGalaxy = function (): void {
+	const renderGalaxy = function (focusTarget?: string): void {
 		if (!state || disposed) return;
+		const previousFocusKey = activeFocusKey();
 		ordersPreference = reconcileCampaignOrdersPreference(ordersPreference, selection.selectedSystemId);
 		renderedStructure = structure(); liveUpdates = [];
 		header.replaceChildren(); world.replaceChildren(); panel.replaceChildren(); auxiliaryPanel.replaceChildren();
@@ -397,9 +432,12 @@ export const createCampaignView = function (options: {
 			clock,
 			node('span', `● ${state.planets.filter(function (planet) { return planet.factionId === 'red'; }).length} RIVAL`, 'campaign-red'));
 		const actions = node('div', undefined, 'campaign-actions');
-		if (options.save) actions.append(button('Save', function () { void run(async function () { await options.save?.(); }); }, 'campaign-save'));
+		if (options.save) actions.append(button('Save', function () { void run(async function () { await options.save?.(); }); }, 'campaign-save', 'header:save'));
 		const orderScope = campaignOrdersView(state, selection.selectedSystemId, ordersPreference.showAll);
-		const orders = button(`Orders · ${orderScope.expeditions.length}`, function () { context = context === 'orders' ? 'none' : 'orders'; renderGalaxy(); });
+		const orders = button(`Orders · ${orderScope.expeditions.length}`, function () {
+			const closing = context === 'orders'; context = closing ? 'none' : 'orders';
+			renderGalaxy(closing ? 'header:orders' : 'auxiliary:close');
+		}, undefined, 'header:orders');
 		orders.setAttribute('aria-expanded', String(context === 'orders'));
 		live(function () {
 			if (!state) return;
@@ -407,10 +445,13 @@ export const createCampaignView = function (options: {
 			orders.textContent = `Orders · ${currentOrders.expeditions.length}`;
 			orders.setAttribute('aria-label', `Orders · ${currentOrders.scope} · ${currentOrders.expeditions.length}`);
 		});
-		const end = button(state.encounter ? 'Prepare encounter' : state.paused ? 'Resume' : 'Pause', function () { if (state?.encounter) prepare(); else void run(options.pause); }, 'campaign-primary');
+		const end = button(state.encounter ? 'Prepare encounter' : state.paused ? 'Resume' : 'Pause', function () { if (state?.encounter) prepare(); else void run(options.pause); }, 'campaign-primary', 'header:time');
 		end.disabled = !state.encounter && Boolean(campaignWinner(state));
 		if (!state.encounter) { end.setAttribute('aria-pressed', String(state.paused)); end.setAttribute('aria-label', state.paused ? 'Resume galaxy time' : 'Pause galaxy time'); }
-		const menu = button('☰', function () { context = context === 'menu' ? 'none' : 'menu'; renderGalaxy(); }, 'campaign-menu'); menu.setAttribute('aria-label', 'Campaign menu'); menu.setAttribute('aria-expanded', String(context === 'menu'));
+		const menu = button('☰', function () {
+			const closing = context === 'menu'; context = closing ? 'none' : 'menu';
+			renderGalaxy(closing ? 'header:menu' : 'auxiliary:close');
+		}, 'campaign-menu', 'header:menu'); menu.setAttribute('aria-label', 'Campaign menu'); menu.setAttribute('aria-expanded', String(context === 'menu'));
 		actions.append(orders, end, menu); header.append(brand, score, actions);
 		const bounds = galaxyBounds();
 		world.style.width = `${bounds.width}px`;
@@ -448,7 +489,7 @@ export const createCampaignView = function (options: {
 			const planets = localPlanets(system.id); const owners = new Set(planets.map(function (planet) { return planet.factionId; }));
 			const owner = owners.size === 1 ? planets[0]?.factionId : undefined;
 			const points = planets.reduce(function (sum, planet) { return sum + availablePoints(developmentMaximum(planet), planet.depletion); }, 0);
-			const marker = node('button', undefined, `campaign-system${selection.selectedSystemId === system.id ? ' selected' : ''}`); marker.type = 'button'; marker.dataset.systemIndex = String(index);
+			const marker = node('button', undefined, `campaign-system${selection.selectedSystemId === system.id ? ' selected' : ''}`); marker.type = 'button'; marker.dataset.systemIndex = String(index); marker.dataset.focusKey = `system:${system.id}`;
 			const location = position(system); marker.style.left = `${location.x}px`; marker.style.top = `${location.y}px`;
 			marker.style.setProperty('--owner', owner === 'blue' ? '#60d9ff' : owner === 'red' ? '#ff867e' : owner === null ? '#8e9cae' : '#cbbcf1');
 			const minimum = owner === null ? neutralClaimMinimum(state, system.id) : undefined;
@@ -477,13 +518,14 @@ export const createCampaignView = function (options: {
 		if (context === 'report') renderReport();
 		if (context === 'menu') {
 			heading(auxiliaryPanel, 'Game menu'); auxiliaryPanel.append(node('p', 'Campaign preview · saved locally in a separate campaign slot', 'campaign-muted'),
-				button('Return to galaxy', function () { context = 'none'; renderGalaxy(); }, 'campaign-wide'));
+				button('Return to galaxy', function () { context = 'none'; renderGalaxy('header:menu'); }, 'campaign-wide', 'menu:return'));
 			const lab = node('details', undefined, 'campaign-lab');
-			lab.append(node('summary', 'Prototype lab'));
+			const labSummary = node('summary', 'Prototype lab'); labSummary.dataset.focusKey = 'menu:lab'; lab.append(labSummary);
 			lab.open = campaignLabOpen;
 			lab.addEventListener('toggle', function () { campaignLabOpen = lab.open; });
 			const paceLabel = node('label', 'Simulation pace');
 			const paceSelect = node('select');
+			paceSelect.dataset.focusKey = 'menu:pace';
 			for (const option of campaignPaceOptions) {
 				const item = node('option', option.label);
 				item.value = String(option.pace);
@@ -499,16 +541,35 @@ export const createCampaignView = function (options: {
 			paceLabel.append(paceSelect);
 			lab.append(paceLabel);
 			auxiliaryPanel.append(lab);
-			if (options.save) auxiliaryPanel.append(button('Save campaign', function () { void run(async function () { await options.save?.(); }); }, 'campaign-wide'));
-			if (report) auxiliaryPanel.append(button('Last resolution', function () { context = 'report'; renderGalaxy(); }, 'campaign-wide'));
-			if (state.encounter) auxiliaryPanel.append(button('Prepare encounter', prepare, 'campaign-wide campaign-primary'));
-			auxiliaryPanel.append(button('Save & menu', function () { void run(options.exit); }, 'campaign-wide'), node('p', 'Select a funding system. Adjust contributions, then hold or right-click a destination. Resume galaxy time to advance expeditions, recovery, and rival orders. Pause to plan without advancing time.', 'campaign-rule'));
+			if (options.save) auxiliaryPanel.append(button('Save campaign', function () { void run(async function () { await options.save?.(); }); }, 'campaign-wide', 'menu:save'));
+			if (report) auxiliaryPanel.append(button('Last resolution', function () { context = 'report'; renderGalaxy('auxiliary:close'); }, 'campaign-wide', 'menu:report'));
+			if (state.encounter) auxiliaryPanel.append(button('Prepare encounter', prepare, 'campaign-wide campaign-primary', 'menu:prepare-encounter'));
+			auxiliaryPanel.append(button('Save & menu', function () { void run(options.exit); }, 'campaign-wide', 'menu:exit'), node('p', 'Select a funding system. Adjust contributions, then hold or right-click a destination. Resume galaxy time to advance expeditions, recovery, and rival orders. Pause to plan without advancing time.', 'campaign-rule'));
 		}
 		const winner = campaignWinner(state);
 		hint.textContent = winner ? `${winner === 'blue' ? 'Campaign victory' : 'Campaign defeat'} · Open the menu to return` : state.encounter ? 'Galaxy frozen · Prepare the next encounter to continue' : 'Tap to inspect · Hold or right-click another system to send';
 		caption.textContent = `GALAXY · ${state.systems.length} SYSTEMS\nDrag to pan · Scroll to zoom`;
 		transform(); fit();
+		const focusKey = focusTarget ?? previousFocusKey;
+		restoreFocus(focusKey);
 	};
+	const isEditableTarget = function (target: EventTarget | null): boolean {
+		if (!(target instanceof HTMLElement)) return false;
+		return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || target.isContentEditable;
+	};
+	window.addEventListener('keydown', function (event) {
+		if (event.key !== 'Escape' || event.defaultPrevented || pending || root.hidden || galaxy.hidden || isEditableTarget(event.target)) return;
+		if (context === 'orders') {
+			event.preventDefault(); context = 'none'; renderGalaxy('header:orders');
+			return;
+		}
+		const auxiliaryOpen = context === 'menu' || context === 'report';
+		if (!auxiliaryOpen && selection.selectedSystemId === undefined && selection.sourceSystemId === undefined) return;
+		event.preventDefault();
+		const selectedSystemId = selection.selectedSystemId;
+		selection = clearCampaignSelection(); context = 'none';
+		renderGalaxy(auxiliaryOpen ? 'header:menu' : selectedSystemId ? `system:${selectedSystemId}` : 'galaxy:map');
+	}, { signal: focusEvents.signal });
 	let viewportWidth = 0;
 	let viewportHeight = 0;
 	const resize = new ResizeObserver(function () {
@@ -538,13 +599,13 @@ export const createCampaignView = function (options: {
 			if (!open) return;
 			preparedEncounter = undefined; input.cancel(); setupView.root.hidden = true; galaxy.hidden = false;
 			if (nextReport.focusSystemId && state) selection = focusCampaignSystem(selection, state, nextReport.focusSystemId);
-			context = 'report'; renderGalaxy();
+			context = 'report'; renderGalaxy('auxiliary:close');
 		},
 		reset: function (): void {
 			setupView.reset();
-			input.cancel(); drafts.clear(); activePreset = 50; state = undefined; selection = emptyCampaignSelection(); ordersPreference = emptyCampaignOrdersPreference(); report = undefined; encounterSetup = undefined; preparedEncounter = undefined;
+			input.cancel(); drafts.clear(); contributionDisclosure.clear(); developmentDisclosure.clear(); activePreset = 50; state = undefined; selection = emptyCampaignSelection(); ordersPreference = emptyCampaignOrdersPreference(); report = undefined; encounterSetup = undefined; preparedEncounter = undefined;
 			context = 'none'; campaignLabOpen = false; renderedStructure = ''; liveUpdates = []; fitPending = true; camera = { x: 0, y: 0, scale: 1 }; notify(''); setupView.root.hidden = true; galaxy.hidden = false;
 		},
-		dispose: function (): void { disposed = true; input.dispose(); resize.disconnect(); setupView.dispose(); root.remove(); },
+		dispose: function (): void { disposed = true; focusEvents.abort(); input.dispose(); resize.disconnect(); setupView.dispose(); root.remove(); },
 	};
 };
