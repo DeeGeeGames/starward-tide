@@ -308,10 +308,23 @@ export const runAI = function (
 		const requiredShips = Math.max(5, desiredShips);
 		const needsEscort =
 			resistance > 0 && ships + committedShips < requiredShips;
+		// If the garrison grows at least as fast as this source, secure orbit
+		// first so held-orbit planning can coordinate peaceful troop donors.
+		const canOutgrowGarrison =
+			planet.rate > defender.rate ||
+			(planet.rate === defender.rate &&
+				planet.production === 'troops' &&
+				planet.progress > defender.progress);
+		const needsOrbitBeforeTroopProduction =
+			!canCapture &&
+			defender.owner === 'blue' &&
+			defender.production === 'troops' &&
+			!canOutgrowGarrison &&
+			ships + committedShips < requiredShips;
 		setProduction(
 			world,
 			[source.id],
-			canCapture && needsEscort ? 'ships' : 'troops',
+			(needsEscort || needsOrbitBeforeTroopProduction) ? 'ships' : 'troops',
 			'red',
 		);
 		const fraction = troopFraction(planet.troops, minimumTroops);

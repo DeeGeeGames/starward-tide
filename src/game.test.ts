@@ -593,6 +593,32 @@ test('AI produces troops for a held enemy orbit and launches enough to capture i
 	}
 });
 
+test('AI secures orbit instead of waiting on an uncatchable growing garrison', async function () {
+	const map = {
+		width: 500,
+		height: 300,
+		planets: [
+			['Vega', 100, 150, 31, 'red', 44, 2.6],
+			['Terra', 400, 150, 31, 'blue', 44, 2.6],
+		],
+	} as const;
+	const world = await createGame('skirmish', map);
+	try {
+		const vega = named(world, 'Vega');
+		const terra = named(world, 'Terra');
+
+		step(world, Math.ceil(140 / CONFIG.step));
+
+		expect(shipsAt(world, terra.id, 'blue')).toHaveLength(0);
+		expect(shipsAt(world, terra.id, 'red').length).toBeGreaterThan(0);
+		expect(vega.components.planet.production).toBe('troops');
+		expect(redCargoTo(world, terra.id)).toBe(0);
+		expect(terra.components.planet.owner).toBe('blue');
+	} finally {
+		await world.dispose();
+	}
+});
+
 test('AI produces ships only when an achievable target needs an escort', async function () {
 	const map = {
 		width: 500,
