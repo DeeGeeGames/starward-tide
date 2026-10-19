@@ -191,7 +191,7 @@ const hasSavedEncounterIntegrity = function (save: CampaignSave): boolean {
 	if (!saved) return true;
 	const encounter = save.campaign.encounter;
 	if (save.campaign.phase !== 'encounter' || !encounter || encounter.id !== saved.encounterId) return false;
-	try { validateCampaignEncounterSetup(encounter, saved.setup); } catch { return false; }
+	try { validateCampaignEncounterSetup(encounter, saved.setup, { allowLegacyBeachheads: true }); } catch { return false; }
 	if (saved.phase === 'allocation') return true;
 	const system = save.campaign.systems.find(function (item) { return item.id === encounter.systemId; });
 	const game = saved.game;
