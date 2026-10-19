@@ -73,6 +73,8 @@ export interface CampaignEncounter {
 	readonly attacker: Side;
 	readonly attackerPoints: number;
 	readonly planets: readonly EncounterPlanet[];
+	/** Launch-time owned-planet spending; absent in allocation and legacy battles. */
+	readonly defenseCommitments?: readonly (PointContribution & { readonly originalDepletion: number })[];
 }
 export interface CampaignEncounterResult {
 	readonly encounterId: string;

@@ -372,7 +372,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 			updates.push(function () {
 				const total = mode === 'invasion' ? encounter.attackerPoints : planet.points;
 				const spent = mode === 'invasion' ? attackSpent() : costOf(forcesFor(mode), draftSetup());
-				budget.textContent = `${amount(spent)} / ${amount(total)} points allocated · ${amount(total - spent)} unassigned${mode === 'invasion' ? ' across all beachheads' : ` on ${planet.name}`}`;
+				budget.textContent = `${amount(spent)} / ${amount(total)} points allocated · ${amount(total - spent)} ${mode === 'invasion' ? 'unassigned across all beachheads' : `points retained on ${planet.name}`}`;
 			});
 			panel.append(section);
 		};
@@ -387,7 +387,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 			consequence.textContent = encounter.attacker === 'blue'
 				? troops === 0 ? 'No invasion troops allocated. Ships alone cannot capture planets.'
 					: left > 0 ? `${amount(left)} unassigned expedition points will be lost on launch.` : 'All expedition points assigned. Troops enter in transports; normal production continues in battle.'
-				: 'Each planet funds its own starting forces. Unassigned points produce no starting units.';
+				: 'Allocated defense points are spent on launch. Unassigned points stay on each planet. Rival unit mix and targets are unknown.';
 		});
 		refreshControls = function (): void { for (const update of updates) update(); };
 		refreshControls();
@@ -420,6 +420,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 			root.dataset.attacker = encounter.attacker;
 			world.style.width = `${system.map.width}px`; world.style.height = `${system.map.height}px`;
 			routes.setAttribute('viewBox', `0 0 ${system.map.width} ${system.map.height}`);
+			entryLabel.hidden = encounter.attacker !== 'blue';
 			entryLabel.textContent = `COMMON ${entryEdge.toUpperCase()}\nENTRY EDGE`;
 			entryLabel.dataset.edge = entryEdge;
 			planetButtons.clear(); planetViews.clear(); planetsLayer.replaceChildren();
@@ -438,7 +439,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 			}
 		}
 		const system = state.systems.find(function (item) { return item.id === encounter.systemId; });
-		heading.textContent = `${system?.name ?? encounter.systemId} · ${encounter.attacker === 'blue' ? 'Your expedition has arrived' : 'Rival invasion incoming'} · Select a planet to allocate starting forces`;
+		heading.textContent = `${system?.name ?? encounter.systemId} · ${encounter.attacker === 'blue' ? 'Your expedition has arrived' : `Rival invasion incoming · ${amount(encounter.attackerPoints)} points`} · Select a planet to allocate starting forces`;
 		blue.textContent = `● ${encounter.planets.filter(function (planet) { return planet.factionId === 'blue'; }).length} YOU`;
 		red.textContent = `● ${encounter.planets.filter(function (planet) { return planet.factionId === 'red'; }).length} RIVAL`;
 		turn.textContent = `Galaxy ${amount(state.time)}s · Frozen`;
