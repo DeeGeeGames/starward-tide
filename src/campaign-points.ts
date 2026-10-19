@@ -1,10 +1,9 @@
-/** Arithmetic inputs only; these are not campaign persistence contracts. */
+/** Planet-level campaign balances. These are arithmetic inputs, not save contracts. */
 export interface PointBalance {
 	readonly planetId: string;
 	readonly systemId: string;
 	readonly factionId: string | null;
-	readonly maximumPoints: number;
-	readonly depletion: number;
+	readonly points: number;
 }
 
 export interface PointContribution {
@@ -27,11 +26,18 @@ const requireBalance = function (value: number): void {
 		throw new Error('Balances must be finite nonnegative numbers within the safe range.');
 };
 
-/** Absolute depletion survives maximum changes, including depletion above the maximum. */
-export const availablePoints = function (maximumPoints: number, depletion: number): number {
-	requireBalance(maximumPoints);
-	requireBalance(depletion);
-	return Math.max(0, maximumPoints - depletion);
+/** Validate and return a planet balance without applying a gameplay ceiling. */
+export const availablePoints = function (points: number): number {
+	requireBalance(points);
+	return points;
+};
+
+export const creditPoints = function (points: number, credit: number): number {
+	requireBalance(points);
+	requireBalance(credit);
+	const result = points + credit;
+	requireBalance(result);
+	return result;
 };
 
 const requirePoints = function (value: number): void {
@@ -39,10 +45,7 @@ const requirePoints = function (value: number): void {
 		throw new Error('Committed points must be nonnegative safe integers.');
 };
 
-/**
- * Validate the complete debit before constructing any updated balances.
- * Purchases use whole points; fractional recovery remains in the planetary balance.
- */
+/** Validate the complete debit before constructing any updated balances. */
 export const commitPoints = function (
 	balances: readonly PointBalance[],
 	sourceSystemId: string,
@@ -56,8 +59,7 @@ export const commitPoints = function (
 		requireId(balance.planetId);
 		requireId(balance.systemId);
 		if (balance.factionId !== null) requireId(balance.factionId);
-		requireBalance(balance.maximumPoints);
-		requireBalance(balance.depletion);
+		requireBalance(balance.points);
 		if (byId.has(balance.planetId)) throw new Error('Duplicate planetary balance.');
 		byId.set(balance.planetId, balance);
 	}
@@ -73,7 +75,7 @@ export const commitPoints = function (
 			throw new Error('Contributions must come from the source system.');
 		if (balance.factionId !== factionId)
 			throw new Error('Contributions must come from owned planets.');
-		if (contribution.points > availablePoints(balance.maximumPoints, balance.depletion))
+		if (contribution.points > balance.points)
 			throw new Error('The contribution exceeds available planetary points.');
 		totalPoints += contribution.points;
 		requirePoints(totalPoints);
@@ -81,39 +83,11 @@ export const commitPoints = function (
 	}
 	return {
 		balances: balances.map(function (balance) {
-			const depletion = balance.depletion + (debits.get(balance.planetId) ?? 0);
-			requireBalance(depletion);
-			return { ...balance, depletion };
+			const points = balance.points - (debits.get(balance.planetId) ?? 0);
+			requireBalance(points);
+			return { ...balance, points };
 		}),
 		debits: contributions.map(function (contribution) { return { ...contribution }; }),
 		totalPoints,
 	};
-};
-
-export interface PointRecoveryPolicy {
-	/** Fraction of the current maximum recovered per application; supplied by the caller. */
-	readonly fractionOfMaximum: number;
-}
-
-/**
- * Reduce absolute depletion once without rounding or changing the maximum.
- * The caller owns scheduling and idempotency; no clock is consulted.
- */
-export const recoverDepletion = function (
-	depletion: number,
-	maximumPoints: number,
-	policy: PointRecoveryPolicy,
-): number {
-	requireBalance(depletion);
-	requireBalance(maximumPoints);
-	if (!Number.isFinite(policy.fractionOfMaximum) || policy.fractionOfMaximum < 0 ||
-		policy.fractionOfMaximum > 1)
-		throw new Error('Recovery fraction must be between zero and one.');
-	const recoveredPoints = maximumPoints * policy.fractionOfMaximum;
-	const remaining = Math.max(0, depletion - recoveredPoints);
-	// Repeated fractional subtraction can leave a few ulps at exhaustion. Scale
-	// cancellation cleanup to the subtraction operands, never the planetary maximum:
-	// a huge maximum with tiny recovery must not erase meaningful depletion.
-	const cancellationTolerance = 16 * Number.EPSILON * Math.max(depletion, recoveredPoints);
-	return recoveredPoints > 0 && remaining <= cancellationTolerance ? 0 : remaining;
 };

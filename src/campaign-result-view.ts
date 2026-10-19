@@ -48,15 +48,14 @@ export const createCampaignResultView = function (parent: HTMLElement): {
 		panel.append(spending);
 		for (const { before, after } of outcome.planets) {
 			const row = node('section', undefined, 'campaign-result-impact');
-			row.append(node('strong', `${after.name} · ${amount(after.availablePoints)} / ${amount(after.maximumPoints)} points`));
+			row.append(node('strong', `${after.name} · ${amount(after.availablePoints)} points · value ${amount(after.value)}`));
 			row.append(node('span', before.factionId === after.factionId ? owner(after.factionId) : `${owner(before.factionId)} → ${owner(after.factionId)}`));
-			row.append(node('small', `Development +${amount(before.developmentBonusPoints)}${before.developmentBonusPoints === after.developmentBonusPoints ? '' : ` → +${amount(after.developmentBonusPoints)}`} · Depletion ${amount(after.depletion)} retained`));
-			if (before.maximumPoints !== after.maximumPoints)
-				row.append(node('small', `Maximum ${amount(before.maximumPoints)} → ${amount(after.maximumPoints)} after capture`));
+			if (before.factionId !== after.factionId)
+				row.append(node('small', 'Ownership changed · planet balance reset to zero'));
 			panel.append(row);
 		}
 		panel.append(
-			node('p', `Galaxy time ${amount(time)}s is frozen. These balances precede remaining arrivals.`, 'campaign-result-note'),
+			node('p', `Galaxy time ${amount(time)}s and point generation are frozen. These balances precede remaining arrivals.`, 'campaign-result-note'),
 			node('p', 'Return to galaxy applies this result and resolves queued arrivals. The galaxy returns paused.', 'campaign-result-note'),
 		);
 	};

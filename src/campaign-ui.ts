@@ -2,7 +2,7 @@ import { isActiveExpedition, expeditionArrival, canCancelExpedition, neutralClai
 import type { CampaignState, ExpeditionOrder } from './campaign-state';
 import type { CampaignEncounterSetup } from './campaign-setup';
 import { availablePoints } from './campaign-points';
-import { developmentMaximum } from './campaign-development';
+import { planetGenerationRate } from './campaign-economy';
 import { campaignWinner } from './campaign-scenario';
 import { allocationsForCampaignPreset, campaignPresetPercentages } from './campaign-presets';
 import type { CampaignPresetPercentage } from './campaign-presets';
@@ -22,6 +22,7 @@ const node = function <K extends keyof HTMLElementTagNameMap>(tag: K, text?: str
 	return element;
 };
 const amount = function (value: number): string { return value.toLocaleString(undefined, { maximumFractionDigits: 1 }); };
+const rateAmount = function (value: number): string { return value.toLocaleString(undefined, { maximumFractionDigits: 3 }); };
 const wholeAmount = function (value: number): string { return value.toLocaleString(undefined, { maximumFractionDigits: 0 }); };
 const campaignPaceOptions = [
 	{ pace: 0.5, label: '0.5× · inspect' },
@@ -92,7 +93,7 @@ export const createCampaignView = function (options: {
 	let activePreset: CampaignPresetPercentage | null = 50;
 	const drafts = new Map<string, Map<string, number>>();
 	const contributionDisclosure = new Map<string, boolean>();
-	const developmentDisclosure = new Map<string, boolean>();
+	const economyDisclosure = new Map<string, boolean>();
 	let renderedStructure = '';
 	let liveUpdates: (() => void)[] = [];
 	const focusEvents = new AbortController();
@@ -145,14 +146,14 @@ export const createCampaignView = function (options: {
 		if (!draft) { draft = new Map(); drafts.set(systemId, draft); }
 		for (const planet of localPlanets(systemId)) {
 			if (planet.factionId !== 'blue') { draft.delete(planet.id); continue; }
-			const maximum = Math.floor(availablePoints(developmentMaximum(planet), planet.depletion));
+			const maximum = Math.floor(availablePoints(planet.points));
 			draft.set(planet.id, Math.min(maximum, draft.get(planet.id) ?? Math.min(10, maximum)));
 		}
 		return draft;
 	};
 	const presetAllocationsFor = function (systemId: string, percentage: CampaignPresetPercentage): Map<string, number> {
 		return allocationsForCampaignPreset(localPlanets(systemId).map(function (planet) {
-			return { planetId: planet.id, factionId: planet.factionId, availablePoints: availablePoints(developmentMaximum(planet), planet.depletion) };
+			return { planetId: planet.id, factionId: planet.factionId, availablePoints: availablePoints(planet.points) };
 		}), percentage);
 	};
 	const allocationsFor = function (systemId: string): Map<string, number> {
@@ -250,6 +251,7 @@ export const createCampaignView = function (options: {
 	};
 	const renderSystem = function (): void {
 		if (!state) return;
+		const economyPolicy = state.rules.economy;
 		const system = state.systems.find(function (item) { return item.id === selection.selectedSystemId; }); if (!system) return;
 		const local = localPlanets(system.id);
 		const owned = local.filter(function (planet) { return planet.factionId === 'blue'; });
@@ -257,7 +259,7 @@ export const createCampaignView = function (options: {
 		const unclaimed = local.every(function (planet) { return planet.factionId === null; });
 		heading(panel, system.name, clearSelection, 'Clear selection');
 		const balances = node('p', undefined, 'campaign-muted'); panel.append(balances);
-		live(function () { balances.textContent = `${local.length} planets · ${amount(localPlanets(system.id).reduce(function (sum, planet) { return sum + availablePoints(developmentMaximum(planet), planet.depletion); }, 0))} points available`; });
+		live(function () { balances.textContent = `${local.length} planets · ${amount(localPlanets(system.id).reduce(function (sum, planet) { return sum + availablePoints(planet.points); }, 0))} points available`; });
 		if (owned.length) {
 			const presets = node('div', undefined, 'campaign-presets');
 			presets.setAttribute('role', 'group'); presets.setAttribute('aria-label', 'Send percentage preset');
@@ -289,14 +291,14 @@ export const createCampaignView = function (options: {
 			const allocationUpdates: (() => void)[] = [];
 			const updateSummary = function (): void {
 				const total = [...allocationsFor(system.id).values()].reduce(function (sum, value) { return sum + value; }, 0);
-				const ownAvailable = localPlanets(system.id).filter(function (planet) { return planet.factionId === 'blue'; }).reduce(function (sum, planet) { return sum + availablePoints(developmentMaximum(planet), planet.depletion); }, 0);
+				const ownAvailable = localPlanets(system.id).filter(function (planet) { return planet.factionId === 'blue'; }).reduce(function (sum, planet) { return sum + availablePoints(planet.points); }, 0);
 				summary.textContent = `${amount(total)} points to send · ${amount(ownAvailable - total)} defense points remain`;
 			};
 			const setCustomAllocation = function (planetId: string, value: number): void {
 				const current = localPlanets(system.id).find(function (planet) { return planet.id === planetId; });
 				if (!current || current.factionId !== 'blue' || !canOrder) return;
 				materializeActivePreset();
-				const available = availablePoints(developmentMaximum(current), current.depletion);
+				const available = availablePoints(current.points);
 				const maximum = Math.floor(available);
 				draftFor(system.id).set(planetId, Math.max(0, Math.min(maximum, value)));
 				for (const presetButton of presetButtons) presetButton.setAttribute('aria-pressed', 'false');
@@ -305,9 +307,9 @@ export const createCampaignView = function (options: {
 				updateSummary();
 			};
 			for (const planet of owned) {
-				const maximum = Math.floor(availablePoints(developmentMaximum(planet), planet.depletion));
+				const maximum = Math.floor(availablePoints(planet.points));
 				const row = node('section', undefined, 'campaign-allocation-row');
-				const label = node('label', planet.name); const field = node('input'); field.type = 'range'; field.min = '0'; field.max = String(maximum); field.step = '1';
+				const label = node('label', `${planet.name} · value ${amount(planet.value)} · +${rateAmount(planetGenerationRate(planet.value, state.rules.economy))}/s`); const field = node('input'); field.type = 'range'; field.min = '0'; field.max = String(maximum); field.step = '1';
 				field.disabled = !canOrder;
 				field.id = `campaign-contribution-${planet.id}`; field.dataset.focusKey = `system:allocation:${planet.id}:range`; label.htmlFor = field.id; field.setAttribute('aria-label', `${planet.name} contribution`);
 				const output = node('output'); output.htmlFor = field.id;
@@ -318,7 +320,7 @@ export const createCampaignView = function (options: {
 				const update = function (): void {
 					const current = localPlanets(system.id).find(function (item) { return item.id === planet.id; });
 					if (!current || current.factionId !== 'blue') return;
-					const available = availablePoints(developmentMaximum(current), current.depletion);
+					const available = availablePoints(current.points);
 					const maximum = Math.floor(available); field.max = String(maximum);
 					field.value = String(allocationsFor(system.id).get(planet.id) ?? 0);
 					output.textContent = `${field.value} / ${amount(available)}`;
@@ -336,14 +338,14 @@ export const createCampaignView = function (options: {
 			row.append(node('span', `${planet.name} · ${factionLabel(planet.factionId)}`), balance); panel.append(row);
 			live(function () {
 				const current = localPlanets(system.id).find(function (item) { return item.id === planet.id; });
-				if (current) balance.textContent = `${amount(availablePoints(developmentMaximum(current), current.depletion))} / ${amount(developmentMaximum(current))}`;
+				if (current) balance.textContent = `${amount(availablePoints(current.points))} points · value ${amount(current.value)} · +${rateAmount(current.factionId === null ? 0 : planetGenerationRate(current.value, economyPolicy))}/s`;
 			});
 		}
-		const development = node('details', undefined, 'campaign-development');
-		development.open = developmentDisclosure.get(system.id) ?? false;
-		development.addEventListener('toggle', function () { developmentDisclosure.set(system.id, development.open); });
-		const developmentSummary = node('summary', 'Development & recovery'); developmentSummary.dataset.focusKey = 'system:development'; development.append(developmentSummary,
-			node('p', `Each galaxy second: +${amount(state.rules.development.growthFraction * 100)}% baseline capacity, capped at +${amount(state.rules.development.capFraction * 100)}%; ${amount(state.rules.recovery.fractionOfMaximum * 100)}% recovery. Captures remove ${amount(state.rules.development.captureLossFraction * 100)}% of development. Depletion persists.`)); panel.append(development);
+		const economy = node('details', undefined, 'campaign-economy');
+		economy.open = economyDisclosure.get(system.id) ?? false;
+		economy.addEventListener('toggle', function () { economyDisclosure.set(system.id, economy.open); });
+		const economySummary = node('summary', 'Point economy'); economySummary.dataset.focusKey = 'system:economy'; economy.append(economySummary,
+			node('p', `Owned planets generate value × ${rateAmount(state.rules.economy.generationPerValueSecond)} points per galaxy second. Neutral planets generate none. Spending reduces the balance; each ownership change resets it to zero. There is no gameplay cap. Neutral claim cost is combined planet value × ${rateAmount(state.rules.economy.neutralClaimPointsPerValue)}, rounded up to a whole point.`)); panel.append(economy);
 		if (unclaimed) panel.append(node('p', `Minimum ${amount(neutralClaimMinimum(state, system.id))} points. First qualifying arrival claims all ${local.length} planets without battle; committed points remain spent.`, 'campaign-rule'));
 		else if (!owned.length) panel.append(node('p', 'Hostile arrivals start separate real-time encounters. The galaxy waits until each battle resolves.', 'campaign-rule'));
 	};
@@ -424,14 +426,14 @@ export const createCampaignView = function (options: {
 			auxiliaryPanel.append(node('p', `${factionLabel(resolved.factionId)} ${description} ${system?.name ?? resolved.systemId} · ${amount(resolved.points)} committed points`, 'campaign-rule'));
 		}
 		const changes = report.planets.filter(function (change) {
-			return change.before.factionId !== change.after.factionId || change.before.maximumPoints !== change.after.maximumPoints || change.before.availablePoints !== change.after.availablePoints;
+			return change.before.factionId !== change.after.factionId || change.before.availablePoints !== change.after.availablePoints;
 		});
 		for (const change of changes) {
 			const row = node('section', undefined, 'campaign-order');
-			row.append(node('strong', change.after.name), node('p', `${factionLabel(change.before.factionId)} → ${factionLabel(change.after.factionId)} · available ${amount(change.before.availablePoints)} → ${amount(change.after.availablePoints)} · capacity ${amount(change.before.maximumPoints)} → ${amount(change.after.maximumPoints)}`, 'campaign-rule'));
+			row.append(node('strong', change.after.name), node('p', `${factionLabel(change.before.factionId)} → ${factionLabel(change.after.factionId)} · available points ${amount(change.before.availablePoints)} → ${amount(change.after.availablePoints)} · value ${amount(change.after.value)}`, 'campaign-rule'));
 			auxiliaryPanel.append(row);
 		}
-		if (state.encounter) auxiliaryPanel.append(node('p', 'Later arrivals wait. Galaxy time and recovery remain frozen during combat.', 'campaign-rule'), button('Prepare encounter', prepare, 'campaign-wide campaign-primary', 'report:prepare-encounter'));
+		if (state.encounter) auxiliaryPanel.append(node('p', 'Later arrivals wait. Galaxy time and point generation remain frozen during combat.', 'campaign-rule'), button('Prepare encounter', prepare, 'campaign-wide campaign-primary', 'report:prepare-encounter'));
 		else auxiliaryPanel.append(button('Return to system', function () { context = 'none'; renderGalaxy('header:menu'); }, 'campaign-wide', 'report:return'));
 	};
 	const renderGalaxy = function (focusTarget?: string): void {
@@ -504,7 +506,7 @@ export const createCampaignView = function (options: {
 		for (const [index, system] of state.systems.entries()) {
 			const planets = localPlanets(system.id); const owners = new Set(planets.map(function (planet) { return planet.factionId; }));
 			const owner = owners.size === 1 ? planets[0]?.factionId : undefined;
-			const points = planets.reduce(function (sum, planet) { return sum + availablePoints(developmentMaximum(planet), planet.depletion); }, 0);
+			const points = planets.reduce(function (sum, planet) { return sum + availablePoints(planet.points); }, 0);
 			const marker = node('button', undefined, `campaign-system${selection.selectedSystemId === system.id ? ' selected' : ''}`); marker.type = 'button'; marker.dataset.systemIndex = String(index); marker.dataset.focusKey = `system:${system.id}`;
 			const location = position(system); marker.style.left = `${location.x}px`; marker.style.top = `${location.y}px`;
 			marker.style.setProperty('--owner', owner === 'blue' ? '#60d9ff' : owner === 'red' ? '#ff867e' : owner === null ? '#8e9cae' : '#cbbcf1');
@@ -512,7 +514,7 @@ export const createCampaignView = function (options: {
 			const source = state.systems.find(function (item) { return item.id === selection.sourceSystemId; });
 			const travel = source ? Math.ceil(Math.max(state.rules.minimumTravelTime, Math.hypot(system.x - source.x, system.y - source.y) / state.rules.travelSpeed)) : undefined;
 			marker.title = `${system.name} · ${minimum !== undefined ? `Claim minimum ${wholeAmount(minimum)} points` : owner === undefined ? 'Mixed ownership' : factionLabel(owner)}${travel !== undefined && source?.id !== system.id ? ` · ${travel}s travel` : ''}`;
-			marker.setAttribute('aria-label', `${system.name}, ${owner === undefined ? 'mixed ownership' : factionLabel(owner)}, ${wholeAmount(points)} points${minimum !== undefined ? `, minimum claim ${wholeAmount(minimum)} points` : ''}`);
+			marker.setAttribute('aria-label', `${system.name}, ${owner === undefined ? 'mixed ownership' : factionLabel(owner)}, ${amount(points)} points${minimum !== undefined ? `, minimum claim ${wholeAmount(minimum)} points` : ''}`);
 			const art = svg('svg', { viewBox: '0 0 100 80', class: 'campaign-system-art', 'aria-hidden': 'true' });
 			for (const radius of [21, 34, 46]) art.append(svg('ellipse', { cx: '50', cy: '40', rx: String(radius), ry: String(radius * .55), transform: 'rotate(-25 50 40)', class: 'campaign-orbit' }));
 			art.append(svg('circle', { cx: '50', cy: '40', r: '19', class: 'campaign-star-halo' }), svg('path', { d: 'M50 23V57M33 40H67M39 29L61 51M39 51L61 29', class: 'campaign-star-ray' }), svg('circle', { cx: '50', cy: '40', r: '6', class: 'campaign-star-core' }));
@@ -520,11 +522,11 @@ export const createCampaignView = function (options: {
 				const angle = planetIndex * 2.4; const radius = 20 + planetIndex * 10;
 				art.append(svg('circle', { cx: String(50 + Math.cos(angle) * radius), cy: String(40 + Math.sin(angle) * radius * .6), r: '3.5', fill: planet.factionId === 'blue' ? '#60d9ff' : planet.factionId === 'red' ? '#ff867e' : '#8e9cae', class: 'campaign-world-dot' }));
 			}
-			const copy = node('span', undefined, 'campaign-system-copy'); copy.append(node('strong', system.name), node('span', `${wholeAmount(points)} points`, 'campaign-system-points'), node('small', minimum !== undefined ? `UNCLAIMED · min ${wholeAmount(minimum)} points` : `${owner === undefined ? 'MIXED' : factionLabel(owner)} · ${planets.length} planets`)); marker.append(art, copy); world.append(marker);
+			const copy = node('span', undefined, 'campaign-system-copy'); copy.append(node('strong', system.name), node('span', `${amount(points)} points`, 'campaign-system-points'), node('small', minimum !== undefined ? `UNCLAIMED · min ${wholeAmount(minimum)} points` : `${owner === undefined ? 'MIXED' : factionLabel(owner)} · ${planets.length} planets`)); marker.append(art, copy); world.append(marker);
 			live(function () {
-				const points = localPlanets(system.id).reduce(function (sum, planet) { return sum + availablePoints(developmentMaximum(planet), planet.depletion); }, 0);
-				const balance = copy.querySelector('.campaign-system-points'); if (balance) balance.textContent = `${wholeAmount(points)} points`;
-				marker.setAttribute('aria-label', `${system.name}, ${owner === undefined ? 'mixed ownership' : factionLabel(owner)}, ${wholeAmount(points)} points${minimum !== undefined ? `, minimum claim ${wholeAmount(minimum)} points` : ''}`);
+				const points = localPlanets(system.id).reduce(function (sum, planet) { return sum + availablePoints(planet.points); }, 0);
+				const balance = copy.querySelector('.campaign-system-points'); if (balance) balance.textContent = `${amount(points)} points`;
+				marker.setAttribute('aria-label', `${system.name}, ${owner === undefined ? 'mixed ownership' : factionLabel(owner)}, ${amount(points)} points${minimum !== undefined ? `, minimum claim ${wholeAmount(minimum)} points` : ''}`);
 			});
 		}
 		panel.hidden = selection.selectedSystemId === undefined;
@@ -566,7 +568,7 @@ export const createCampaignView = function (options: {
 			if (options.save) auxiliaryPanel.append(button('Save campaign', function () { void run(async function () { await options.save?.(); }); }, 'campaign-wide', 'menu:save'));
 			if (report) auxiliaryPanel.append(button('Last resolution', function () { context = 'report'; renderGalaxy('auxiliary:close'); }, 'campaign-wide', 'menu:report'));
 			if (state.encounter) auxiliaryPanel.append(button('Prepare encounter', prepare, 'campaign-wide campaign-primary', 'menu:prepare-encounter'));
-			auxiliaryPanel.append(button('Save & menu', function () { void run(options.exit); }, 'campaign-wide', 'menu:exit'), node('p', 'Select a funding system. Adjust contributions, then hold or right-click a destination. Resume galaxy time to advance expeditions, recovery, and rival orders. Pause to plan without advancing time.', 'campaign-rule'));
+			auxiliaryPanel.append(button('Save & menu', function () { void run(options.exit); }, 'campaign-wide', 'menu:exit'), node('p', 'Select a funding system. Adjust contributions, then hold or right-click a destination. Resume galaxy time to advance expeditions, point generation, and rival orders. Pause to plan without advancing time.', 'campaign-rule'));
 		}
 		const winner = campaignWinner(state);
 		hint.textContent = winner ? `${winner === 'blue' ? 'Campaign victory' : 'Campaign defeat'} · Open the menu to return` : state.encounter ? 'Galaxy frozen · Prepare the next encounter to continue' : 'Tap to inspect · Hold or right-click another system to send';
@@ -625,7 +627,7 @@ export const createCampaignView = function (options: {
 		},
 		reset: function (): void {
 			setupView.reset();
-			input.cancel(); drafts.clear(); contributionDisclosure.clear(); developmentDisclosure.clear(); activePreset = 50; state = undefined; selection = emptyCampaignSelection(); ordersPreference = emptyCampaignOrdersPreference(); report = undefined; encounterSetup = undefined; preparedEncounter = undefined;
+			input.cancel(); drafts.clear(); contributionDisclosure.clear(); economyDisclosure.clear(); activePreset = 50; state = undefined; selection = emptyCampaignSelection(); ordersPreference = emptyCampaignOrdersPreference(); report = undefined; encounterSetup = undefined; preparedEncounter = undefined;
 			context = 'none'; campaignLabOpen = false; renderedStructure = ''; liveUpdates = []; fitPending = true; camera = { x: 0, y: 0, scale: 1 }; notify(''); setupView.root.hidden = true; galaxy.hidden = false;
 		},
 		dispose: function (): void { disposed = true; focusEvents.abort(); input.dispose(); resize.disconnect(); setupView.dispose(); root.remove(); },

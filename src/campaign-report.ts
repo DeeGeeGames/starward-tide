@@ -1,18 +1,14 @@
 import type { Side } from './config';
 import type { CampaignEncounterResult, CampaignPlanet, CampaignState } from './campaign-state';
 import { expeditionArrival, neutralClaimMinimum } from './campaign-state';
-import { captureDevelopment, developmentMaximum } from './campaign-development';
-import { availablePoints } from './campaign-points';
+import { changePlanetOwnership } from './campaign-economy';
 
 export interface CampaignPlanetReport {
 	readonly planetId: string;
 	readonly systemId: string;
 	readonly name: string;
 	readonly factionId: Side | null;
-	readonly baselinePoints: number;
-	readonly developmentBonusPoints: number;
-	readonly maximumPoints: number;
-	readonly depletion: number;
+	readonly value: number;
 	readonly availablePoints: number;
 }
 export interface CampaignPlanetChange {
@@ -48,10 +44,8 @@ export interface CampaignTransitionReport {
 }
 
 const snapshot = function (planet: CampaignPlanet): CampaignPlanetReport {
-	const maximumPoints = developmentMaximum(planet);
 	return { planetId: planet.id, systemId: planet.systemId, name: planet.name, factionId: planet.factionId,
-		baselinePoints: planet.baselinePoints, developmentBonusPoints: planet.developmentBonusPoints,
-		maximumPoints, depletion: planet.depletion, availablePoints: availablePoints(maximumPoints, planet.depletion) };
+		value: planet.value, availablePoints: planet.points };
 };
 
 /** Battle consequences only: later arrivals have not happened. */
@@ -73,7 +67,7 @@ export const describeEncounterOutcome = function (
 		const planet = planets.get(event.planetId);
 		if (!planet || planet.factionId === event.factionId || (event.factionId !== 'blue' && event.factionId !== 'red'))
 			throw new Error('Outcome capture events must change ownership of a known encounter planet.');
-		planets.set(planet.id, { ...planet, ...captureDevelopment(planet, event.factionId, state.time, state.rules.development), factionId: event.factionId });
+		planets.set(planet.id, changePlanetOwnership(planet, event.factionId));
 	}
 	const ownership = new Map(result.ownership.map(function (item) { return [item.planetId, item.factionId] as const; }));
 	if (ownership.size !== result.ownership.length || ownership.size !== originals.length ||

@@ -146,7 +146,7 @@ export const commitEncounterDefenses = function (
 		if (!result.valid) throw new Error(result.reason);
 		const balance = state.planets.find(function (item) { return item.id === planet.planetId; });
 		if (!balance) throw new Error('Defense planet is missing');
-		return { planetId: planet.planetId, points: result.spent, originalDepletion: balance.depletion };
+		return { planetId: planet.planetId, points: result.spent, originalPoints: balance.points };
 	});
 	if (encounter.defenseCommitments) {
 		if (commitments.length !== encounter.defenseCommitments.length || commitments.some(function (item) {
@@ -157,9 +157,9 @@ export const commitEncounterDefenses = function (
 	const planets = state.planets.map(function (planet) {
 		const debit = commitments.find(function (item) { return item.planetId === planet.id; });
 		if (!debit) return planet;
-		const depletion = planet.depletion + debit.points;
-		if (!Number.isFinite(depletion) || depletion > Number.MAX_SAFE_INTEGER) throw new Error('Defense spending exceeds the safe range');
-		return { ...planet, depletion };
+		const points = planet.points - debit.points;
+		if (!Number.isFinite(points) || points < 0 || points > Number.MAX_SAFE_INTEGER) throw new Error('Defense spending exceeds the safe range');
+		return { ...planet, points };
 	});
 	return { ...state, planets, encounter: { ...encounter, defenseCommitments: commitments } };
 };

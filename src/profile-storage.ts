@@ -196,8 +196,27 @@ export class ProfileRepository {
 		try {
 			const raw = await this.database.getProfile(id);
 			if (raw === undefined) throw new ProfileNotFoundError();
-			const profile = parseStoredProfile(raw);
+			let profile = parseStoredProfile(raw);
 			if (profile.campaignSave === undefined) return undefined;
+			if (isRecord(profile.campaignSave) && profile.campaignSave.schemaVersion === 2) {
+				let discarded = false;
+				const database = this.database;
+				await this.enqueueWrite(id, function () {
+					return database.updateProfile(id, function (current) {
+						if (!isRecord(current.campaignSave) || current.campaignSave.schemaVersion !== 2) return current;
+						const next = { ...current };
+						delete next.campaignSave;
+						discarded = true;
+						return next;
+					});
+				});
+				if (discarded)
+					throw new InvalidSaveError('Early development reset: this older campaign save was deleted. Your profile and skirmish save were preserved. Start a new campaign.');
+				const latest = await database.getProfile(id);
+				if (latest === undefined) throw new ProfileNotFoundError();
+				profile = parseStoredProfile(latest);
+				if (profile.campaignSave === undefined) return undefined;
+			}
 			return parseCampaignSave(profile.campaignSave, id);
 		} catch (error) {
 			if (error instanceof InvalidSaveError || error instanceof ProfileNotFoundError)

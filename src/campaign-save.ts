@@ -7,7 +7,7 @@ import type { GameSnapshot } from './save-state';
 import { availablePoints } from './campaign-points';
 import { gameSnapshotSchema, InvalidSaveError } from './save-state';
 
-export const CAMPAIGN_SAVE_SCHEMA_VERSION = 2;
+export const CAMPAIGN_SAVE_SCHEMA_VERSION = 3;
 
 export type SavedCampaignEncounter =
 	| { phase: 'allocation'; encounterId: string; setup: CampaignEncounterSetup }
@@ -27,14 +27,12 @@ const amount = z.number().check(z.gte(0), z.lte(Number.MAX_SAFE_INTEGER));
 const galaxyCoordinate = z.number().check(z.gte(-Number.MAX_SAFE_INTEGER), z.lte(Number.MAX_SAFE_INTEGER));
 const integer = amount.check(z.refine(Number.isSafeInteger));
 const positiveInteger = integer.check(z.gt(0));
-const fraction = z.number().check(z.gte(0), z.lte(1));
 const side = z.enum(['blue', 'red']);
 const owner = z.nullable(side);
 const contribution = z.object({ planetId: id, points: integer });
 const planet = z.object({
 	id, systemId: id, name: id, factionId: owner,
-	baselinePoints: amount, developmentBonusPoints: amount, depletion: amount,
-	capturedTime: z.nullable(amount), lastAppliedTime: amount,
+	points: amount, value: amount,
 });
 const expedition = z.object({
 	id, factionId: side, sourceSystemId: id, destinationSystemId: id,
@@ -46,7 +44,7 @@ const expedition = z.object({
 const encounter = z.object({
 	id, expeditionId: id, systemId: id, attacker: side, attackerPoints: positiveInteger,
 	planets: z.array(z.object({ planetId: id, name: id, factionId: owner, points: amount })).check(z.minLength(1), z.maxLength(100)),
-	defenseCommitments: z.optional(z.array(z.object({ planetId: id, points: integer, originalDepletion: amount })).check(z.maxLength(100))),
+	defenseCommitments: z.optional(z.array(z.object({ planetId: id, points: integer, originalPoints: amount })).check(z.maxLength(100))),
 });
 const result = z.object({
 	encounterId: id,
@@ -68,10 +66,13 @@ const hasCampaignIntegrity = function (state: CampaignState): boolean {
 			local.some(function (item) { return !system.map.planets.some(function (seed) { return seed[0] === item.name; }); })) return false;
 	}
 	for (const item of state.planets) {
-		if (!systems.has(item.systemId) || item.lastAppliedTime !== state.time ||
-			(item.capturedTime !== null && item.capturedTime > state.time) ||
-			item.developmentBonusPoints > item.baselinePoints * state.rules.development.capFraction ||
-			item.baselinePoints + item.developmentBonusPoints > Number.MAX_SAFE_INTEGER) return false;
+		if (!systems.has(item.systemId)) return false;
+	}
+	const systemPointTotals = new Map<string, number>();
+	for (const item of state.planets) {
+		const total = (systemPointTotals.get(item.systemId) ?? 0) + item.points;
+		if (!Number.isFinite(total) || total > Number.MAX_SAFE_INTEGER) return false;
+		systemPointTotals.set(item.systemId, total);
 	}
 	for (const item of state.expeditions) {
 		const source = systems.get(item.sourceSystemId);
@@ -120,9 +121,8 @@ const hasCampaignIntegrity = function (state: CampaignState): boolean {
 			const saved = planets.get(input.planetId);
 			const commitment = commitments?.find(function (item) { return item.planetId === input.planetId; });
 			if (!saved || saved.systemId !== current.systemId || saved.name !== input.name || saved.factionId !== input.factionId ||
-				(commitment && saved.depletion !== commitment.originalDepletion + commitment.points)) return false;
-			const maximum = saved.baselinePoints + saved.developmentBonusPoints;
-			if (input.points !== availablePoints(maximum, commitment?.originalDepletion ?? saved.depletion)) return false;
+				(commitment && saved.points !== commitment.originalPoints - commitment.points) ||
+				input.points !== availablePoints(commitment?.originalPoints ?? saved.points)) return false;
 		}
 	}
 	for (const resolved of state.resolvedEncounters) {
@@ -155,9 +155,7 @@ export const campaignStateSchema = z.object({
 		travelSpeed: z.number().check(z.gt(0), z.lte(Number.MAX_SAFE_INTEGER)),
 		minimumTravelTime: z.number().check(z.gte(MINIMUM_CAMPAIGN_EVENT_SECONDS), z.lte(Number.MAX_SAFE_INTEGER)),
 		rivalInterval: z.number().check(z.gte(MINIMUM_CAMPAIGN_EVENT_SECONDS), z.lte(Number.MAX_SAFE_INTEGER)),
-		neutralClaimFraction: fraction,
-		development: z.object({ growthFraction: fraction, capFraction: fraction, captureLossFraction: fraction }),
-		recovery: z.object({ fractionOfMaximum: fraction }),
+		economy: z.object({ generationPerValueSecond: amount, neutralClaimPointsPerValue: amount }),
 	}),
 	systems: z.array(z.object({ id, name: id, x: galaxyCoordinate, y: galaxyCoordinate, map: gameSnapshotSchema.shape.map })).check(z.minLength(1), z.maxLength(100)),
 	planets: z.array(planet).check(z.minLength(1), z.maxLength(10000)),
@@ -249,7 +247,9 @@ export const parseCampaignSave = function (input: unknown, expectedProfileId?: s
 		throw new InvalidSaveError('This campaign was created by a newer game version. Its profile data was kept unchanged.');
 	if (typeof input === 'object' && input !== null && 'schemaVersion' in input &&
 		typeof input.schemaVersion === 'number' && input.schemaVersion < CAMPAIGN_SAVE_SCHEMA_VERSION)
-		throw new InvalidSaveError('Turn-based campaign saves are no longer supported. Start a new campaign. Its profile data was kept unchanged.');
+		throw new InvalidSaveError(input.schemaVersion === 2
+			? 'Version 2 campaign saves use the earlier development economy and cannot be continued. Start a new campaign; other profile data is preserved.'
+			: 'Turn-based campaign saves are no longer supported. Start a new campaign. Its profile data was kept unchanged.');
 	const parsed = campaignSaveSchema.safeParse(input);
 	if (!parsed.success || (expectedProfileId !== undefined && parsed.data.profileId !== expectedProfileId))
 		throw new InvalidSaveError('Could not validate this saved campaign. Its profile data was kept unchanged.');
