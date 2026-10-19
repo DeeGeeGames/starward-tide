@@ -330,7 +330,7 @@ export const createFrontMenu = async function (options: {
 			await profilePicker.reload();
 			const current = profilePicker.getState().selectedProfile;
 			if (!current) throw new Error('Choose a local profile first.');
-			if (!resume && current.hasCampaignSave && !window.confirm(`Replace ${current.name}'s saved campaign? Its skirmish save will be kept.`)) return;
+			if (!resume && current.hasCampaignSave && !window.confirm(`Early-development reset: replace ${current.name}'s saved campaign? Campaign progress will be deleted; the profile and skirmish save will be kept.`)) return;
 			if (resume) await options.campaign.continue(current.id);
 			else await options.campaign.start(current.id, createGeneratedCampaign(map));
 		} catch (error) {

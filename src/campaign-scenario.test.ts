@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { campaignWinner, commitCampaignRival, createCampaign, createGeneratedCampaign } from './campaign-scenario';
 import { generateMap, MAP_SIZES } from './maps';
-import { parseCampaignSave } from './campaign-save';
+import { CAMPAIGN_SAVE_SCHEMA_VERSION, parseCampaignSave } from './campaign-save';
 import { applyCampaignEncounterResult, commitExpedition, advanceCampaign, setCampaignPaused } from './campaign-state';
 import type { CampaignState } from './campaign-state';
 
@@ -21,14 +21,22 @@ test('fixture has two owned and two unclaimed three-planet systems and round-tri
 	expect(state.systems.map(function (system) { return [system.id, system.x, system.y]; })).toEqual([
 		['sol', 100, 100], ['sirius', 200, 100], ['deneb', 100, 200], ['arcturus', 200, 200],
 	]);
-	expect(state.planets.every(function (planet) { return planet.baselinePoints === 100; })).toBe(true);
-	const save = { schemaVersion: 2, mode: 'campaign' as const, profileId: 'p', savedAt: 100, campaign: state };
+	expect(state.planets.every(function (planet) { return planet.points === 0; })).toBe(true);
+	const systemValues = state.systems.map(function (system) {
+		return state.planets.filter(function (planet) { return planet.systemId === system.id; })
+			.reduce(function (total, planet) { return total + planet.value; }, 0);
+	});
+	expect(new Set(systemValues).size).toBe(state.systems.length);
+	const save = { schemaVersion: CAMPAIGN_SAVE_SCHEMA_VERSION, mode: 'campaign' as const, profileId: 'p', savedAt: 100, campaign: state };
 	expect(parseCampaignSave(save)).toEqual(save);
 	expect(createCampaign()).toEqual(state);
 });
 
 test('rival commits half its source budget once, using stable planets without overspending', function () {
-	const start = createCampaign();
+	const initial = createCampaign();
+	const start = { ...initial, planets: initial.planets.map(function (planet) {
+		return planet.factionId === 'red' ? { ...planet, points: 100 } : planet;
+	}) };
 	const next = commitCampaignRival(start);
 	expect(next.expeditions).toHaveLength(1);
 	expect(next.expeditions[0]?.id).toBe('rival:10');
@@ -37,11 +45,23 @@ test('rival commits half its source budget once, using stable planets without ov
 	expect(next.expeditions[0]?.destinationSystemId).toBe('arcturus');
 	expect(next.expeditions[0]?.contributions).toEqual([{ planetId: 'sirius:1', points: 100 }, { planetId: 'sirius:2', points: 50 }]);
 	expect(commitCampaignRival(next)).toBe(next);
-	expect(start.planets.every(function (planet) { return planet.depletion === 0; })).toBe(true);
+	expect(createCampaign().planets.every(function (planet) { return planet.points === 0; })).toBe(true);
+});
+
+test('rival begins expanding after owned planets generate points from a zero start', function () {
+	const start = createCampaign();
+	expect(commitCampaignRival(start)).toBe(start);
+	const expanded = finish(start);
+	expect(expanded.expeditions).toHaveLength(1);
+	expect(expanded.expeditions[0]?.factionId).toBe('red');
+	expect(expanded.expeditions[0]?.points).toBeGreaterThan(0);
 });
 
 test('rival targets nearest hostile system and breaks equal distances with stable identities', function () {
-	const start = createCampaign();
+	const base = createCampaign();
+	const start = { ...base, planets: base.planets.map(function (planet) {
+		return planet.factionId === 'red' ? { ...planet, points: 100 } : planet;
+	}) };
 	const home = start.systems.find(function (system) { return system.id === 'sol'; });
 	if (!home) throw new Error('Missing fixture home');
 	const tied = { ...start, systems: [...start.systems, { ...home, id: 'alpha', name: 'Alpha', x: 200, y: 200 }],
@@ -56,35 +76,41 @@ test('rival targets nearest hostile system and breaks equal distances with stabl
 test('zero and individually unspendable fractional budgets produce no order', function () {
 	const state = createCampaign();
 	for (const remainder of [0, 0.9]) {
-		const depleted = { ...state, planets: state.planets.map(function (planet) { return { ...planet, depletion: 100 - remainder }; }) };
-		expect(commitCampaignRival(depleted)).toBe(depleted);
+		const fractional = { ...state, planets: state.planets.map(function (planet) {
+			return planet.factionId === 'red' ? { ...planet, points: remainder } : planet;
+		}) };
+		expect(commitCampaignRival(fractional)).toBe(fractional);
 	}
 });
 
 test('rival floors odd balances and schedules only one decision per interval', function () {
 	const start = createCampaign();
 	const odd = { ...start, planets: start.planets.map(function (planet) {
-		return planet.id === 'sirius:1' ? { ...planet, depletion: 1 } : planet;
+		return planet.id === 'sirius:1' ? { ...planet, points: 299 } : { ...planet, points: 0 };
 	}) };
 	expect(commitCampaignRival(odd).expeditions[0]?.points).toBe(149);
-	const before = advanceCampaign(setCampaignPaused(start, false), 9.9);
+	const slower = { ...start, rules: { ...start.rules, travelSpeed: 2 } };
+	const before = advanceCampaign(setCampaignPaused(slower, false), 9.9);
 	expect(before.expeditions).toHaveLength(0);
 	const first = advanceCampaign(before, 0.1);
 	expect(first.expeditions).toHaveLength(1);
 	expect(first.expeditions[0]?.id).toBe('rival:10');
 	expect(first.expeditions[0]?.departureTime).toBe(10);
-	expect(first.expeditions[0]?.arrivalTime).toBe(20);
+	expect(first.expeditions[0]?.arrivalTime).toBe(60);
 	const next = advanceCampaign(first, 10);
 	expect(next.expeditions).toHaveLength(2);
 	expect(next.expeditions.at(-1)?.id).toBe('rival:20');
 	expect(next.nextRivalTime).toBe(30);
-	expect(parseCampaignSave({ schemaVersion: 2, mode: 'campaign', profileId: 'rival', savedAt: 100, campaign: next }).campaign).toEqual(next);
+	expect(parseCampaignSave({ schemaVersion: CAMPAIGN_SAVE_SCHEMA_VERSION, mode: 'campaign', profileId: 'rival', savedAt: 100, campaign: next }).campaign).toEqual(next);
 });
 
 test('rival skips unaffordable neutral colonization without increasing its half-budget', function () {
-	const initial = createCampaign();
+	const base = createCampaign();
+	const initial = { ...base, planets: base.planets.map(function (planet) {
+		return planet.factionId === 'red' ? { ...planet, points: 100 } : planet;
+	}) };
 	const state = { ...initial, planets: initial.planets.map(function (planet) {
-		return planet.factionId === 'red' ? { ...planet, depletion: 90 } : planet;
+		return planet.factionId === 'red' ? { ...planet, points: 10 } : planet;
 	}) };
 	const sent = commitCampaignRival(state);
 	expect(sent.expeditions[0]?.points).toBe(15);
@@ -102,7 +128,10 @@ test('rival skips systems with only its own planets and neutral planets', functi
 });
 
 test('planet loss does not eliminate a faction while relief remains in flight or an encounter is active', function () {
-	const start = createCampaign();
+	const base = createCampaign();
+	const start = { ...base, planets: base.planets.map(function (planet) {
+		return planet.factionId === 'red' ? { ...planet, points: 100 } : planet;
+	}) };
 	const sent = commitCampaignRival(start);
 	const lost = { ...sent, planets: sent.planets.map(function (planet) { return { ...planet, factionId: 'blue' as const }; }) };
 	expect(campaignWinner(lost)).toBeNull();
@@ -113,7 +142,10 @@ test('planet loss does not eliminate a faction while relief remains in flight or
 });
 
 test('the last encounter result returns paused and declares campaign victory', function () {
-	const start = createCampaign();
+	const base = createCampaign();
+	const start = { ...base, planets: base.planets.map(function (planet) {
+		return planet.systemId === 'sol' ? { ...planet, points: 100 } : planet;
+	}) };
 	const state = finish(commitExpedition(start, { id: 'attack', factionId: 'blue', sourceSystemId: 'sol', destinationSystemId: 'sirius',
 		contributions: [{ planetId: 'sol:1', points: 100 }] }));
 	expect(campaignWinner(state)).toBeNull();
@@ -140,15 +172,15 @@ for (const size of ['small', 'medium', 'large'] as const) {
 				const owned = campaign.planets.filter(function (planet) { return planet.factionId === side; });
 				expect(owned).toHaveLength(3);
 				expect(new Set(owned.map(function (planet) { return planet.systemId; })).size).toBe(1);
-				expect(owned.every(function (planet) { return planet.baselinePoints === 100; })).toBe(true);
+				expect(owned.every(function (planet) { return planet.points === 0; })).toBe(true);
 			}
 			expect(campaign.planets.filter(function (planet) { return planet.factionId === null; }))
 				.toHaveLength((MAP_SIZES[size].count - 2) * 3);
-			const save = { schemaVersion: 2, mode: 'campaign' as const, profileId: 'generated', savedAt: 100, campaign };
+			const save = { schemaVersion: CAMPAIGN_SAVE_SCHEMA_VERSION, mode: 'campaign' as const, profileId: 'generated', savedAt: 100, campaign };
 			expect(parseCampaignSave(save)).toEqual(save);
 			expect(createGeneratedCampaign(preview)).toEqual(campaign);
 			expect(layout).toEqual(preview);
-			const ordered = commitCampaignRival(campaign);
+			const ordered = finish(campaign);
 			expect(ordered.expeditions).toHaveLength(1);
 			expect(function () { finish(ordered); }).not.toThrow();
 		}

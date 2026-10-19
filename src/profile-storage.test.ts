@@ -335,7 +335,7 @@ const makeCampaignSave = function (profileId: string, savedAt: number): Campaign
 		systems: [{ id: 'home', name: 'Home', x: 0, y: 0, map }],
 		planets: ['One', 'Two'].map(function (name) {
 			return { id: name, name, systemId: 'home', factionId: 'blue' as const,
-				baselinePoints: 100, developmentBonusPoints: 0, depletion: 0, capturedTime: null, lastAppliedTime: 0 };
+				points: 0, value: name === 'One' ? 1 : 2 };
 		}), expeditions: [], encounter: null, resolvedEncounters: [],
 	} };
 };
@@ -370,6 +370,22 @@ test('malformed and unsupported campaign loads do not change either stored slot'
 		expect(await database.getProfile(profile.id)).toEqual(before);
 	}
 	await expect(repository.loadCampaignSave('missing')).rejects.toBeInstanceOf(ProfileNotFoundError);
+	repository.close();
+});
+
+test('early-development version 2 campaign saves are deleted while profile and skirmish data remain', async function () {
+	const database = new MemoryProfileDatabase();
+	const repository = new ProfileRepository(database);
+	const profile = await repository.createProfile('Early campaign');
+	const skirmish = makeSave(profile.id, 100);
+	await repository.saveProfile(skirmish);
+	const oldCampaign = { ...makeCampaignSave(profile.id, 200), schemaVersion: 2 };
+	await database.updateProfile(profile.id, function (stored) { return { ...stored, campaignSave: oldCampaign }; });
+	await expect(repository.loadCampaignSave(profile.id)).rejects.toThrow('Early development reset');
+	const after = await database.getProfile(profile.id);
+	expect(after).toMatchObject({ id: profile.id, name: profile.name, save: skirmish });
+	expect(after).not.toHaveProperty('campaignSave');
+	expect((await repository.listProfiles())[0]).toMatchObject({ hasSave: true, hasCampaignSave: false });
 	repository.close();
 });
 
@@ -410,7 +426,9 @@ test('separate campaign slot stores allocation drafts and active battles without
 	const home = save.campaign.systems[0];
 	if (!home) throw new Error('Missing fixture system');
 	const expanded = { ...save.campaign, systems: [home, { ...home, id: 'away', name: 'Away', x: 100 }],
-		planets: [...save.campaign.planets, ...save.campaign.planets.map(function (planet) {
+		planets: [...save.campaign.planets.map(function (planet) {
+			return planet.id === 'One' ? { ...planet, points: 100 } : planet;
+		}), ...save.campaign.planets.map(function (planet) {
 			return { ...planet, id: `away:${planet.id}`, systemId: 'away', factionId: 'red' as const };
 		})] };
 	const committed = commitExpedition(expanded, { id: 'one', factionId: 'blue', sourceSystemId: 'home', destinationSystemId: 'away',

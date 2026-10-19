@@ -19,23 +19,34 @@ export const createCampaign = function (): CampaignState {
 		{ id: 'deneb', name: 'Deneb', x: 100, y: 200, map: systemMap('neutral', ['Deneb', 'Sadr', 'Gienah']) },
 		{ id: 'arcturus', name: 'Arcturus', x: 200, y: 200, map: systemMap('neutral', ['Arcturus', 'Izar', 'Muphrid']) },
 	];
-	return campaignFromSystems(systems);
+	return campaignFromSystems(systems, new Map([
+		['sol', 2.6], ['sirius', 3.4], ['deneb', 1.7], ['arcturus', 2.2],
+	]));
 };
 
 /** Build a campaign from the exact generated arrangement shown in setup. */
 export const createGeneratedCampaign = function (layout: StarMap): CampaignState {
-	return campaignFromSystems(layout.planets.map(function ([name, x, y, , owner]): CampaignSystem {
-		return { id: name.toLowerCase(), name, x, y,
-			map: systemMap(owner, [`${name} I`, `${name} II`, `${name} III`]) };
-	}));
+	const systemValues = new Map<string, number>();
+	const systems = layout.planets.map(function ([name, x, y, , owner, , value]): CampaignSystem {
+		const id = name.toLowerCase();
+		systemValues.set(id, value);
+		return { id, name, x, y, map: systemMap(owner, [`${name} I`, `${name} II`, `${name} III`]) };
+	});
+	return campaignFromSystems(systems, systemValues);
 };
 
-const campaignFromSystems = function (systems: readonly CampaignSystem[]): CampaignState {
+const campaignFromSystems = function (
+	systems: readonly CampaignSystem[],
+	systemValues: ReadonlyMap<string, number>,
+): CampaignState {
 	const planets: CampaignPlanet[] = systems.flatMap(function (system) {
+		const systemValue = systemValues.get(system.id);
+		if (systemValue === undefined || !Number.isFinite(systemValue) || systemValue < 0)
+			throw new Error('Campaign systems require a finite nonnegative value.');
+		const valueMultiplier = systemValue / 2.6;
 		return system.map.planets.map(function (seed, index) {
 			return { id: `${system.id}:${index + 1}`, systemId: system.id, name: seed[0],
-				factionId: seed[4] === 'neutral' ? null : seed[4],
-				baselinePoints: 100, developmentBonusPoints: 0, depletion: 0, capturedTime: null, lastAppliedTime: 0 };
+				factionId: seed[4] === 'neutral' ? null : seed[4], points: 0, value: seed[6] * valueMultiplier };
 		});
 	});
 	return { time: 0, paused: true, pace: 1, nextRivalTime: CAMPAIGN_RULES.rivalInterval, phase: 'galaxy', rules: structuredClone(CAMPAIGN_RULES), systems, planets,

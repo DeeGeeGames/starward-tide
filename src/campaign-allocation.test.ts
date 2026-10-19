@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { validateAttackerAllocation, validateDefenderAllocation } from './campaign-allocation';
-import { availablePoints, recoverDepletion } from './campaign-points';
+import { availablePoints } from './campaign-points';
 
 const costs = { troops: 2, ships: 5, guns: 8 };
 const planets = ['sol', 'terra'];
@@ -32,9 +32,8 @@ test('ship-only and troop-only invasions are allocation choices', function () {
 		.toEqual({ valid: true, spent: 20, remaining: 0 });
 });
 
-test('recovered fractional balances buy whole forces and retain fractional points', function () {
-	const depletion = recoverDepletion(25, 25, { fractionOfMaximum: 0.1 });
-	const budget = availablePoints(25, depletion);
+test('fractional generated balances buy whole forces and retain fractional points', function () {
+	const budget = availablePoints(2.5);
 	expect(budget).toBe(2.5);
 	expect(validateDefenderAllocation(budget, { troops: 1, ships: 0, guns: 0 }, costs))
 		.toEqual({ valid: true, spent: 2, remaining: 0.5 });

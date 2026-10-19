@@ -1,17 +1,15 @@
 import type { Side } from './config';
 import type { StarMap } from './maps';
-import { availablePoints, commitPoints } from './campaign-points';
-import type { PointContribution, PointRecoveryPolicy } from './campaign-points';
-import { captureDevelopment, advanceDevelopment, developmentMaximum } from './campaign-development';
-import type { DevelopmentPolicy, PlanetDevelopment } from './campaign-development';
+import { availablePoints, commitPoints, creditPoints } from './campaign-points';
+import { advancePlanetPoints, changePlanetOwnership, neutralClaimMinimum as calculateNeutralClaimMinimum } from './campaign-economy';
+import type { CampaignEconomyPolicy, PlanetEconomy } from './campaign-economy';
+import type { PointContribution } from './campaign-points';
 
 export interface CampaignRules {
 	readonly travelSpeed: number;
 	readonly minimumTravelTime: number;
 	readonly rivalInterval: number;
-	readonly neutralClaimFraction: number;
-	readonly development: DevelopmentPolicy;
-	readonly recovery: PointRecoveryPolicy;
+	readonly economy: CampaignEconomyPolicy;
 }
 /** Smallest supported configured event interval, in galaxy seconds. */
 export const MINIMUM_CAMPAIGN_EVENT_SECONDS = 0.01;
@@ -27,9 +25,7 @@ export const CAMPAIGN_RULES: CampaignRules = {
 	travelSpeed: 10,
 	minimumTravelTime: 10,
 	rivalInterval: 10,
-	neutralClaimFraction: 0.1,
-	development: { growthFraction: 0.002, capFraction: 0.2, captureLossFraction: 0.5 },
-	recovery: { fractionOfMaximum: 0.01 },
+	economy: { generationPerValueSecond: 0.1, neutralClaimPointsPerValue: 5.45 },
 };
 export interface CampaignSystem {
 	readonly id: string;
@@ -38,12 +34,11 @@ export interface CampaignSystem {
 	readonly y: number;
 	readonly map: StarMap;
 }
-export interface CampaignPlanet extends PlanetDevelopment {
+export interface CampaignPlanet extends PlanetEconomy {
 	readonly id: string;
 	readonly systemId: string;
 	/** Unique tactical map planet name in this system. */
 	readonly name: string;
-	readonly factionId: Side | null;
 }
 export interface ExpeditionOrder {
 	/** Globally unique caller-supplied idempotency key, also the expedition identity. */
@@ -74,7 +69,7 @@ export interface CampaignEncounter {
 	readonly attackerPoints: number;
 	readonly planets: readonly EncounterPlanet[];
 	/** Launch-time owned-planet spending; absent in allocation and legacy battles. */
-	readonly defenseCommitments?: readonly (PointContribution & { readonly originalDepletion: number })[];
+	readonly defenseCommitments?: readonly (PointContribution & { readonly originalPoints: number })[];
 }
 export interface CampaignEncounterResult {
 	readonly encounterId: string;
@@ -101,22 +96,62 @@ const requireId = function (id: string): void { if (!id.trim()) throw new Error(
 const requireSide = function (side: Side): void {
 	if (side !== 'blue' && side !== 'red') throw new Error('Unknown campaign faction.');
 };
+const sumSafePoints = function (points: readonly number[]): number {
+	return points.reduce(function (total, value) {
+		const sum = total + availablePoints(value);
+		if (!Number.isFinite(sum) || sum > Number.MAX_SAFE_INTEGER)
+			throw new Error('Campaign point total exceeds the safe numeric range.');
+		return sum;
+	}, 0);
+};
+const assertSystemPointTotals = function (planets: readonly CampaignPlanet[]): void {
+	const totals = new Map<string, number>();
+	for (const planet of planets) {
+		const total = sumSafePoints([totals.get(planet.systemId) ?? 0, planet.points]);
+		totals.set(planet.systemId, total);
+	}
+};
+const creditPlanetBalances = function (
+	planets: readonly CampaignPlanet[],
+	credits: ReadonlyMap<string, number>,
+	factionId: Side,
+): CampaignPlanet[] {
+	return planets.map(function (planet) {
+		const credit = credits.get(planet.id) ?? 0;
+		return planet.factionId !== factionId || credit === 0 ? planet : { ...planet, points: creditPoints(planet.points, credit) };
+	});
+};
+const distributeFriendlyPoints = function (
+	planets: readonly CampaignPlanet[],
+	systemId: string,
+	factionId: Side,
+	points: number,
+): CampaignPlanet[] {
+	const destination = planets.filter(function (planet) { return planet.systemId === systemId && planet.factionId === factionId; });
+	if (destination.length === 0) throw new Error('Friendly reinforcement requires owned destination planets.');
+	const largestValue = destination.reduce(function (largest, planet) { return Math.max(largest, planet.value); }, 0);
+	const normalizedWeights = largestValue === 0
+		? destination.map(function () { return 1; })
+		: destination.map(function (planet) { return planet.value / largestValue; });
+	const totalWeight = normalizedWeights.reduce(function (total, weight) { return total + weight; }, 0);
+	let remaining = points;
+	const credits = new Map<string, number>();
+	for (const [index, planet] of destination.entries()) {
+		const credit = index === destination.length - 1 ? remaining : Math.min(remaining, points * (normalizedWeights[index] ?? 0) / totalWeight);
+		remaining = Math.max(0, remaining - credit);
+		credits.set(planet.id, credit);
+	}
+	const updated = creditPlanetBalances(planets, credits, factionId);
+	assertSystemPointTotals(updated);
+	return updated;
+};
 
-/** Colonization uses whole committed points and the destination's original capacity. */
+/** Neutral colonization cost scales with the combined value of the destination's planets. */
 export const neutralClaimMinimum = function (state: CampaignState, systemId: string): number {
-	const fraction = state.rules.neutralClaimFraction;
-	if (!Number.isFinite(fraction) || fraction < 0 || fraction > 1) throw new Error('Neutral claim fraction must be between zero and one.');
 	const local = state.planets.filter(function (planet) { return planet.systemId === systemId; });
 	if (!state.systems.some(function (system) { return system.id === systemId; }) || local.length === 0)
 		throw new Error('Neutral claim requires a known populated system.');
-	const baseline = local.reduce(function (total, planet) {
-		if (!Number.isFinite(planet.baselinePoints) || planet.baselinePoints < 0) throw new Error('Invalid baseline capacity.');
-		return total + planet.baselinePoints;
-	}, 0);
-	const minimum = Math.max(1, Math.ceil(baseline * fraction));
-	if (!Number.isFinite(baseline) || baseline > Number.MAX_SAFE_INTEGER || !Number.isSafeInteger(minimum))
-		throw new Error('Neutral claim capacity exceeds the safe numeric range.');
-	return minimum;
+	return calculateNeutralClaimMinimum(local.map(function (planet) { return planet.value; }), state.rules.economy);
 };
 const sameOrder = function (a: ExpeditionOrder, b: ExpeditionOrder): boolean {
 	return a.factionId === b.factionId && a.sourceSystemId === b.sourceSystemId &&
@@ -146,20 +181,20 @@ export const commitExpedition = function (state: CampaignState, order: Expeditio
 	if (!Number.isFinite(arrivalTime) || arrivalTime > Number.MAX_SAFE_INTEGER || arrivalTime <= state.time) throw new Error('Invalid expedition arrival time.');
 	const committed = commitPoints(state.planets.map(function (planet) {
 		return { planetId: planet.id, systemId: planet.systemId, factionId: planet.factionId,
-			maximumPoints: developmentMaximum(planet), depletion: planet.depletion };
+			points: planet.points };
 	}), source.id, order.factionId, order.contributions);
 	if (committed.totalPoints === 0) throw new Error('An expedition must commit points.');
 	const destinationPlanets = state.planets.filter(function (planet) { return planet.systemId === destination.id; });
 	if (destinationPlanets.length > 0 && destinationPlanets.every(function (planet) { return planet.factionId === null; }) &&
 		committed.totalPoints < neutralClaimMinimum(state, destination.id))
 		throw new Error('The expedition does not meet the unclaimed system commitment minimum.');
-	const debits = new Map(committed.balances.map(function (balance) { return [balance.planetId, balance.depletion] as const; }));
+	const debits = new Map(committed.balances.map(function (balance) { return [balance.planetId, balance.points] as const; }));
 	const expedition: CampaignExpedition = { ...order, contributions: committed.debits, points: committed.totalPoints,
 		departureTime: state.time, arrivalTime, status: 'traveling' };
 	return { ...state, planets: state.planets.map(function (planet) {
-		const depletion = debits.get(planet.id);
-		if (depletion === undefined) throw new Error('Missing committed planetary balance.');
-		return { ...planet, depletion };
+		const points = debits.get(planet.id);
+		if (points === undefined) throw new Error('Missing committed planetary balance.');
+		return { ...planet, points };
 	}), expeditions: [...state.expeditions, expedition] };
 };
 
@@ -190,9 +225,7 @@ export const cancelExpedition = function (state: CampaignState, id: string, fact
 		throw new Error('Recall exceeds the galaxy time limit.');
 	const refunds = new Map(expedition.contributions.map(function (entry) { return [entry.planetId, entry.points] as const; }));
 	return { ...state,
-		planets: cancelled ? state.planets.map(function (planet) {
-			return planet.factionId !== factionId ? planet : { ...planet, depletion: Math.max(0, planet.depletion - (refunds.get(planet.id) ?? 0)) };
-		}) : state.planets,
+		planets: cancelled ? creditPlanetBalances(state.planets, refunds, factionId) : state.planets,
 		expeditions: state.expeditions.map(function (item) {
 			return item.id !== id ? item : cancelled ? { ...item, status: 'cancelled' as const } : { ...item, status: 'returning' as const, recalledTime };
 		}),
@@ -206,11 +239,7 @@ const resolveArrivals = function (initial: CampaignState): CampaignState {
 	for (const expedition of due) {
 		if (expedition.status === 'returning') {
 			const refunds = new Map(expedition.contributions.map(function (entry) { return [entry.planetId, entry.points] as const; }));
-			state = { ...state, planets: state.planets.map(function (planet) {
-				return planet.factionId !== expedition.factionId ? planet : {
-					...planet, depletion: Math.max(0, planet.depletion - (refunds.get(planet.id) ?? 0)),
-				};
-			}), expeditions: state.expeditions.map(function (item) {
+			state = { ...state, planets: creditPlanetBalances(state.planets, refunds, expedition.factionId), expeditions: state.expeditions.map(function (item) {
 				return item.id === expedition.id ? { ...item, status: 'resolved' as const } : item;
 			}) };
 			continue;
@@ -221,9 +250,7 @@ const resolveArrivals = function (initial: CampaignState): CampaignState {
 			const qualifies = expedition.points >= neutralClaimMinimum(state, expedition.destinationSystemId);
 			state = { ...state,
 				planets: qualifies ? state.planets.map(function (planet) {
-					return planet.systemId !== expedition.destinationSystemId ? planet : {
-						...planet, ...captureDevelopment(planet, expedition.factionId, state.time, state.rules.development), factionId: expedition.factionId,
-					};
+						return planet.systemId !== expedition.destinationSystemId ? planet : changePlanetOwnership(planet, expedition.factionId);
 				}) : state.planets,
 				expeditions: state.expeditions.map(function (item) {
 					return item.id === expedition.id ? { ...item, status: 'resolved' as const } : item;
@@ -232,18 +259,8 @@ const resolveArrivals = function (initial: CampaignState): CampaignState {
 			continue;
 		}
 		if (destination.every(function (planet) { return planet.factionId === null || planet.factionId === expedition.factionId; })) {
-			let remaining = expedition.points;
-			const depleted = destination.filter(function (planet) { return planet.factionId === expedition.factionId; })
-				.toSorted(function (a, b) { return b.depletion - a.depletion || compareIds(a.id, b.id); });
-			const reductions = new Map<string, number>();
-			for (const planet of depleted) {
-				const amount = Math.min(planet.depletion, remaining);
-				remaining -= amount;
-				reductions.set(planet.id, planet.depletion - amount);
-			}
-			state = { ...state, planets: state.planets.map(function (planet) {
-				return { ...planet, depletion: reductions.get(planet.id) ?? planet.depletion };
-			}), expeditions: state.expeditions.map(function (item) {
+			state = { ...state, planets: distributeFriendlyPoints(state.planets, expedition.destinationSystemId,
+				expedition.factionId, expedition.points), expeditions: state.expeditions.map(function (item) {
 				return item.id === expedition.id ? { ...item, status: 'resolved' as const } : item;
 			}) };
 			continue;
@@ -251,8 +268,7 @@ const resolveArrivals = function (initial: CampaignState): CampaignState {
 		const encounter: CampaignEncounter = { id: `encounter:${expedition.id}`, expeditionId: expedition.id,
 			systemId: expedition.destinationSystemId, attacker: expedition.factionId, attackerPoints: expedition.points,
 			planets: destination.map(function (planet) {
-				return { planetId: planet.id, name: planet.name, factionId: planet.factionId,
-					points: availablePoints(developmentMaximum(planet), planet.depletion) };
+				return { planetId: planet.id, name: planet.name, factionId: planet.factionId, points: availablePoints(planet.points) };
 			}) };
 		return { ...state, phase: 'encounter', encounter, expeditions: state.expeditions.map(function (item) {
 			return item.id === expedition.id ? { ...item, status: 'encounter' as const } : item;
@@ -269,7 +285,8 @@ export const setCampaignPaused = function (state: CampaignState, paused: boolean
 /** Advance to each event in order and discard the remaining frame when combat interrupts. */
 export const advanceCampaign = function (initial: CampaignState, elapsedSeconds: number): CampaignState {
 	validateTimingRules(initial.rules);
-	if (!Number.isFinite(elapsedSeconds) || elapsedSeconds < 0) throw new Error('Invalid galaxy duration.');
+	if (!Number.isFinite(elapsedSeconds) || elapsedSeconds < 0)
+		throw new Error('Galaxy duration must be finite and nonnegative.');
 	if (initial.paused || initial.phase === 'encounter' || campaignWinner(initial) !== null || elapsedSeconds === 0) return initial;
 	const target = initial.time + elapsedSeconds;
 	if (!Number.isFinite(target) || target > Number.MAX_SAFE_INTEGER) throw new Error('Galaxy time limit reached.');
@@ -282,9 +299,10 @@ export const advanceCampaign = function (initial: CampaignState, elapsedSeconds:
 		}, Infinity);
 		if (arrival < state.time) throw new Error('An active expedition cannot arrive in the past.');
 		const time = Math.min(target, arrival, state.nextRivalTime);
-		state = { ...state, time, planets: state.planets.map(function (planet) {
-			return { ...planet, ...advanceDevelopment(planet, time, state.rules.development, state.rules.recovery), factionId: planet.factionId };
-		}) };
+		const elapsed = time - state.time;
+		const planets = state.planets.map(function (planet) { return advancePlanetPoints(planet, elapsed, state.rules.economy); });
+		assertSystemPointTotals(planets);
+		state = { ...state, time, planets };
 		state = resolveArrivals(state);
 		if (state.phase === 'encounter') return { ...state, paused: true };
 		if (campaignWinner(state) !== null) return { ...state, paused: true };
@@ -330,9 +348,7 @@ export const applyCampaignEncounterResult = function (state: CampaignState, resu
 		const captured = planets.find(function (planet) { return planet.id === event.planetId; });
 		if (!captured || captured.factionId === event.factionId) throw new Error('Capture events must change actual ownership.');
 		planets = planets.map(function (planet) {
-			return planet.id !== event.planetId ? planet : {
-				...planet, ...captureDevelopment(planet, event.factionId, state.time, state.rules.development), factionId: event.factionId,
-			};
+			return planet.id !== event.planetId ? planet : changePlanetOwnership(planet, event.factionId);
 		});
 	}
 	if (planets.some(function (planet) { return ownership.has(planet.id) && ownership.get(planet.id) !== planet.factionId; }))
@@ -352,7 +368,7 @@ export const commitCampaignRival = function (state: CampaignState): CampaignStat
 		const local = state.planets.filter(function (planet) { return planet.systemId === source.id; });
 		const owned = local.filter(function (planet) { return planet.factionId === 'red'; });
 		if (owned.length === 0) return [];
-		const available = owned.reduce(function (total, planet) { return total + availablePoints(developmentMaximum(planet), planet.depletion); }, 0);
+		const available = sumSafePoints(owned.map(function (planet) { return availablePoints(planet.points); }));
 		if (Math.floor(available / 2) === 0) return [];
 		return state.systems.filter(function (destination) {
 			if (destination.id === source.id) return false;
@@ -369,11 +385,10 @@ export const commitCampaignRival = function (state: CampaignState): CampaignStat
 	for (const route of routes) {
 		let remaining = route.budget;
 		const contributions = route.owned.toSorted(function (a, b) { return compareIds(a.id, b.id); }).flatMap(function (planet) {
-			const points = Math.min(remaining, Math.floor(availablePoints(developmentMaximum(planet), planet.depletion)));
+			const points = Math.min(remaining, Math.floor(availablePoints(planet.points)));
 			remaining -= points;
 			return points > 0 ? [{ planetId: planet.id, points }] : [];
 		});
-		// Fractional recovery remains on each planet; it cannot fund a whole-point debit elsewhere.
 		if (contributions.length === 0) continue;
 		if (state.planets.filter(function (planet) { return planet.systemId === route.destination.id; })
 			.every(function (planet) { return planet.factionId === null; }) &&
