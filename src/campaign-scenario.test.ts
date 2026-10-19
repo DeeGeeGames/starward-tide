@@ -92,6 +92,15 @@ test('rival skips unaffordable neutral colonization without increasing its half-
 	expect(function () { finish(sent); }).not.toThrow();
 });
 
+test('rival skips systems with only its own planets and neutral planets', function () {
+	const state = createCampaign();
+	const noHostileTargets = { ...state, planets: state.planets.map(function (planet) {
+		if (planet.systemId === 'sirius') return planet;
+		return planet.id.endsWith(':1') ? { ...planet, factionId: 'red' as const } : { ...planet, factionId: null };
+	}) };
+	expect(commitCampaignRival(noHostileTargets)).toBe(noHostileTargets);
+});
+
 test('planet loss does not eliminate a faction while relief remains in flight or an encounter is active', function () {
 	const start = createCampaign();
 	const sent = commitCampaignRival(start);

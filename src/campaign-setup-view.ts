@@ -1,10 +1,10 @@
-import { isActiveExpedition, expeditionArrival } from './campaign-state';
+import { activePlayerExpeditions, expeditionArrival } from './campaign-state';
 import { zoomCamera } from './camera';
 import type { Camera } from './camera';
 import { createMapInput } from './map-input';
 import { campaignEntryEdge } from './campaign-encounter';
 import type { CampaignEntryEdge } from './campaign-encounter';
-import { validateCampaignEncounterSetup } from './campaign-setup';
+import { isLastActiveBeachhead, validateCampaignEncounterSetup } from './campaign-setup';
 import type { CampaignEncounterSetup } from './campaign-setup';
 import type { CampaignState, EncounterPlanet } from './campaign-state';
 import type { DefenseForces, InvasionForces } from './campaign-allocation';
@@ -39,6 +39,7 @@ export interface CampaignSetupViewOptions {
 export interface CampaignSetupView {
 	root: HTMLElement;
 	render: (state: CampaignState, setup: CampaignEncounterSetup) => void;
+	setSaveStatus: (message: string) => void;
 	flush: () => Promise<void>;
 	reset: () => void;
 	dispose: () => void;
@@ -66,19 +67,22 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 	const turn = node('span', '', 'csu-turn');
 	const red = node('span', '', 'csu-red');
 	score.append(blue, turn, red);
+	const saveStatus = node('span', 'Not saved', 'csu-save-status');
+	saveStatus.setAttribute('role', 'status');
+	saveStatus.setAttribute('aria-live', 'polite');
 	const actions = node('div', '', 'csu-actions');
 	const save = button('Save', function () { void run(async function () { await options.save?.(); status.textContent = 'Encounter saved locally'; }); }, 'csu-save');
 	const orders = button('Orders', function () { openDrawer(drawer === 'orders' ? 'allocation' : 'orders'); });
 	const launch = button('Launch encounter', function () { void run(async function () {
 		const state = current;
 		if (!state?.encounter || !draft) return;
-		validateCampaignEncounterSetup(state.encounter, draft);
+		validateCampaignEncounterSetup(state.encounter, draft, { allowLegacyBeachheads: legacyBeachheads.size > 0 });
 		await options.launch(structuredClone(draft));
 	}); }, 'csu-primary');
 	const menu = button('☰', function () { openDrawer(drawer === 'menu' ? 'allocation' : 'menu'); }, 'csu-menu');
 	menu.setAttribute('aria-label', 'Encounter menu');
 	actions.append(save, orders, launch, menu);
-	header.append(brand, score, actions);
+	header.append(brand, score, saveStatus, actions);
 	const heading = node('p', '', 'csu-heading');
 	const panel = node('aside', '', 'csu-panel');
 	panel.id = 'campaign-setup-panel';
@@ -92,6 +96,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 	root.append(board, header, heading, panel, status, caption);
 	let current: CampaignState | undefined;
 	let draft: CampaignEncounterSetup | undefined;
+	let legacyBeachheads = new Set<string>();
 	let encounterId: string | undefined;
 	let selected: string | undefined;
 	let drawer: Drawer = 'allocation';
@@ -118,7 +123,8 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 	let writer = makeWriter();
 	const flush = async function (): Promise<void> {
 		try {
-			if (current?.encounter && draft) validateCampaignEncounterSetup(current.encounter, draft);
+			if (current?.encounter && draft)
+				validateCampaignEncounterSetup(current.encounter, draft, { allowLegacyBeachheads: legacyBeachheads.size > 0 });
 			await writer.flush();
 		} catch (error) { showError(error); throw error; }
 	};
@@ -197,17 +203,20 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		routes.replaceChildren();
 		const localSystem = current.systems.find(function (system) { return system.id === current?.encounter?.systemId; });
 		if (!localSystem) return;
-		const revealInvasion = current.encounter.attacker === 'blue';
-		const active = (revealInvasion ? draft.beachheads : []).filter(function (beachhead) { return beachhead.troops > 0 || beachhead.ships > 0; });
+		const active = current.encounter.attacker === 'blue'
+			? draft.beachheads.filter(function (beachhead) { return beachhead.troops > 0 || beachhead.ships > 0; }) : [];
 		for (const planet of current.encounter.planets) {
 			const view = planetViews.get(planet.planetId);
 			const forces = draft.defenders.find(function (item) { return item.planetId === planet.planetId; })?.forces;
 			if (!view || !forces) continue;
-			const invasion = draft.beachheads.find(function (item) { return item.planetId === planet.planetId; });
-			view.troops.textContent = String(forces.troops);
-			view.orbit.textContent = `◆ ${forces.ships} · ✣ ${forces.guns}`;
-			view.invasion.textContent = revealInvasion && invasion ? `↳ ▥ ${invasion.troops} · ◆ ${invasion.ships}` : '';
-			view.button.setAttribute('aria-label', `${planet.name}, ${planet.factionId === 'blue' ? 'your' : planet.factionId === 'red' ? 'rival' : 'neutral'} planet, ${forces.troops} defending troops, ${forces.ships} ships, ${forces.guns} platforms`);
+			const invasion = active.find(function (item) { return item.planetId === planet.planetId; });
+			const ownDefense = planet.factionId === 'blue';
+			view.troops.textContent = ownDefense ? String(forces.troops) : '?';
+			view.orbit.textContent = ownDefense ? `◆ ${forces.ships} · ✣ ${forces.guns}` : 'Defenses unknown';
+			view.invasion.textContent = invasion ? `↳ ▥ ${invasion.troops} · ◆ ${invasion.ships}` : '';
+			const defenseLabel = ownDefense
+				? `${forces.troops} defending troops, ${forces.ships} ships, ${forces.guns} platforms` : 'defenses unknown';
+			view.button.setAttribute('aria-label', `${planet.name}, ${planet.factionId === 'blue' ? 'your' : planet.factionId === 'red' ? 'rival' : 'neutral'} planet, ${defenseLabel}`);
 			view.button.setAttribute('aria-pressed', String(selected === planet.planetId && drawer === 'allocation'));
 			const beachheadIndex = active.findIndex(function (item) { return item.planetId === planet.planetId; });
 			const seed = localSystem.map.planets.find(function (item) { return item[0] === planet.name; });
@@ -220,24 +229,36 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 			line.setAttribute('x2', String(seed[1])); line.setAttribute('y2', String(seed[2]));
 			routes.append(line);
 		}
-		try { validateCampaignEncounterSetup(current.encounter, draft); launch.disabled = false; }
+		try {
+			validateCampaignEncounterSetup(current.encounter, draft, { allowLegacyBeachheads: legacyBeachheads.size > 0 });
+			launch.disabled = false;
+		}
 		catch { launch.disabled = true; }
 	};
 	const persist = function (): void {
 		if (!draft || !current?.encounter) return;
 		updateMap();
-		try { validateCampaignEncounterSetup(current.encounter, draft); }
+		try { validateCampaignEncounterSetup(current.encounter, draft, { allowLegacyBeachheads: legacyBeachheads.size > 0 }); }
 		catch (error) { status.textContent = error instanceof Error ? error.message : 'Allocation is incomplete'; return; }
 		status.textContent = 'Saving allocation…';
 		writer.write(draft);
 	};
 	const change = function (mode: AllocationMode, kind: UnitKind, value: number, planet: EncounterPlanet): void {
 		if (pending || !draft || !Number.isSafeInteger(value)) return;
-		const editable = mode === 'invasion' ? current?.encounter?.attacker === 'blue' : planet.factionId === 'blue';
+		const encounter = current?.encounter;
+		const targetable = planet.factionId !== null && planet.factionId !== encounter?.attacker;
+		const legacy = legacyBeachheads.has(planet.planetId) && draft.beachheads.some(function (item) { return item.planetId === planet.planetId; });
+		const editable = mode === 'invasion'
+			? encounter?.attacker === 'blue' && (targetable || legacy)
+			: planet.factionId === 'blue';
 		if (!editable || (mode === 'invasion' && kind === 'guns')) return;
 		const forces = forcesFor(mode);
+		if (mode === 'invasion' && legacy && !targetable && value > forces[kind]) return;
 		const maximum = forces[kind] + Math.floor(remaining(mode, planet) / draft.costs[kind]);
 		const count = Math.max(0, Math.min(maximum, value));
+		const lastLegacyBeachhead = mode === 'invasion' && legacy && !targetable && isLastActiveBeachhead(draft, planet.planetId);
+		const otherForce = kind === 'troops' ? forces.ships : forces.troops;
+		if (lastLegacyBeachhead && count === 0 && otherForce === 0) { refreshControls(); return; }
 		if (mode === 'defense') draft = { ...draft, defenders: draft.defenders.map(function (item) {
 			return item.planetId === planet.planetId ? { ...item, forces: { ...item.forces, [kind]: count } } : item;
 		}) };
@@ -268,12 +289,11 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		if (drawer === 'orders') {
 			titleText.textContent = 'Orders';
 			panel.append(node('p', `Galaxy time ${amount(state.time)}s remains frozen`, 'csu-sub'));
-			for (const expedition of state.expeditions.filter(isActiveExpedition)) {
+			for (const expedition of activePlayerExpeditions(state)) {
 				const from = state.systems.find(function (item) { return item.id === expedition.sourceSystemId; });
 				const to = state.systems.find(function (item) { return item.id === expedition.destinationSystemId; });
 				const row = node('div', '', 'csu-order');
-				const hideOrigin = encounter.attacker !== 'blue' && expedition.id === encounter.expeditionId;
-				row.append(node('strong', hideOrigin ? `Rival invasion · ${amount(expedition.points)} points` : `${from?.name ?? expedition.sourceSystemId} ${expedition.status === 'returning' ? '←' : '→'} ${to?.name ?? expedition.destinationSystemId} · ${amount(expedition.points)} points`),
+				row.append(node('strong', `${from?.name ?? expedition.sourceSystemId} ${expedition.status === 'returning' ? '←' : '→'} ${to?.name ?? expedition.destinationSystemId} · ${amount(expedition.points)} points`),
 					node('small', expedition.id === encounter.expeditionId ? 'Arrived · resolving now' : `${expedition.status === 'returning' ? 'Returning · arrival' : 'Arrival'} in ${amount(Math.max(0, expeditionArrival(expedition) - state.time))}s · waits for galaxy resolution`));
 				panel.append(row);
 			}
@@ -282,19 +302,38 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		}
 		if (drawer === 'menu') {
 			titleText.textContent = 'Game menu';
-			panel.append(node('p', `Encounter setup · galaxy time ${amount(state.time)}s frozen`, 'csu-sub'), button('Return to allocation', function () { openDrawer('allocation'); }, 'csu-wide'),
-				button('Save & menu', function () { void run(options.exit); }, 'csu-wide'), node('p', 'Saving preserves this allocation. Continue returns to encounter setup.', 'csu-rule'));
+			panel.append(node('p', `Encounter setup · galaxy time ${amount(state.time)}s frozen`, 'csu-sub'), button('Return to allocation', function () { openDrawer('allocation'); }, 'csu-wide'));
+			if (options.save) panel.append(button('Save campaign', function () { void run(async function () { await options.save?.(); status.textContent = 'Encounter saved locally'; }); }, 'csu-wide'));
+			panel.append(button('Save & menu', function () { void run(options.exit); }, 'csu-wide'), node('p', 'Saving preserves this allocation. Continue returns to encounter setup.', 'csu-rule'));
 			return;
 		}
 		const planet = encounter.planets.find(function (item) { return item.planetId === selected; });
 		if (!planet) return;
+		const hasOpposingOwnedPlanet = encounter.planets.some(function (item) {
+			return item.factionId !== null && item.factionId !== encounter.attacker;
+		});
 		titleText.textContent = planet.name;
 		const updates: Array<() => void> = [];
 		const addAllocation = function (mode: AllocationMode): void {
-			if (mode === 'invasion' && encounter.attacker !== 'blue') return;
-			const editable = mode === 'invasion' ? encounter.attacker === 'blue' : planet.factionId === 'blue';
+			const targetable = planet.factionId !== null && planet.factionId !== encounter.attacker;
+			const legacy = legacyBeachheads.has(planet.planetId) && draftSetup().beachheads.some(function (item) { return item.planetId === planet.planetId; });
+			const lastLegacyBeachhead = mode === 'invasion' && legacy && !targetable && isLastActiveBeachhead(draftSetup(), planet.planetId);
+			const editable = mode === 'invasion'
+				? encounter.attacker === 'blue' && (targetable || legacy)
+				: planet.factionId === 'blue';
+			if (!editable) {
+				const message = mode !== 'invasion' ? 'Defending forces are hidden until battle starts.'
+					: encounter.attacker !== 'blue' ? 'Rival invasion forces and beachheads are hidden until battle starts.'
+					: 'Beachheads must target planets owned by the opposing faction.';
+				panel.append(node('p', message, 'csu-rule'));
+				return;
+			}
 			const section = node('section', '', 'csu-allocation-section');
-			section.append(node('p', mode === 'invasion' ? `${editable ? 'Your' : 'Rival'} invasion beachhead · shared expedition budget` : `${editable ? 'Your' : planet.factionId === null ? 'Neutral' : 'Rival'} planetary defense · local budget`, 'csu-sub'));
+			section.append(node('p', mode === 'invasion' ? 'Your invasion beachhead · shared expedition budget' : 'Your planetary defense · local budget', 'csu-sub'));
+			if (mode === 'invasion' && legacy && !targetable) section.append(node('p', lastLegacyBeachhead
+				? hasOpposingOwnedPlanet ? 'Assign forces to an opposing-owned planet before removing this saved beachhead.'
+					: 'This saved beachhead must keep at least one force because no opposing-owned planet is available.'
+				: 'This saved beachhead can be reduced to remove it.', 'csu-rule'));
 			const budget = node('p', '', 'csu-budget');
 			section.append(budget);
 			const kinds: readonly UnitKind[] = mode === 'invasion' ? ['troops', 'ships'] : ['troops', 'ships', 'guns'];
@@ -320,12 +359,14 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 				updates.push(function () {
 					const forces = forcesFor(mode);
 					const left = remaining(mode, planet);
+					const otherKind = kind === 'troops' ? 'ships' : 'troops';
+					const minimum = mode === 'invasion' && lastLegacyBeachhead && forces[otherKind] === 0 ? 1 : 0;
 					range.max = String(Math.max(forces[kind], forces[kind] + Math.floor(left / draftSetup().costs[kind])));
+					range.min = String(minimum);
 					range.value = String(forces[kind]);
 					output.value = String(forces[kind]);
-					range.disabled = !editable;
-					minus.disabled = !editable || forces[kind] === 0;
-					plus.disabled = !editable || left < draftSetup().costs[kind];
+					minus.disabled = forces[kind] <= minimum;
+					plus.disabled = left < draftSetup().costs[kind] || (mode === 'invasion' && legacy && !targetable);
 				});
 			}
 			updates.push(function () {
@@ -333,12 +374,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 				const spent = mode === 'invasion' ? attackSpent() : costOf(forcesFor(mode), draftSetup());
 				budget.textContent = `${amount(spent)} / ${amount(total)} points allocated · ${amount(total - spent)} ${mode === 'invasion' ? 'unassigned across all beachheads' : `points retained on ${planet.name}`}`;
 			});
-			if (editable) panel.append(section);
-			else {
-				const details = node('details', '', 'csu-readonly');
-				details.append(node('summary', `${mode === 'invasion' ? 'Invasion' : 'Planetary defenses'} · read only`), section);
-				panel.append(details);
-			}
+			panel.append(section);
 		};
 		if (encounter.attacker === 'blue') { addAllocation('invasion'); addAllocation('defense'); }
 		else { addAllocation('defense'); addAllocation('invasion'); }
@@ -364,6 +400,12 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		if (encounterId !== encounter.id) {
 			encounterId = encounter.id;
 			draft = structuredClone(setup);
+			const targetable = new Set(encounter.planets.filter(function (planet) {
+				return planet.factionId !== null && planet.factionId !== encounter.attacker;
+			}).map(function (planet) { return planet.planetId; }));
+			legacyBeachheads = new Set(setup.beachheads.filter(function (beachhead) {
+				return !targetable.has(beachhead.planetId);
+			}).map(function (beachhead) { return beachhead.planetId; }));
 			selected = encounter.planets[0]?.planetId;
 			drawer = 'allocation';
 			autoFit = true;
@@ -401,7 +443,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		blue.textContent = `● ${encounter.planets.filter(function (planet) { return planet.factionId === 'blue'; }).length} YOU`;
 		red.textContent = `● ${encounter.planets.filter(function (planet) { return planet.factionId === 'red'; }).length} RIVAL`;
 		turn.textContent = `Galaxy ${amount(state.time)}s · Frozen`;
-		orders.textContent = `Orders · ${state.expeditions.filter(isActiveExpedition).length}`;
+		orders.textContent = `Orders · ${activePlayerExpeditions(state).length}`;
 		renderPanel(); updateMap(); fit();
 	};
 	const reset = function (): void {
@@ -410,6 +452,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		writer = makeWriter();
 		current = undefined;
 		draft = undefined;
+		legacyBeachheads.clear();
 		encounterId = undefined;
 		selected = undefined;
 		drawer = 'allocation';
@@ -426,5 +469,11 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		root.hidden = true;
 		applyCamera();
 	};
-	return { root, render, flush, reset, dispose: function (): void { disposed = true; resize.disconnect(); input.dispose(); root.remove(); } };
+	const setSaveStatus = function (message: string): void {
+		const failed = /save failed|saving failed/i.test(message);
+		saveStatus.textContent = message;
+		saveStatus.title = message;
+		saveStatus.dataset.state = failed ? 'error' : message === 'Saving…' ? 'saving' : 'saved';
+	};
+	return { root, render, setSaveStatus, flush, reset, dispose: function (): void { disposed = true; resize.disconnect(); input.dispose(); root.remove(); } };
 };

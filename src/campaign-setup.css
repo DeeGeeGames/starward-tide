@@ -33,6 +33,9 @@
 .csu-hud { position: absolute; z-index: 5; inset: var(--hud-top, 10px) var(--hud-side, 10px) auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; }
 .csu-brand { font: 500 18px system-ui; white-space: nowrap; }
 .csu-score { display: flex; align-items: center; gap: 10px; white-space: nowrap; font-size: 10px; }
+.csu-save-status { max-width: 300px; color: #9aafbf; font-size: 10px; line-height: 1.4; text-align: right; overflow-wrap: anywhere; }
+.csu-save-status[data-state='error'] { color: #ffaaa3; }
+.csu-save-status[data-state='saving'] { color: #a5ebff; }
 .csu-blue { color: #60d9ff; }
 .csu-red { color: #ff867e; }
 .csu-turn { color: #8e9cae; }
@@ -93,16 +96,18 @@
 .csu-beachhead { position: absolute; top: 103px; white-space: nowrap; color: var(--csu-invasion); font-size: 9px; }
 @media (max-width: 1100px) { .csu-brand { display: none; } }
 @media (max-width: 699px) {
-	.csu-hud { padding: 6px; gap: 5px; }
-	.csu-score { gap: 6px; font-size: 9px; }
+	.csu-hud { flex-wrap: wrap; justify-content: center; padding: 6px; gap: 5px; }
+	.csu-score { justify-content: center; width: 100%; gap: 6px; font-size: 9px; }
+	.csu-save-status { order: 2; flex-basis: 100%; max-width: 100%; text-align: center; }
+	.csu-actions { order: 3; width: 100%; justify-content: center; }
 	.campaign-setup-view .csu-actions button { padding: 0 6px; }
 	.campaign-setup-view .csu-actions .csu-menu { flex: 0 0 36px; width: 36px; padding: 0; font-size: 20px; }
 	.csu-save { display: none; }
-	.csu-heading { font-size: 9px; }
+	.csu-heading { top: calc(var(--hud-top, 10px) + 118px); font-size: 9px; }
 	.csu-panel { top: auto; bottom: max(10px, env(safe-area-inset-bottom)); left: var(--hud-side, 10px); right: var(--hud-side, 10px); width: auto; max-height: min(430px, 55%); }
 	.csu-title h2 { font-size: 25px; margin: 4px 0; }
 	.csu-caption { display: none; }
-	.csu-status { left: 10px; top: 116px; bottom: auto; max-width: calc(100% - 20px); }
+	.csu-status { left: 10px; top: 172px; bottom: auto; max-width: calc(100% - 20px); }
 	.csu-budget { padding: 6px 0; margin: 6px 0; }
 	.csu-unit { padding: 5px 0; }
 	.csu-sub { margin-bottom: 6px; }

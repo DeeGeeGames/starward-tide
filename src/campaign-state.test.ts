@@ -107,6 +107,21 @@ test('friendly arrivals replenish depletion without importing extra campaign cap
 	expect(arrived.planets.filter(function (planet) { return planet.systemId === 'deneb'; }).reduce(function (sum, planet) { return sum + planet.depletion; }, 0)).toBeCloseTo(219.7);
 });
 
+test('friendly arrivals into systems with neutral planets replenish owned planets without starting an encounter', function () {
+	const state = initial();
+	const mixed = { ...state, planets: state.planets.map(function (planet) {
+		if (planet.systemId !== 'deneb') return planet;
+		return planet.id === 'deneb:1' ? { ...planet, factionId: 'blue' as const, depletion: 100 }
+			: { ...planet, factionId: null };
+	}) };
+	const arrived = run(commitExpedition(mixed, { ...order('friendly-mixed', 50), destinationSystemId: 'deneb' }), 10);
+	expect(arrived.encounter).toBeNull();
+	expect(arrived.expeditions.find(function (item) { return item.id === 'friendly-mixed'; })?.status).toBe('resolved');
+	expect(arrived.planets.find(function (planet) { return planet.id === 'deneb:1'; })?.depletion).toBeLessThan(100);
+	expect(arrived.planets.filter(function (planet) { return planet.systemId === 'deneb' && planet.id !== 'deneb:1'; })
+		.every(function (planet) { return planet.factionId === null; })).toBe(true);
+});
+
 test('instant cancellation refunds once and elapsed travel recalls only to original still-owned sources', function () {
 	const state = initial();
 	const committed = commitExpedition(state, order('cancel'));

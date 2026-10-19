@@ -166,6 +166,11 @@ export const commitExpedition = function (state: CampaignState, order: Expeditio
 export const isActiveExpedition = function (expedition: CampaignExpedition): boolean {
 	return expedition.status !== 'resolved' && expedition.status !== 'cancelled';
 };
+export const activePlayerExpeditions = function (state: CampaignState): CampaignExpedition[] {
+	return state.expeditions.filter(function (expedition) {
+		return expedition.factionId === 'blue' && isActiveExpedition(expedition);
+	});
+};
 export const expeditionArrival = function (expedition: CampaignExpedition): number {
 	return expedition.recalledTime === undefined ? expedition.arrivalTime : 2 * expedition.recalledTime - expedition.departureTime;
 };
@@ -226,9 +231,10 @@ const resolveArrivals = function (initial: CampaignState): CampaignState {
 			};
 			continue;
 		}
-		if (destination.every(function (planet) { return planet.factionId === expedition.factionId; })) {
+		if (destination.every(function (planet) { return planet.factionId === null || planet.factionId === expedition.factionId; })) {
 			let remaining = expedition.points;
-			const depleted = destination.toSorted(function (a, b) { return b.depletion - a.depletion || compareIds(a.id, b.id); });
+			const depleted = destination.filter(function (planet) { return planet.factionId === expedition.factionId; })
+				.toSorted(function (a, b) { return b.depletion - a.depletion || compareIds(a.id, b.id); });
 			const reductions = new Map<string, number>();
 			for (const planet of depleted) {
 				const amount = Math.min(planet.depletion, remaining);
@@ -349,7 +355,11 @@ export const commitCampaignRival = function (state: CampaignState): CampaignStat
 		const available = owned.reduce(function (total, planet) { return total + availablePoints(developmentMaximum(planet), planet.depletion); }, 0);
 		if (Math.floor(available / 2) === 0) return [];
 		return state.systems.filter(function (destination) {
-			return destination.id !== source.id && state.planets.some(function (planet) { return planet.systemId === destination.id && planet.factionId !== 'red'; });
+			if (destination.id === source.id) return false;
+			const local = state.planets.filter(function (planet) { return planet.systemId === destination.id; });
+			const unclaimed = local.length > 0 && local.every(function (planet) { return planet.factionId === null; });
+			const hostile = local.some(function (planet) { return planet.factionId === 'blue'; });
+			return unclaimed || hostile;
 		}).map(function (destination) {
 			return { source, destination, owned, budget: Math.floor(available / 2), distance: Math.hypot(destination.x - source.x, destination.y - source.y) };
 		});

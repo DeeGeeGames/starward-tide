@@ -201,10 +201,10 @@ const hasSavedEncounterIntegrity = function (save: CampaignSave): boolean {
 	if (!saved) return save.campaign.encounter?.defenseCommitments === undefined;
 	const encounter = save.campaign.encounter;
 	if (save.campaign.phase !== 'encounter' || !encounter || encounter.id !== saved.encounterId) return false;
-	try { validateCampaignEncounterSetup(encounter, saved.setup); } catch { return false; }
+	try { validateCampaignEncounterSetup(encounter, saved.setup, { allowLegacyBeachheads: true }); } catch { return false; }
 	if (saved.phase === 'allocation') return encounter.defenseCommitments === undefined;
 	if (encounter.defenseCommitments) {
-		try { commitEncounterDefenses(save.campaign, saved.setup); } catch { return false; }
+		try { commitEncounterDefenses(save.campaign, saved.setup, { allowLegacyBeachheads: true }); } catch { return false; }
 	}
 	const system = save.campaign.systems.find(function (item) { return item.id === encounter.systemId; });
 	const game = saved.game;

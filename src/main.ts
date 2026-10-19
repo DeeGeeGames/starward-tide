@@ -29,9 +29,10 @@ import { describeCampaignTransition, describeEncounterOutcome } from './campaign
 import type { CampaignEncounterOutcome } from './campaign-report';
 import { v4 as createId } from 'uuid';
 import { campaignWinner } from './campaign-scenario';
+import { formatElapsedTime } from './time-format';
 import { cancelExpedition, commitExpedition, advanceCampaign, setCampaignPaused, applyCampaignEncounterResult } from './campaign-state';
 import type { CampaignState } from './campaign-state';
-import { createDefaultEncounterSetup } from './campaign-setup';
+import { createDefaultEncounterSetup, createLegacyCompatibleEncounterSetup, hasIneligibleBeachheadTarget } from './campaign-setup';
 import type { CampaignEncounterSetup } from './campaign-setup';
 import { createCampaignBattle } from './campaign-encounter';
 import { campaignBattleLaunchState, createCampaignLaunch } from './campaign-launch';
@@ -83,6 +84,7 @@ const multiButton = element('multi', HTMLButtonElement);
 const saveGameButton = element('save-game', HTMLButtonElement);
 const saveStatus = element('save-status', HTMLSpanElement);
 const menuSaveStatus = element('save-status-menu', HTMLParagraphElement);
+let campaignSaveStatusRevision = 0;
 const campaignReturn = document.createElement('button');
 campaignReturn.id = 'campaign-return';
 campaignReturn.textContent = 'Return to galaxy';
@@ -173,13 +175,6 @@ const icons: Record<Production, string> = {
 	ships: '◆',
 	guns: '✣',
 };
-const timeLabel = function (seconds: number): string {
-	return `${Math.floor(seconds / 60)
-		.toString()
-		.padStart(2, '0')}:${Math.floor(seconds % 60)
-		.toString()
-		.padStart(2, '0')}`;
-};
 const feedback = function (text: string): void {
 	orderMessage = text;
 	noticeUntil = performance.now() + 2600;
@@ -196,9 +191,29 @@ const saveErrorMessage = function (error: unknown): string {
 const updateSaveStatus = function (message: string): void {
 	saveStatus.textContent = message;
 	menuSaveStatus.textContent = message;
+	campaignView.setSaveStatus(message);
 };
 const savedStatus = function (savedAt: number): string {
 	return `Saved ${new Date(savedAt).toLocaleString()}`;
+};
+const saveCampaignWithStatus = async function (
+	save: CampaignSave,
+	isCurrent: () => boolean,
+	retryInstruction = campaignRuntime ? 'Use Save on the game HUD to retry.' : 'Use Save campaign in the menu to retry.',
+): Promise<void> {
+	const repository = profileRepository;
+	if (!repository) throw new Error('Local profile storage is unavailable.');
+	const revision = ++campaignSaveStatusRevision;
+	updateSaveStatus('Saving…');
+	try {
+		await repository.saveCampaign(save);
+		if (revision === campaignSaveStatusRevision && isCurrent()) updateSaveStatus(savedStatus(save.savedAt));
+	} catch (error) {
+		if (revision === campaignSaveStatusRevision && isCurrent()) {
+			updateSaveStatus(`Save failed · ${saveErrorMessage(error)} ${retryInstruction}`);
+		}
+		throw error;
+	}
 };
 const sameMap = function (left: StarMap, right: StarMap): boolean {
 	return (
@@ -231,15 +246,10 @@ const saveCurrentProfile = async function (): Promise<void> {
 				captureEvents: campaignRuntime.getCaptureEvents(),
 			} } : {}),
 		};
-		try {
-			await profileRepository.saveCampaign(save);
-			// The in-memory campaign remains authoritative while this snapshot writes.
-			if (activeProfileId === profileId) updateSaveStatus(savedStatus(save.savedAt));
-		} catch (error) {
-			if (campaignSession?.profileId === profileId && campaignSession.campaign.systems === session.campaign.systems)
-				updateSaveStatus(`Save failed · ${saveErrorMessage(error)}`);
-			throw error;
-		}
+		await saveCampaignWithStatus(save, function () {
+			return activeProfileId === profileId && campaignSession?.profileId === profileId &&
+				campaignSession.campaign.systems === session.campaign.systems;
+		});
 		return;
 	}
 	const capture = function (): ReturnType<typeof captureConquestSave> { return captureConquestSave(
@@ -517,7 +527,7 @@ const refreshContent = function (): void {
 			return e.components.planet.owner === 'red';
 		}).length,
 	);
-	clock.textContent = timeLabel(match.time);
+	clock.textContent = formatElapsedTime(match.time);
 	pause.textContent = match.paused ? '▷' : 'Ⅱ';
 	pause.setAttribute('aria-label', match.paused ? 'Resume game' : 'Pause game');
 	pause.setAttribute('aria-pressed', String(match.paused));
@@ -556,7 +566,7 @@ const refreshContent = function (): void {
 			...match.notices.slice(0, 3).map(function (n) {
 				const row = document.createElement('p');
 				row.style.borderColor = COLORS[n.side];
-				row.textContent = `${timeLabel(n.time)} ${n.text}`;
+				row.textContent = `${formatElapsedTime(n.time)} ${n.text}`;
 				return row;
 			}),
 		);
@@ -641,6 +651,7 @@ const mapInput = createMapInput({
 	zoomAt,
 });
 const renderer = await createPixiRenderer({
+	measure: function (name, action) { return diagnostics ? diagnostics.measure(name, action) : action(); },
 	getViewport: function () { return { width: board.clientWidth, height: board.clientHeight }; },
 	canvas,
 	getPixelRatio: function (): number {
@@ -705,7 +716,7 @@ let fullscreenPending = false;
 const syncFullscreen = function (): void {
 	const active = Boolean(document.fullscreenElement);
 	const label = active ? 'Exit fullscreen' : 'Enter fullscreen';
-	for (const button of fullscreenButtons) {
+	for (const button of document.querySelectorAll<HTMLButtonElement>('.fullscreen-icon-button')) {
 		button.setAttribute('aria-pressed', String(active));
 		button.setAttribute('aria-label', label);
 		button.innerHTML = `<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">${active
@@ -720,14 +731,16 @@ const syncFullscreen = function (): void {
 const toggleFullscreen = async function (): Promise<void> {
 	if (fullscreenPending) return;
 	fullscreenPending = true;
-	titleFullscreenStatus.textContent = '';
+	if (frontMenu.getCurrentScreen() === 'campaign') campaignView.notify('');
+	else titleFullscreenStatus.textContent = '';
 	syncFullscreen();
 	try {
 		if (document.fullscreenElement) await document.exitFullscreen();
 		else await document.documentElement.requestFullscreen();
 	} catch {
 		const message = 'Fullscreen could not change. Check browser permissions.';
-		if (app.hidden) titleFullscreenStatus.textContent = message;
+		if (frontMenu.getCurrentScreen() === 'campaign') campaignView.notify(message);
+		else if (app.hidden) titleFullscreenStatus.textContent = message;
 		else {
 			feedback(message);
 			refresh();
@@ -990,9 +1003,11 @@ const continueProfile = async function (profileId: string): Promise<void> {
 		throw error;
 	}
 };
-const campaignSaveForState = function (state: CampaignState, profileId: string): CampaignSave {
+
+const campaignSaveForState = function (state: CampaignState, profileId: string, allowLegacyBeachheads = false): CampaignSave {
 	return { schemaVersion: CAMPAIGN_SAVE_SCHEMA_VERSION, mode: 'campaign', profileId, savedAt: Date.now(), campaign: state,
-		...(state.encounter ? { encounterState: { phase: 'allocation' as const, encounterId: state.encounter.id, setup: createDefaultEncounterSetup(state.encounter) } } : {}),
+		...(state.encounter ? { encounterState: { phase: 'allocation' as const, encounterId: state.encounter.id, setup: allowLegacyBeachheads
+			? createLegacyCompatibleEncounterSetup(state.encounter) : createDefaultEncounterSetup(state.encounter) } } : {}),
 	};
 };
 const persistCampaign = async function (save: CampaignSave): Promise<void> {
@@ -1002,7 +1017,10 @@ const persistCampaign = async function (save: CampaignSave): Promise<void> {
 	campaignSession = save;
 	activeProfileId = save.profileId;
 	hasActiveConquest = true;
-	await profileRepository.saveCampaign(save);
+	await saveCampaignWithStatus(save, function () {
+		return activeProfileId === save.profileId && campaignSession?.profileId === save.profileId &&
+			campaignSession.campaign.systems === save.campaign.systems;
+	});
 };
 const persistCampaignAction = async function (save: CampaignSave): Promise<void> {
 	try { await persistCampaign(save); }
@@ -1013,7 +1031,6 @@ const persistCampaignAction = async function (save: CampaignSave): Promise<void>
 		pauseGalaxy();
 		renderCampaign();
 		const message = `Changes applied, but saving failed. Use Save campaign to retry. ${saveErrorMessage(error)}`;
-		updateSaveStatus(message);
 		campaignView.notify(message);
 	}
 };
@@ -1046,7 +1063,6 @@ const advanceGalaxy = function (elapsed: number): void {
 		pauseGalaxy();
 		renderCampaign();
 		const message = `Save failed · ${saveErrorMessage(error)}`;
-		updateSaveStatus(message);
 		campaignView.notify(message);
 	});
 };
@@ -1058,7 +1074,12 @@ const enterCampaignBattle = function (setup: CampaignEncounterSetup): Promise<vo
 			const session = campaignSession;
 			if (!session || !profileRepository) throw new Error('No campaign is active.');
 			const resumed = session.encounterState?.phase === 'battle' ? session.encounterState : undefined;
-			const battle = await createCampaignBattle(session.campaign, setup, resumed?.game, resumed?.captureEvents);
+			const encounter = session.campaign.encounter;
+			const savedSetup = session.encounterState?.setup;
+			const allowLegacyBeachheads = encounter !== null && savedSetup !== undefined &&
+				hasIneligibleBeachheadTarget(encounter, savedSetup);
+			const battle = await createCampaignBattle(session.campaign, setup, resumed?.game, resumed?.captureEvents,
+				{ allowLegacyBeachheads });
 			let installed = false;
 			try {
 				battle.world.getResource('match').paused = resumed ? true : document.hidden;
@@ -1066,9 +1087,13 @@ const enterCampaignBattle = function (setup: CampaignEncounterSetup): Promise<vo
 				const snapshot = captureConquestSave(battle.world, battle.map, 'skirmish', pace, session.profileId).game;
 				const encounter = session.campaign.encounter;
 				if (!encounter) throw new Error('No encounter is active.');
-				const save: CampaignSave = { ...session, campaign: campaignBattleLaunchState(session, setup), savedAt: Date.now(), encounterState: { phase: 'battle', encounterId: encounter.id, setup,
+				const save: CampaignSave = { ...session, campaign: campaignBattleLaunchState(session, setup, { allowLegacyBeachheads }), savedAt: Date.now(), encounterState: { phase: 'battle', encounterId: encounter.id, setup,
 					game: snapshot, captureEvents: battle.runtime.getCaptureEvents() } };
-				await profileRepository.saveCampaign(save);
+				try { await persistCampaign(save); }
+				catch (error) {
+					if (campaignSession === save) campaignSession = session;
+					throw error;
+				}
 				await installGame({ game: battle.world, map: battle.map, scenario: 'skirmish', profileId: session.profileId, pace,
 					paused: snapshot.match.paused, hiddenPause: document.hidden, savedAt: save.savedAt, campaign: { save, runtime: battle.runtime } });
 				installed = true;
@@ -1078,6 +1103,8 @@ const enterCampaignBattle = function (setup: CampaignEncounterSetup): Promise<vo
 	});
 };
 const campaignView = createCampaignView({
+	toggleFullscreen: toggleFullscreen,
+	syncFullscreen: syncFullscreen,
 	order: async function (order) {
 		if (!campaignSession) return;
 		const state = commitExpedition(campaignSession.campaign, { ...order, id: createId(), factionId: 'blue' });
@@ -1138,22 +1165,23 @@ campaignReturn.addEventListener('click', async function () {
 		campaignView.showReport(report);
 		if (state.encounter) campaignView.prepareEncounter();
 		if (persistenceError !== undefined) {
+			updateSaveStatus(`Save failed · ${saveErrorMessage(persistenceError)} Use Save campaign in the menu to retry.`);
 			const message = `Save failed · ${saveErrorMessage(persistenceError)}`;
-			updateSaveStatus(message);
 			campaignView.notify(message);
 		}
 	} catch (error) { feedback(saveErrorMessage(error)); }
 	finally { busy = false; campaignReturn.disabled = false; }
 });
 const openCampaignSave = async function (save: CampaignSave): Promise<void> {
-	if (campaignSession?.profileId !== save.profileId) campaignView.reset();
+	campaignView.reset();
 	campaignOutcome = undefined;
 	campaignSession = { ...save, campaign: setCampaignPaused(save.campaign, true) };
 	campaignRuntime = undefined; hasActiveConquest = true; activeProfileId = save.profileId;
+	updateSaveStatus(savedStatus(save.savedAt));
 	if (save.encounterState?.phase === 'battle') await enterCampaignBattle(save.encounterState.setup);
 	else {
 		if (save.campaign.encounter && !save.encounterState) {
-			await persistCampaign(campaignSaveForState(campaignSession.campaign, save.profileId));
+			await persistCampaign(campaignSaveForState(campaignSession.campaign, save.profileId, true));
 		}
 		await frontMenu.setScreen('campaign', {});
 		if (campaignSession?.campaign.encounter) campaignView.prepareEncounter();
@@ -1169,7 +1197,11 @@ const frontMenu = await createFrontMenu({
 			campaignView.reset();
 			const save = campaignSaveForState(campaign, profileId);
 			if (!profileRepository) throw new Error('Local profile storage is unavailable.');
-			await profileRepository.saveCampaign(save);
+			try {
+				await saveCampaignWithStatus(save, function () { return activeProfileId === profileId; }, 'Use Start campaign to retry.');
+			} catch (error) {
+				throw new Error(`${saveErrorMessage(error)} Start campaign to retry.`, { cause: error });
+			}
 			await openCampaignSave(save);
 		},
 		continue: async function (profileId): Promise<void> {
@@ -1187,6 +1219,7 @@ const frontMenu = await createFrontMenu({
 		await saveCurrentProfile();
 	},
 	onProfileChange: function (profileId) {
+		campaignSaveStatusRevision++;
 		activeProfileId = profileId;
 		campaignSession = undefined;
 		campaignRuntime = undefined;
