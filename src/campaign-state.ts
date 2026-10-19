@@ -116,10 +116,12 @@ const creditPlanetBalances = function (
 	credits: ReadonlyMap<string, number>,
 	factionId: Side,
 ): CampaignPlanet[] {
-	return planets.map(function (planet) {
+	const updated = planets.map(function (planet) {
 		const credit = credits.get(planet.id) ?? 0;
 		return planet.factionId !== factionId || credit === 0 ? planet : { ...planet, points: creditPoints(planet.points, credit) };
 	});
+	assertSystemPointTotals(updated);
+	return updated;
 };
 const distributeFriendlyPoints = function (
 	planets: readonly CampaignPlanet[],
@@ -141,9 +143,7 @@ const distributeFriendlyPoints = function (
 		remaining = Math.max(0, remaining - credit);
 		credits.set(planet.id, credit);
 	}
-	const updated = creditPlanetBalances(planets, credits, factionId);
-	assertSystemPointTotals(updated);
-	return updated;
+	return creditPlanetBalances(planets, credits, factionId);
 };
 
 /** Neutral colonization cost scales with the combined value of the destination's planets. */

@@ -175,6 +175,27 @@ test('immediate cancellation and delayed recall refund only their original still
 	expect(arrived.planets.find(function (planet) { return planet.id === 'sol:2'; })?.points).toBeGreaterThan(70);
 });
 
+test('recall refunds reject system totals beyond the safe numeric range', function () {
+	const base = createCampaign();
+	const maximum = Number.MAX_SAFE_INTEGER;
+	const state = { ...base, nextRivalTime: 10000,
+		rules: { ...base.rules, economy: { ...base.rules.economy, generationPerValueSecond: 0 } },
+		planets: base.planets.map(function (planet) {
+			if (planet.id === 'sol:1') return { ...planet, points: maximum - 100 };
+			if (planet.id === 'sol:2') return { ...planet, points: 50 };
+			if (planet.id === 'deneb:1') return { ...planet, factionId: 'blue' as const, points: 60 };
+			return planet;
+		}),
+	};
+	const outbound = commitExpedition(state, { ...order('z-recall', 60), destinationSystemId: 'deneb' });
+	const friendly = commitExpedition(outbound, { id: 'a-friendly', factionId: 'blue', sourceSystemId: 'deneb', destinationSystemId: 'sol',
+		contributions: [{ planetId: 'deneb:1', points: 60 }] });
+	const elapsed = run(friendly, 5);
+	const recalled = cancelExpedition(elapsed, 'z-recall', 'blue');
+	expect(function () { advanceCampaign(recalled, 5); }).toThrow('Campaign point total exceeds the safe numeric range.');
+	expect(state.planets.find(function (planet) { return planet.id === 'sol:1'; })?.points).toBe(maximum - 100);
+});
+
 test('captures and recaptures clear only the planet whose ownership changes', function () {
 	const battle = run(commitExpedition(initial(), order('battle')), 10);
 	const target = battle.encounter?.planets[0];
