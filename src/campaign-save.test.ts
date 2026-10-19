@@ -145,6 +145,54 @@ test('allocation drafts round-trip with validated budgets, targets and active en
 	]) expect(isSupportedCampaignSave(input)).toBe(false);
 });
 
+test('rival beachhead allocation survives save and continue without rerolling', function () {
+	const initial = makeSave();
+	const state = commitExpedition(initial.campaign, { id: 'rival', factionId: 'red', sourceSystemId: 'away', destinationSystemId: 'home',
+		contributions: [{ planetId: 'away:One', points: 40 }] });
+	const active = { ...initial, campaign: advanceCampaign(setCampaignPaused(state, false), 10) };
+	const encounter = active.campaign.encounter;
+	if (!encounter) throw new Error('Missing rival encounter');
+	const setup = createDefaultEncounterSetup(encounter);
+	const save: CampaignSave = { ...active, encounterState: { phase: 'allocation', encounterId: encounter.id, setup } };
+	const resumed = parseCampaignSave(save);
+	expect(resumed.encounterState?.phase).toBe('allocation');
+	if (resumed.encounterState?.phase !== 'allocation') throw new Error('Missing saved rival allocation');
+	expect(resumed.encounterState.setup.beachheads).toEqual(setup.beachheads);
+	expect(createDefaultEncounterSetup(encounter).beachheads).toEqual(resumed.encounterState.setup.beachheads);
+});
+
+test('older allocation and battle saves retain their already selected neutral beachheads', async function () {
+	const initial = makeSave();
+	const mixed = { ...initial.campaign, planets: initial.campaign.planets.map(function (planet) {
+		return planet.id === 'home:Two' ? { ...planet, factionId: null } : planet;
+	}) };
+	const sent = commitExpedition(mixed, { id: 'legacy-rival', factionId: 'red', sourceSystemId: 'away', destinationSystemId: 'home',
+		contributions: [{ planetId: 'away:One', points: 40 }] });
+	const active = { ...initial, campaign: advanceCampaign(setCampaignPaused(sent, false), 10) };
+	const encounter = active.campaign.encounter;
+	if (!encounter) throw new Error('Missing rival encounter');
+	const setup = { ...createDefaultEncounterSetup(encounter), beachheads: [{ planetId: 'home:Two', troops: 40, ships: 0 }] };
+	const allocationSave: CampaignSave = { ...active, encounterState: { phase: 'allocation', encounterId: encounter.id, setup } };
+	expect(parseCampaignSave(allocationSave)).toEqual(allocationSave);
+
+	const battle = await createCampaignBattle(active.campaign, setup, undefined, undefined, { allowLegacyBeachheads: true });
+	let resumed: Awaited<ReturnType<typeof createCampaignBattle>> | undefined;
+	try {
+		const game = captureConquestSave(battle.world, battle.map, 'skirmish', 1, 'profile').game;
+		const battleSave: CampaignSave = { ...active, encounterState: { phase: 'battle', encounterId: encounter.id, setup, game, captureEvents: [] } };
+		const restored = parseCampaignSave(battleSave);
+		expect(restored).toEqual(battleSave);
+		if (restored.encounterState?.phase !== 'battle') throw new Error('Missing saved legacy battle');
+		resumed = await createCampaignBattle(restored.campaign, restored.encounterState.setup, restored.encounterState.game,
+			restored.encounterState.captureEvents, { allowLegacyBeachheads: true });
+		expect(units(resumed.world).map(function (entity) { return entity.components.unit; }))
+			.toEqual(units(battle.world).map(function (entity) { return entity.components.unit; }));
+	} finally {
+		await battle.world.dispose();
+		await resumed?.world.dispose();
+	}
+});
+
 test('tactical snapshots resume existing forces and point commitments without reseeding', async function () {
 	const active = startEncounter(makeSave());
 	const encounter = active.campaign.encounter;

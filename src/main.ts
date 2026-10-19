@@ -32,7 +32,7 @@ import { campaignWinner } from './campaign-scenario';
 import { formatElapsedTime } from './time-format';
 import { cancelExpedition, commitExpedition, advanceCampaign, setCampaignPaused, applyCampaignEncounterResult } from './campaign-state';
 import type { CampaignState } from './campaign-state';
-import { createDefaultEncounterSetup } from './campaign-setup';
+import { createDefaultEncounterSetup, createLegacyCompatibleEncounterSetup, hasIneligibleBeachheadTarget } from './campaign-setup';
 import type { CampaignEncounterSetup } from './campaign-setup';
 import { createCampaignBattle } from './campaign-encounter';
 import { createCampaignLaunch } from './campaign-launch';
@@ -1003,9 +1003,11 @@ const continueProfile = async function (profileId: string): Promise<void> {
 		throw error;
 	}
 };
-const campaignSaveForState = function (state: CampaignState, profileId: string): CampaignSave {
+
+const campaignSaveForState = function (state: CampaignState, profileId: string, allowLegacyBeachheads = false): CampaignSave {
 	return { schemaVersion: CAMPAIGN_SAVE_SCHEMA_VERSION, mode: 'campaign', profileId, savedAt: Date.now(), campaign: state,
-		...(state.encounter ? { encounterState: { phase: 'allocation' as const, encounterId: state.encounter.id, setup: createDefaultEncounterSetup(state.encounter) } } : {}),
+		...(state.encounter ? { encounterState: { phase: 'allocation' as const, encounterId: state.encounter.id, setup: allowLegacyBeachheads
+			? createLegacyCompatibleEncounterSetup(state.encounter) : createDefaultEncounterSetup(state.encounter) } } : {}),
 	};
 };
 const persistCampaign = async function (save: CampaignSave): Promise<void> {
@@ -1072,7 +1074,12 @@ const enterCampaignBattle = function (setup: CampaignEncounterSetup): Promise<vo
 			const session = campaignSession;
 			if (!session || !profileRepository) throw new Error('No campaign is active.');
 			const resumed = session.encounterState?.phase === 'battle' ? session.encounterState : undefined;
-			const battle = await createCampaignBattle(session.campaign, setup, resumed?.game, resumed?.captureEvents);
+			const encounter = session.campaign.encounter;
+			const savedSetup = session.encounterState?.setup;
+			const allowLegacyBeachheads = encounter !== null && savedSetup !== undefined &&
+				hasIneligibleBeachheadTarget(encounter, savedSetup);
+			const battle = await createCampaignBattle(session.campaign, setup, resumed?.game, resumed?.captureEvents,
+				{ allowLegacyBeachheads });
 			let installed = false;
 			try {
 				battle.world.getResource('match').paused = resumed ? true : document.hidden;
@@ -1174,7 +1181,7 @@ const openCampaignSave = async function (save: CampaignSave): Promise<void> {
 	if (save.encounterState?.phase === 'battle') await enterCampaignBattle(save.encounterState.setup);
 	else {
 		if (save.campaign.encounter && !save.encounterState) {
-			await persistCampaign(campaignSaveForState(campaignSession.campaign, save.profileId));
+			await persistCampaign(campaignSaveForState(campaignSession.campaign, save.profileId, true));
 		}
 		await frontMenu.setScreen('campaign', {});
 		if (campaignSession?.campaign.encounter) campaignView.prepareEncounter();

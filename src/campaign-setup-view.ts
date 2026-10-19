@@ -4,7 +4,7 @@ import type { Camera } from './camera';
 import { createMapInput } from './map-input';
 import { campaignEntryEdge } from './campaign-encounter';
 import type { CampaignEntryEdge } from './campaign-encounter';
-import { validateCampaignEncounterSetup } from './campaign-setup';
+import { isLastActiveBeachhead, validateCampaignEncounterSetup } from './campaign-setup';
 import type { CampaignEncounterSetup } from './campaign-setup';
 import type { CampaignState, EncounterPlanet } from './campaign-state';
 import type { DefenseForces, InvasionForces } from './campaign-allocation';
@@ -76,7 +76,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 	const launch = button('Launch encounter', function () { void run(async function () {
 		const state = current;
 		if (!state?.encounter || !draft) return;
-		validateCampaignEncounterSetup(state.encounter, draft);
+		validateCampaignEncounterSetup(state.encounter, draft, { allowLegacyBeachheads: legacyBeachheads.size > 0 });
 		await options.launch(structuredClone(draft));
 	}); }, 'csu-primary');
 	const menu = button('☰', function () { openDrawer(drawer === 'menu' ? 'allocation' : 'menu'); }, 'csu-menu');
@@ -96,6 +96,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 	root.append(board, header, heading, panel, status, caption);
 	let current: CampaignState | undefined;
 	let draft: CampaignEncounterSetup | undefined;
+	let legacyBeachheads = new Set<string>();
 	let encounterId: string | undefined;
 	let selected: string | undefined;
 	let drawer: Drawer = 'allocation';
@@ -122,7 +123,8 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 	let writer = makeWriter();
 	const flush = async function (): Promise<void> {
 		try {
-			if (current?.encounter && draft) validateCampaignEncounterSetup(current.encounter, draft);
+			if (current?.encounter && draft)
+				validateCampaignEncounterSetup(current.encounter, draft, { allowLegacyBeachheads: legacyBeachheads.size > 0 });
 			await writer.flush();
 		} catch (error) { showError(error); throw error; }
 	};
@@ -227,24 +229,36 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 			line.setAttribute('x2', String(seed[1])); line.setAttribute('y2', String(seed[2]));
 			routes.append(line);
 		}
-		try { validateCampaignEncounterSetup(current.encounter, draft); launch.disabled = false; }
+		try {
+			validateCampaignEncounterSetup(current.encounter, draft, { allowLegacyBeachheads: legacyBeachheads.size > 0 });
+			launch.disabled = false;
+		}
 		catch { launch.disabled = true; }
 	};
 	const persist = function (): void {
 		if (!draft || !current?.encounter) return;
 		updateMap();
-		try { validateCampaignEncounterSetup(current.encounter, draft); }
+		try { validateCampaignEncounterSetup(current.encounter, draft, { allowLegacyBeachheads: legacyBeachheads.size > 0 }); }
 		catch (error) { status.textContent = error instanceof Error ? error.message : 'Allocation is incomplete'; return; }
 		status.textContent = 'Saving allocation…';
 		writer.write(draft);
 	};
 	const change = function (mode: AllocationMode, kind: UnitKind, value: number, planet: EncounterPlanet): void {
 		if (pending || !draft || !Number.isSafeInteger(value)) return;
-		const editable = mode === 'invasion' ? current?.encounter?.attacker === 'blue' : planet.factionId === 'blue';
+		const encounter = current?.encounter;
+		const targetable = planet.factionId !== null && planet.factionId !== encounter?.attacker;
+		const legacy = legacyBeachheads.has(planet.planetId) && draft.beachheads.some(function (item) { return item.planetId === planet.planetId; });
+		const editable = mode === 'invasion'
+			? encounter?.attacker === 'blue' && (targetable || legacy)
+			: planet.factionId === 'blue';
 		if (!editable || (mode === 'invasion' && kind === 'guns')) return;
 		const forces = forcesFor(mode);
+		if (mode === 'invasion' && legacy && !targetable && value > forces[kind]) return;
 		const maximum = forces[kind] + Math.floor(remaining(mode, planet) / draft.costs[kind]);
 		const count = Math.max(0, Math.min(maximum, value));
+		const lastLegacyBeachhead = mode === 'invasion' && legacy && !targetable && isLastActiveBeachhead(draft, planet.planetId);
+		const otherForce = kind === 'troops' ? forces.ships : forces.troops;
+		if (lastLegacyBeachhead && count === 0 && otherForce === 0) { refreshControls(); return; }
 		if (mode === 'defense') draft = { ...draft, defenders: draft.defenders.map(function (item) {
 			return item.planetId === planet.planetId ? { ...item, forces: { ...item.forces, [kind]: count } } : item;
 		}) };
@@ -295,18 +309,31 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		}
 		const planet = encounter.planets.find(function (item) { return item.planetId === selected; });
 		if (!planet) return;
+		const hasOpposingOwnedPlanet = encounter.planets.some(function (item) {
+			return item.factionId !== null && item.factionId !== encounter.attacker;
+		});
 		titleText.textContent = planet.name;
 		const updates: Array<() => void> = [];
 		const addAllocation = function (mode: AllocationMode): void {
-			const editable = mode === 'invasion' ? encounter.attacker === 'blue' : planet.factionId === 'blue';
+			const targetable = planet.factionId !== null && planet.factionId !== encounter.attacker;
+			const legacy = legacyBeachheads.has(planet.planetId) && draftSetup().beachheads.some(function (item) { return item.planetId === planet.planetId; });
+			const lastLegacyBeachhead = mode === 'invasion' && legacy && !targetable && isLastActiveBeachhead(draftSetup(), planet.planetId);
+			const editable = mode === 'invasion'
+				? encounter.attacker === 'blue' && (targetable || legacy)
+				: planet.factionId === 'blue';
 			if (!editable) {
-				panel.append(node('p', mode === 'invasion'
-					? 'Rival invasion forces and beachheads are hidden until battle starts.'
-					: 'Defending forces are hidden until battle starts.', 'csu-rule'));
+				const message = mode !== 'invasion' ? 'Defending forces are hidden until battle starts.'
+					: encounter.attacker !== 'blue' ? 'Rival invasion forces and beachheads are hidden until battle starts.'
+					: 'Beachheads must target planets owned by the opposing faction.';
+				panel.append(node('p', message, 'csu-rule'));
 				return;
 			}
 			const section = node('section', '', 'csu-allocation-section');
 			section.append(node('p', mode === 'invasion' ? 'Your invasion beachhead · shared expedition budget' : 'Your planetary defense · local budget', 'csu-sub'));
+			if (mode === 'invasion' && legacy && !targetable) section.append(node('p', lastLegacyBeachhead
+				? hasOpposingOwnedPlanet ? 'Assign forces to an opposing-owned planet before removing this saved beachhead.'
+					: 'This saved beachhead must keep at least one force because no opposing-owned planet is available.'
+				: 'This saved beachhead can be reduced to remove it.', 'csu-rule'));
 			const budget = node('p', '', 'csu-budget');
 			section.append(budget);
 			const kinds: readonly UnitKind[] = mode === 'invasion' ? ['troops', 'ships'] : ['troops', 'ships', 'guns'];
@@ -332,11 +359,14 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 				updates.push(function () {
 					const forces = forcesFor(mode);
 					const left = remaining(mode, planet);
+					const otherKind = kind === 'troops' ? 'ships' : 'troops';
+					const minimum = mode === 'invasion' && lastLegacyBeachhead && forces[otherKind] === 0 ? 1 : 0;
 					range.max = String(Math.max(forces[kind], forces[kind] + Math.floor(left / draftSetup().costs[kind])));
+					range.min = String(minimum);
 					range.value = String(forces[kind]);
 					output.value = String(forces[kind]);
-					minus.disabled = forces[kind] === 0;
-					plus.disabled = left < draftSetup().costs[kind];
+					minus.disabled = forces[kind] <= minimum;
+					plus.disabled = left < draftSetup().costs[kind] || (mode === 'invasion' && legacy && !targetable);
 				});
 			}
 			updates.push(function () {
@@ -370,6 +400,12 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		if (encounterId !== encounter.id) {
 			encounterId = encounter.id;
 			draft = structuredClone(setup);
+			const targetable = new Set(encounter.planets.filter(function (planet) {
+				return planet.factionId !== null && planet.factionId !== encounter.attacker;
+			}).map(function (planet) { return planet.planetId; }));
+			legacyBeachheads = new Set(setup.beachheads.filter(function (beachhead) {
+				return !targetable.has(beachhead.planetId);
+			}).map(function (beachhead) { return beachhead.planetId; }));
 			selected = encounter.planets[0]?.planetId;
 			drawer = 'allocation';
 			autoFit = true;
@@ -415,6 +451,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		writer = makeWriter();
 		current = undefined;
 		draft = undefined;
+		legacyBeachheads.clear();
 		encounterId = undefined;
 		selected = undefined;
 		drawer = 'allocation';

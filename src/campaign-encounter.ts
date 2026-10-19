@@ -7,7 +7,7 @@ import type { StarMap, PlanetSeed } from './maps';
 import type { GameSnapshot } from './save-state';
 import { seedFreshGame } from './game-scenario';
 import { validateCampaignEncounterSetup } from './campaign-setup';
-import type { CampaignEncounterSetup } from './campaign-setup';
+import type { CampaignEncounterSetup, CampaignEncounterSetupValidationOptions } from './campaign-setup';
 
 type CampaignCapture = CampaignEncounterResult['captureEvents'][number];
 
@@ -112,10 +112,11 @@ export const createCampaignBattle = async function (
 	setup: CampaignEncounterSetup,
 	snapshot?: GameSnapshot,
 	captureEvents?: readonly CampaignCapture[],
+	validationOptions: Readonly<CampaignEncounterSetupValidationOptions> = {},
 ): Promise<CampaignBattle> {
 	const encounter = state.encounter;
 	if (!encounter || state.phase !== 'encounter') throw new Error('No campaign encounter is active');
-	validateCampaignEncounterSetup(encounter, setup);
+	validateCampaignEncounterSetup(encounter, setup, validationOptions);
 	const expedition = state.expeditions.find(function (item) { return item.id === encounter.expeditionId; });
 	const source = state.systems.find(function (system) { return system.id === expedition?.sourceSystemId; });
 	const destination = state.systems.find(function (system) { return system.id === encounter.systemId; });
