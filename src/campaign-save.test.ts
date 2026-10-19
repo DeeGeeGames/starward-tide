@@ -1,10 +1,11 @@
 import { expect, test } from 'bun:test';
-import { parseCampaignSave, isSupportedCampaignSave } from './campaign-save';
+import { campaignBattleLaunchState } from './campaign-launch';
+import { campaignStateSchema, parseCampaignSave, isSupportedCampaignSave } from './campaign-save';
 import type { CampaignSave } from './campaign-save';
 import { CAMPAIGN_RULES, MINIMUM_CAMPAIGN_EVENT_SECONDS, cancelExpedition, applyCampaignEncounterResult, commitExpedition, advanceCampaign, setCampaignPaused } from './campaign-state';
 import type { CampaignState } from './campaign-state';
 import { InvalidSaveError } from './save-state';
-import { createDefaultEncounterSetup } from './campaign-setup';
+import { commitEncounterDefenses, createDefaultEncounterSetup } from './campaign-setup';
 import { createCampaignBattle } from './campaign-encounter';
 import { captureConquestSave } from './game-save';
 import { units } from './game';
@@ -160,6 +161,8 @@ test('tactical snapshots resume existing forces and point commitments without re
 			captureEvents: battle.runtime.getCaptureEvents() } };
 		const restored = parseCampaignSave(save);
 		expect(restored).toEqual(save);
+		expect(campaignBattleLaunchState(restored, setup)).toBe(restored.campaign);
+		expect(restored.campaign.encounter?.defenseCommitments).toBeUndefined();
 		if (restored.encounterState?.phase !== 'battle') throw new Error('Missing battle snapshot');
 		const resumed = await createCampaignBattle(restored.campaign, restored.encounterState.setup, restored.encounterState.game,
 			restored.encounterState.captureEvents);
@@ -308,5 +311,91 @@ test('saved timing rules enforce the supported minimum event interval', function
 				rules: { ...save.campaign.rules, [field]: interval } } })).toBe(false);
 		expect(isSupportedCampaignSave({ ...save, campaign: { ...save.campaign,
 			rules: { ...save.campaign.rules, [field]: MINIMUM_CAMPAIGN_EVENT_SECONDS } } })).toBe(true);
+	}
+});
+
+
+test('defenses spend only allocated owned-planet points once across save, resume and resolution', async function () {
+	const active = startEncounter(makeSave());
+	const encounter = active.campaign.encounter;
+	if (!encounter) throw new Error('Expected encounter');
+	const setup = { ...createDefaultEncounterSetup(encounter), defenders: [
+		{ planetId: 'away:One', forces: { troops: 3, ships: 2, guns: 1 } },
+		{ planetId: 'away:Two', forces: { troops: 0, ships: 0, guns: 0 } },
+	] };
+	const draft = parseCampaignSave({ ...active, encounterState: { phase: 'allocation', encounterId: encounter.id, setup } });
+	expect(draft.campaign).toEqual(active.campaign);
+	const committed = campaignBattleLaunchState(draft, setup);
+	expect(committed.planets.find(function (planet) { return planet.id === 'away:One'; })?.depletion).toBe(20);
+	expect(committed.planets.find(function (planet) { return planet.id === 'away:Two'; })?.depletion).toBe(0);
+	expect(committed.planets.filter(function (planet) { return planet.systemId === 'home'; }))
+		.toEqual(active.campaign.planets.filter(function (planet) { return planet.systemId === 'home'; }));
+	expect(active.campaign.planets.find(function (planet) { return planet.id === 'away:One'; })?.depletion).toBe(0);
+	const battle = await createCampaignBattle(committed, setup);
+	try {
+		const save: CampaignSave = { ...active, campaign: committed, encounterState: { phase: 'battle', encounterId: encounter.id, setup,
+			game: captureConquestSave(battle.world, battle.map, 'skirmish', 1, 'profile').game, captureEvents: [] } };
+		const restored = parseCampaignSave(save);
+		expect(campaignBattleLaunchState(restored, setup)).toBe(restored.campaign);
+		const altered = { ...setup, defenders: setup.defenders.map(function (item) {
+			return { ...item, forces: { ...item.forces, troops: item.forces.troops + 1 } };
+		}) };
+		expect(function () { commitEncounterDefenses(restored.campaign, altered); }).toThrow('cannot be changed');
+		expect(isSupportedCampaignSave({ ...save, encounterState: { ...save.encounterState, setup: altered } })).toBe(false);
+		expect(isSupportedCampaignSave({ ...save, encounterState: { phase: 'allocation', encounterId: encounter.id, setup } })).toBe(false);
+		expect(isSupportedCampaignSave({ ...save, encounterState: undefined })).toBe(false);
+		expect(isSupportedCampaignSave({ ...save, campaign: { ...committed, planets: active.campaign.planets } })).toBe(false);
+		const result = { encounterId: encounter.id, captureEvents: [], ownership: encounter.planets.map(function (planet) {
+			return { planetId: planet.planetId, factionId: planet.factionId };
+		}) };
+		const resolved = applyCampaignEncounterResult(restored.campaign, result);
+		expect(resolved.planets.find(function (planet) { return planet.id === 'away:One'; })?.depletion).toBe(20);
+		expect(applyCampaignEncounterResult(resolved, result)).toBe(resolved);
+		expect(parseCampaignSave({ ...active, campaign: resolved }).campaign).toEqual(resolved);
+	} finally { await battle.world.dispose(); }
+});
+
+
+test('fractional recovered balances round-trip after defense spending without accepting a whole-point mismatch', async function () {
+	const initial = makeSave();
+	const fractional = { ...initial, campaign: { ...initial.campaign, planets: initial.campaign.planets.map(function (planet) {
+		return { ...planet, depletion: 23.46789123456789 };
+	}) } };
+	const active = startEncounter(fractional);
+	const encounter = active.campaign.encounter;
+	if (!encounter) throw new Error('Expected encounter');
+	const setup = createDefaultEncounterSetup(encounter);
+	const campaign = commitEncounterDefenses(active.campaign, setup);
+	const battle = await createCampaignBattle(campaign, setup);
+	try {
+		const save: CampaignSave = { ...active, campaign, encounterState: { phase: 'battle', encounterId: encounter.id, setup,
+			game: captureConquestSave(battle.world, battle.map, 'skirmish', 1, 'profile').game, captureEvents: [] } };
+		expect(parseCampaignSave(save)).toEqual(save);
+		expect(isSupportedCampaignSave({ ...save, campaign: { ...campaign, planets: campaign.planets.map(function (planet) {
+			return planet.id === 'away:One' ? { ...planet, depletion: planet.depletion + 1 } : planet;
+		}) } })).toBe(false);
+	} finally { await battle.world.dispose(); }
+});
+
+
+test('large defense balances reject whole-point mismatches without reconstruction tolerance', function () {
+	const active = startEncounter(makeSave());
+	const encounter = active.campaign.encounter;
+	if (!encounter) throw new Error('Expected encounter');
+	const maximum = Number.MAX_SAFE_INTEGER - 2000;
+	const campaign = { ...active.campaign, planets: active.campaign.planets.map(function (planet) {
+		return planet.systemId === 'away' ? { ...planet, baselinePoints: maximum, developmentBonusPoints: 0, depletion: maximum - 10 } : planet;
+	}), encounter: { ...encounter, planets: encounter.planets.map(function (planet) { return { ...planet, points: 10 }; }) } };
+	const setup = createDefaultEncounterSetup(campaign.encounter);
+	const committed = commitEncounterDefenses(campaign, setup);
+	expect(campaignStateSchema.safeParse(committed).success).toBe(true);
+	if (!committed.encounter) throw new Error('Expected committed encounter');
+	for (const difference of [1, 4]) {
+		expect(campaignStateSchema.safeParse({ ...committed, encounter: { ...committed.encounter,
+			planets: committed.encounter.planets.map(function (planet) { return { ...planet, points: planet.points + difference }; }),
+		} }).success).toBe(false);
+		expect(campaignStateSchema.safeParse({ ...committed, planets: committed.planets.map(function (planet) {
+			return planet.systemId === 'away' ? { ...planet, depletion: planet.depletion - difference } : planet;
+		}) }).success).toBe(false);
 	}
 });

@@ -1,6 +1,6 @@
 import { validateAttackerAllocation, validateDefenderAllocation } from './campaign-allocation';
 import type { AllocationCosts, BeachheadAllocation, DefenseForces } from './campaign-allocation';
-import type { CampaignEncounter } from './campaign-state';
+import type { CampaignEncounter, CampaignState } from './campaign-state';
 
 export const ENCOUNTER_COSTS: Readonly<AllocationCosts> = { troops: 1, ships: 6, guns: 5 };
 
@@ -47,4 +47,34 @@ export const createDefaultEncounterSetup = function (
 		beachheads: [{ planetId: target.planetId, troops, ships }] };
 	validateCampaignEncounterSetup(encounter, setup);
 	return setup;
+};
+
+/** Debit owned planetary defenses once, retaining the original encounter budgets. */
+export const commitEncounterDefenses = function (state: CampaignState, setup: CampaignEncounterSetup): CampaignState {
+	const encounter = state.encounter;
+	if (state.phase !== 'encounter' || !encounter) throw new Error('No encounter is active');
+	validateCampaignEncounterSetup(encounter, setup);
+	const commitments = encounter.planets.filter(function (planet) { return planet.factionId !== null; }).map(function (planet) {
+		const defender = setup.defenders.find(function (item) { return item.planetId === planet.planetId; });
+		if (!defender) throw new Error('Defense allocation is missing');
+		const result = validateDefenderAllocation(planet.points, defender.forces, setup.costs);
+		if (!result.valid) throw new Error(result.reason);
+		const balance = state.planets.find(function (item) { return item.id === planet.planetId; });
+		if (!balance) throw new Error('Defense planet is missing');
+		return { planetId: planet.planetId, points: result.spent, originalDepletion: balance.depletion };
+	});
+	if (encounter.defenseCommitments) {
+		if (commitments.length !== encounter.defenseCommitments.length || commitments.some(function (item) {
+			return !encounter.defenseCommitments?.some(function (saved) { return saved.planetId === item.planetId && saved.points === item.points; });
+		})) throw new Error('Launched defenses cannot be changed');
+		return state;
+	}
+	const planets = state.planets.map(function (planet) {
+		const debit = commitments.find(function (item) { return item.planetId === planet.id; });
+		if (!debit) return planet;
+		const depletion = planet.depletion + debit.points;
+		if (!Number.isFinite(depletion) || depletion > Number.MAX_SAFE_INTEGER) throw new Error('Defense spending exceeds the safe range');
+		return { ...planet, depletion };
+	});
+	return { ...state, planets, encounter: { ...encounter, defenseCommitments: commitments } };
 };

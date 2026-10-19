@@ -1,3 +1,14 @@
+import { commitEncounterDefenses } from './campaign-setup';
+import type { CampaignEncounterSetup } from './campaign-setup';
+import type { CampaignSave } from './campaign-save';
+import type { CampaignState } from './campaign-state';
+
+/** Older battles keep the ledger that was authoritative when they launched. */
+export const campaignBattleLaunchState = function (save: CampaignSave, setup: CampaignEncounterSetup): CampaignState {
+	if (save.encounterState?.phase === 'battle' && !save.campaign.encounter?.defenseCommitments) return save.campaign;
+	return commitEncounterDefenses(save.campaign, setup);
+};
+
 /** Keep saves outside the interval where a battle exists but is not installed yet. */
 export const createCampaignLaunch = function (): {
 	run: (operation: () => Promise<void>) => Promise<void>;

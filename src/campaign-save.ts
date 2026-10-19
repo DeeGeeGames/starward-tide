@@ -1,7 +1,7 @@
 import { expeditionArrival, isActiveExpedition, MINIMUM_CAMPAIGN_EVENT_SECONDS } from './campaign-state';
 import * as z from 'zod/mini';
 import type { CampaignState, CampaignEncounterResult } from './campaign-state';
-import { validateCampaignEncounterSetup } from './campaign-setup';
+import { commitEncounterDefenses, validateCampaignEncounterSetup } from './campaign-setup';
 import type { CampaignEncounterSetup } from './campaign-setup';
 import type { GameSnapshot } from './save-state';
 import { availablePoints } from './campaign-points';
@@ -46,6 +46,7 @@ const expedition = z.object({
 const encounter = z.object({
 	id, expeditionId: id, systemId: id, attacker: side, attackerPoints: positiveInteger,
 	planets: z.array(z.object({ planetId: id, name: id, factionId: owner, points: amount })).check(z.minLength(1), z.maxLength(100)),
+	defenseCommitments: z.optional(z.array(z.object({ planetId: id, points: integer, originalDepletion: amount })).check(z.maxLength(100))),
 });
 const result = z.object({
 	encounterId: id,
@@ -109,10 +110,19 @@ const hasCampaignIntegrity = function (state: CampaignState): boolean {
 			current.attacker !== order.factionId || current.attackerPoints !== order.points ||
 			current.planets.length !== local.length || !unique(current.planets.map(function (item) { return item.planetId; })) ||
 			current.planets.every(function (item) { return item.factionId === current.attacker; })) return false;
+		const commitments = current.defenseCommitments;
+		if (commitments && (!unique(commitments.map(function (item) { return item.planetId; })) ||
+			commitments.length !== current.planets.filter(function (item) { return item.factionId !== null; }).length ||
+			commitments.some(function (item) { return !current.planets.some(function (planet) {
+				return planet.planetId === item.planetId && planet.factionId !== null && item.points <= planet.points;
+			}); }))) return false;
 		for (const input of current.planets) {
 			const saved = planets.get(input.planetId);
+			const commitment = commitments?.find(function (item) { return item.planetId === input.planetId; });
 			if (!saved || saved.systemId !== current.systemId || saved.name !== input.name || saved.factionId !== input.factionId ||
-				input.points !== availablePoints(saved.baselinePoints + saved.developmentBonusPoints, saved.depletion)) return false;
+				(commitment && saved.depletion !== commitment.originalDepletion + commitment.points)) return false;
+			const maximum = saved.baselinePoints + saved.developmentBonusPoints;
+			if (input.points !== availablePoints(maximum, commitment?.originalDepletion ?? saved.depletion)) return false;
 		}
 	}
 	for (const resolved of state.resolvedEncounters) {
@@ -188,11 +198,14 @@ const savedEncounterSchema = z.discriminatedUnion('phase', [
 
 const hasSavedEncounterIntegrity = function (save: CampaignSave): boolean {
 	const saved = save.encounterState;
-	if (!saved) return true;
+	if (!saved) return save.campaign.encounter?.defenseCommitments === undefined;
 	const encounter = save.campaign.encounter;
 	if (save.campaign.phase !== 'encounter' || !encounter || encounter.id !== saved.encounterId) return false;
 	try { validateCampaignEncounterSetup(encounter, saved.setup); } catch { return false; }
-	if (saved.phase === 'allocation') return true;
+	if (saved.phase === 'allocation') return encounter.defenseCommitments === undefined;
+	if (encounter.defenseCommitments) {
+		try { commitEncounterDefenses(save.campaign, saved.setup); } catch { return false; }
+	}
 	const system = save.campaign.systems.find(function (item) { return item.id === encounter.systemId; });
 	const game = saved.game;
 	if (!system || game.scenario !== 'skirmish' || game.map.width !== system.map.width || game.map.height !== system.map.height ||

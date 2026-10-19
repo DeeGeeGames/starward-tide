@@ -197,7 +197,8 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		routes.replaceChildren();
 		const localSystem = current.systems.find(function (system) { return system.id === current?.encounter?.systemId; });
 		if (!localSystem) return;
-		const active = draft.beachheads.filter(function (beachhead) { return beachhead.troops > 0 || beachhead.ships > 0; });
+		const revealInvasion = current.encounter.attacker === 'blue';
+		const active = (revealInvasion ? draft.beachheads : []).filter(function (beachhead) { return beachhead.troops > 0 || beachhead.ships > 0; });
 		for (const planet of current.encounter.planets) {
 			const view = planetViews.get(planet.planetId);
 			const forces = draft.defenders.find(function (item) { return item.planetId === planet.planetId; })?.forces;
@@ -205,7 +206,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 			const invasion = draft.beachheads.find(function (item) { return item.planetId === planet.planetId; });
 			view.troops.textContent = String(forces.troops);
 			view.orbit.textContent = `◆ ${forces.ships} · ✣ ${forces.guns}`;
-			view.invasion.textContent = invasion ? `↳ ▥ ${invasion.troops} · ◆ ${invasion.ships}` : '';
+			view.invasion.textContent = revealInvasion && invasion ? `↳ ▥ ${invasion.troops} · ◆ ${invasion.ships}` : '';
 			view.button.setAttribute('aria-label', `${planet.name}, ${planet.factionId === 'blue' ? 'your' : planet.factionId === 'red' ? 'rival' : 'neutral'} planet, ${forces.troops} defending troops, ${forces.ships} ships, ${forces.guns} platforms`);
 			view.button.setAttribute('aria-pressed', String(selected === planet.planetId && drawer === 'allocation'));
 			const beachheadIndex = active.findIndex(function (item) { return item.planetId === planet.planetId; });
@@ -271,7 +272,8 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 				const from = state.systems.find(function (item) { return item.id === expedition.sourceSystemId; });
 				const to = state.systems.find(function (item) { return item.id === expedition.destinationSystemId; });
 				const row = node('div', '', 'csu-order');
-				row.append(node('strong', `${from?.name ?? expedition.sourceSystemId} ${expedition.status === 'returning' ? '←' : '→'} ${to?.name ?? expedition.destinationSystemId} · ${amount(expedition.points)} points`),
+				const hideOrigin = encounter.attacker !== 'blue' && expedition.id === encounter.expeditionId;
+				row.append(node('strong', hideOrigin ? `Rival invasion · ${amount(expedition.points)} points` : `${from?.name ?? expedition.sourceSystemId} ${expedition.status === 'returning' ? '←' : '→'} ${to?.name ?? expedition.destinationSystemId} · ${amount(expedition.points)} points`),
 					node('small', expedition.id === encounter.expeditionId ? 'Arrived · resolving now' : `${expedition.status === 'returning' ? 'Returning · arrival' : 'Arrival'} in ${amount(Math.max(0, expeditionArrival(expedition) - state.time))}s · waits for galaxy resolution`));
 				panel.append(row);
 			}
@@ -289,6 +291,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		titleText.textContent = planet.name;
 		const updates: Array<() => void> = [];
 		const addAllocation = function (mode: AllocationMode): void {
+			if (mode === 'invasion' && encounter.attacker !== 'blue') return;
 			const editable = mode === 'invasion' ? encounter.attacker === 'blue' : planet.factionId === 'blue';
 			const section = node('section', '', 'csu-allocation-section');
 			section.append(node('p', mode === 'invasion' ? `${editable ? 'Your' : 'Rival'} invasion beachhead · shared expedition budget` : `${editable ? 'Your' : planet.factionId === null ? 'Neutral' : 'Rival'} planetary defense · local budget`, 'csu-sub'));
@@ -328,7 +331,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 			updates.push(function () {
 				const total = mode === 'invasion' ? encounter.attackerPoints : planet.points;
 				const spent = mode === 'invasion' ? attackSpent() : costOf(forcesFor(mode), draftSetup());
-				budget.textContent = `${amount(spent)} / ${amount(total)} points allocated · ${amount(total - spent)} unassigned${mode === 'invasion' ? ' across all beachheads' : ` on ${planet.name}`}`;
+				budget.textContent = `${amount(spent)} / ${amount(total)} points allocated · ${amount(total - spent)} ${mode === 'invasion' ? 'unassigned across all beachheads' : `points retained on ${planet.name}`}`;
 			});
 			if (editable) panel.append(section);
 			else {
@@ -348,7 +351,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 			consequence.textContent = encounter.attacker === 'blue'
 				? troops === 0 ? 'No invasion troops allocated. Ships alone cannot capture planets.'
 					: left > 0 ? `${amount(left)} unassigned expedition points will be lost on launch.` : 'All expedition points assigned. Troops enter in transports; normal production continues in battle.'
-				: 'Each planet funds its own starting forces. Unassigned points produce no starting units.';
+				: 'Allocated defense points are spent on launch. Unassigned points stay on each planet. Rival unit mix and targets are unknown.';
 		});
 		refreshControls = function (): void { for (const update of updates) update(); };
 		refreshControls();
@@ -375,6 +378,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 			root.dataset.attacker = encounter.attacker;
 			world.style.width = `${system.map.width}px`; world.style.height = `${system.map.height}px`;
 			routes.setAttribute('viewBox', `0 0 ${system.map.width} ${system.map.height}`);
+			entryLabel.hidden = encounter.attacker !== 'blue';
 			entryLabel.textContent = `COMMON ${entryEdge.toUpperCase()}\nENTRY EDGE`;
 			entryLabel.dataset.edge = entryEdge;
 			planetButtons.clear(); planetViews.clear(); planetsLayer.replaceChildren();
@@ -393,7 +397,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 			}
 		}
 		const system = state.systems.find(function (item) { return item.id === encounter.systemId; });
-		heading.textContent = `${system?.name ?? encounter.systemId} · ${encounter.attacker === 'blue' ? 'Your expedition has arrived' : 'Rival invasion incoming'} · Select a planet to allocate starting forces`;
+		heading.textContent = `${system?.name ?? encounter.systemId} · ${encounter.attacker === 'blue' ? 'Your expedition has arrived' : `Rival invasion incoming · ${amount(encounter.attackerPoints)} points`} · Select a planet to allocate starting forces`;
 		blue.textContent = `● ${encounter.planets.filter(function (planet) { return planet.factionId === 'blue'; }).length} YOU`;
 		red.textContent = `● ${encounter.planets.filter(function (planet) { return planet.factionId === 'red'; }).length} RIVAL`;
 		turn.textContent = `Galaxy ${amount(state.time)}s · Frozen`;

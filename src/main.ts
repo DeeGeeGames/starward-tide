@@ -34,7 +34,7 @@ import type { CampaignState } from './campaign-state';
 import { createDefaultEncounterSetup } from './campaign-setup';
 import type { CampaignEncounterSetup } from './campaign-setup';
 import { createCampaignBattle } from './campaign-encounter';
-import { createCampaignLaunch } from './campaign-launch';
+import { campaignBattleLaunchState, createCampaignLaunch } from './campaign-launch';
 import type { CampaignEncounterRuntime } from './campaign-encounter';
 import { CAMPAIGN_SAVE_SCHEMA_VERSION } from './campaign-save';
 import type { CampaignSave } from './campaign-save';
@@ -1066,7 +1066,7 @@ const enterCampaignBattle = function (setup: CampaignEncounterSetup): Promise<vo
 				const snapshot = captureConquestSave(battle.world, battle.map, 'skirmish', pace, session.profileId).game;
 				const encounter = session.campaign.encounter;
 				if (!encounter) throw new Error('No encounter is active.');
-				const save: CampaignSave = { ...session, savedAt: Date.now(), encounterState: { phase: 'battle', encounterId: encounter.id, setup,
+				const save: CampaignSave = { ...session, campaign: campaignBattleLaunchState(session, setup), savedAt: Date.now(), encounterState: { phase: 'battle', encounterId: encounter.id, setup,
 					game: snapshot, captureEvents: battle.runtime.getCaptureEvents() } };
 				await profileRepository.saveCampaign(save);
 				await installGame({ game: battle.world, map: battle.map, scenario: 'skirmish', profileId: session.profileId, pace,
