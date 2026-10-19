@@ -201,16 +201,20 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		routes.replaceChildren();
 		const localSystem = current.systems.find(function (system) { return system.id === current?.encounter?.systemId; });
 		if (!localSystem) return;
-		const active = draft.beachheads.filter(function (beachhead) { return beachhead.troops > 0 || beachhead.ships > 0; });
+		const active = current.encounter.attacker === 'blue'
+			? draft.beachheads.filter(function (beachhead) { return beachhead.troops > 0 || beachhead.ships > 0; }) : [];
 		for (const planet of current.encounter.planets) {
 			const view = planetViews.get(planet.planetId);
 			const forces = draft.defenders.find(function (item) { return item.planetId === planet.planetId; })?.forces;
 			if (!view || !forces) continue;
-			const invasion = draft.beachheads.find(function (item) { return item.planetId === planet.planetId; });
-			view.troops.textContent = String(forces.troops);
-			view.orbit.textContent = `◆ ${forces.ships} · ✣ ${forces.guns}`;
+			const invasion = active.find(function (item) { return item.planetId === planet.planetId; });
+			const ownDefense = planet.factionId === 'blue';
+			view.troops.textContent = ownDefense ? String(forces.troops) : '?';
+			view.orbit.textContent = ownDefense ? `◆ ${forces.ships} · ✣ ${forces.guns}` : 'Defenses unknown';
 			view.invasion.textContent = invasion ? `↳ ▥ ${invasion.troops} · ◆ ${invasion.ships}` : '';
-			view.button.setAttribute('aria-label', `${planet.name}, ${planet.factionId === 'blue' ? 'your' : planet.factionId === 'red' ? 'rival' : 'neutral'} planet, ${forces.troops} defending troops, ${forces.ships} ships, ${forces.guns} platforms`);
+			const defenseLabel = ownDefense
+				? `${forces.troops} defending troops, ${forces.ships} ships, ${forces.guns} platforms` : 'defenses unknown';
+			view.button.setAttribute('aria-label', `${planet.name}, ${planet.factionId === 'blue' ? 'your' : planet.factionId === 'red' ? 'rival' : 'neutral'} planet, ${defenseLabel}`);
 			view.button.setAttribute('aria-pressed', String(selected === planet.planetId && drawer === 'allocation'));
 			const beachheadIndex = active.findIndex(function (item) { return item.planetId === planet.planetId; });
 			const seed = localSystem.map.planets.find(function (item) { return item[0] === planet.name; });
@@ -295,8 +299,14 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 		const updates: Array<() => void> = [];
 		const addAllocation = function (mode: AllocationMode): void {
 			const editable = mode === 'invasion' ? encounter.attacker === 'blue' : planet.factionId === 'blue';
+			if (!editable) {
+				panel.append(node('p', mode === 'invasion'
+					? 'Rival invasion forces and beachheads are hidden until battle starts.'
+					: 'Defending forces are hidden until battle starts.', 'csu-rule'));
+				return;
+			}
 			const section = node('section', '', 'csu-allocation-section');
-			section.append(node('p', mode === 'invasion' ? `${editable ? 'Your' : 'Rival'} invasion beachhead · shared expedition budget` : `${editable ? 'Your' : planet.factionId === null ? 'Neutral' : 'Rival'} planetary defense · local budget`, 'csu-sub'));
+			section.append(node('p', mode === 'invasion' ? 'Your invasion beachhead · shared expedition budget' : 'Your planetary defense · local budget', 'csu-sub'));
 			const budget = node('p', '', 'csu-budget');
 			section.append(budget);
 			const kinds: readonly UnitKind[] = mode === 'invasion' ? ['troops', 'ships'] : ['troops', 'ships', 'guns'];
@@ -325,9 +335,8 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 					range.max = String(Math.max(forces[kind], forces[kind] + Math.floor(left / draftSetup().costs[kind])));
 					range.value = String(forces[kind]);
 					output.value = String(forces[kind]);
-					range.disabled = !editable;
-					minus.disabled = !editable || forces[kind] === 0;
-					plus.disabled = !editable || left < draftSetup().costs[kind];
+					minus.disabled = forces[kind] === 0;
+					plus.disabled = left < draftSetup().costs[kind];
 				});
 			}
 			updates.push(function () {
@@ -335,12 +344,7 @@ export const createCampaignSetupView = function (options: CampaignSetupViewOptio
 				const spent = mode === 'invasion' ? attackSpent() : costOf(forcesFor(mode), draftSetup());
 				budget.textContent = `${amount(spent)} / ${amount(total)} points allocated · ${amount(total - spent)} unassigned${mode === 'invasion' ? ' across all beachheads' : ` on ${planet.name}`}`;
 			});
-			if (editable) panel.append(section);
-			else {
-				const details = node('details', '', 'csu-readonly');
-				details.append(node('summary', `${mode === 'invasion' ? 'Invasion' : 'Planetary defenses'} · read only`), section);
-				panel.append(details);
-			}
+			panel.append(section);
 		};
 		if (encounter.attacker === 'blue') { addAllocation('invasion'); addAllocation('defense'); }
 		else { addAllocation('defense'); addAllocation('invasion'); }
