@@ -101,7 +101,7 @@ Orders and its header count include only active player expeditions. Selecting a 
 
 ### Encounter setup and combat
 
-Defenders have separate budgets for each planet; attackers share one expedition budget across distinct beachheads. Troops cost 1, ships 6, and defense platforms 5. Attackers buy troops and ships; neutral defenders can buy troops only. The player edits only its own faction's allocations; rival allocations are read-only. Unspent allocation does not refund the expedition commitment. A ship-only beachhead is permitted even though ships cannot capture surfaces.
+Defenders have separate budgets for each planet; attackers share one expedition budget across distinct beachheads. Troops cost 1, ships 6, and defense platforms 5. Attackers buy troops and ships; neutral defenders can buy troops only. Each side commits its initial allocation without seeing the other's forces or beachhead targets. The player sees and edits only its own faction's allocations; opposing and neutral defenses and rival beachheads remain hidden until battle starts. Galaxy-map expedition visibility and tactical visibility after launch are unchanged. Unspent allocation does not refund the expedition commitment. A ship-only beachhead is permitted even though ships cannot capture surfaces.
 
 Default defenses spend approximately 30% on ships, 20% on platforms, and the remainder on troops, rounding purchases down; neutral defenses allocate troops only. The default invasion spends approximately half on ships and the remainder on troops at the first planet outside attacker ownership. The owner can revise its allocations before starting combat.
 
