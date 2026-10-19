@@ -279,7 +279,7 @@ test('AI selects its lowest scoring target and dispatches at its configured inte
 		expect(world.getResource('match').aiClock).toBe(0);
 		expect(source.components.planet).toMatchObject({
 			troops: 10,
-			production: 'ships',
+			production: 'troops',
 		});
 		expect(shipsAt(world, source.id, 'red')).toHaveLength(0);
 		expect(
@@ -556,6 +556,137 @@ test('AI does not send a second landing wave while the first already exceeds the
 		decideOnce(world);
 		expect(named(world, 'Vega').components.planet.troops).toBe(10);
 		expect(redCargoTo(world, named(world, 'Terra').id)).toBe(30);
+	} finally {
+		await world.dispose();
+	}
+});
+
+test('AI produces troops for a held enemy orbit and launches enough to capture it', async function () {
+	const map = {
+		width: 500,
+		height: 300,
+		planets: [
+			['Vega', 100, 150, 31, 'red', 8, 100],
+			['Held', 250, 150, 31, 'blue', 20, 0],
+		],
+	} as const;
+	const world = await createGame('skirmish', map);
+	try {
+		clearUnits(world);
+		const vega = named(world, 'Vega');
+		const held = named(world, 'Held');
+		setProduction(world, [vega.id], 'ships', 'red');
+		spawnShip(world, held.id, 'red');
+		spawnShip(world, held.id, 'red');
+
+		decideOnce(world);
+		expect(vega.components.planet.production).toBe('troops');
+		expect(redCargoTo(world, held.id)).toBe(0);
+
+		step(world, Math.ceil(CONFIG.aiInterval / CONFIG.step) + 1);
+		expect(vega.components.planet.production).toBe('troops');
+		expect(redCargoTo(world, held.id)).toBeGreaterThan(held.components.planet.troops);
+		step(world, Math.ceil(20 / CONFIG.step));
+		expect(held.components.planet.owner).toBe('red');
+	} finally {
+		await world.dispose();
+	}
+});
+
+test('AI produces ships only when an achievable target needs an escort', async function () {
+	const map = {
+		width: 500,
+		height: 300,
+		planets: [
+			['Vega', 100, 150, 31, 'red', 10, 10],
+			['Terra', 400, 150, 31, 'blue', 5, 0],
+		],
+	} as const;
+	const world = await createGame('skirmish', map);
+	try {
+		clearUnits(world);
+		const vega = named(world, 'Vega');
+		const terra = named(world, 'Terra');
+		spawnShip(world, terra.id, 'blue');
+		spawnShip(world, terra.id, 'blue');
+
+		decideOnce(world);
+
+		expect(vega.components.planet.production).toBe('ships');
+		expect(redCargoTo(world, terra.id)).toBe(0);
+		expect(redShipsBoundFor(world, terra.id)).toBe(0);
+	} finally {
+		await world.dispose();
+	}
+});
+
+test('AI switches threatened local production to ships before supplying a held orbit', async function () {
+	const map = {
+		width: 500,
+		height: 300,
+		planets: [
+			['Vega', 100, 150, 31, 'red', 40, 10],
+			['Held', 250, 150, 31, 'blue', 30, 0],
+		],
+	} as const;
+	const world = await createGame('skirmish', map);
+	try {
+		clearUnits(world);
+		const vega = named(world, 'Vega');
+		const held = named(world, 'Held');
+		vega.components.planet.progress = 0.5;
+		spawnShip(world, vega.id, 'blue');
+		spawnShip(world, held.id, 'red');
+		spawnShip(world, held.id, 'red');
+
+		decideOnce(world);
+
+		expect(vega.components.planet.production).toBe('ships');
+		expect(vega.components.planet.progress).toBe(0);
+		expect(shipsAt(world, vega.id, 'red')).toHaveLength(0);
+		expect(redShipsBoundFor(world, held.id)).toBe(0);
+		expect(redCargoTo(world, held.id)).toBe(0);
+		expect(shipsAt(world, held.id, 'red')).toHaveLength(2);
+	} finally {
+		await world.dispose();
+	}
+});
+
+test('AI keeps troop production through held-orbit target changes until the second capture force is ready', async function () {
+	const map = {
+		width: 600,
+		height: 300,
+		planets: [
+			['Vega', 80, 150, 31, 'red', 8, 18],
+			['First', 200, 150, 31, 'blue', 4, 0],
+			['Second', 400, 150, 31, 'blue', 12, 0],
+		],
+	} as const;
+	const world = await createGame('skirmish', map);
+	try {
+		clearUnits(world);
+		const vega = named(world, 'Vega');
+		const first = named(world, 'First');
+		const second = named(world, 'Second');
+		setProduction(world, [vega.id], 'ships', 'red');
+		spawnShip(world, first.id, 'red');
+		spawnShip(world, second.id, 'red');
+
+		decideOnce(world);
+		expect(redCargoTo(world, first.id)).toBe(6);
+		expect(redCargoTo(world, second.id)).toBe(0);
+
+		step(world, Math.ceil(CONFIG.aiInterval / CONFIG.step) + 1);
+		expect(vega.components.planet.production).toBe('troops');
+		step(world, Math.ceil(CONFIG.aiInterval / CONFIG.step) + 1);
+		expect(vega.components.planet.production).toBe('troops');
+		step(world, Math.ceil(CONFIG.aiInterval / CONFIG.step) + 1);
+		expect(vega.components.planet.production).toBe('troops');
+		expect(vega.components.planet.progress).toBeGreaterThan(0);
+		expect(redCargoTo(world, second.id)).toBe(13);
+		step(world, Math.ceil(40 / CONFIG.step));
+		expect(first.components.planet.owner).toBe('red');
+		expect(second.components.planet.owner).toBe('red');
 	} finally {
 		await world.dispose();
 	}

@@ -85,6 +85,20 @@ export const runAI = function (
 			return sum + unit.cargo;
 		}, 0);
 	};
+	const inboundShips = function (planetId: number): number {
+		return units(world).reduce(function (sum, entity) {
+			const unit = entity.components.unit;
+			if (
+				unit.owner !== 'red' ||
+				unit.kind !== 'ship' ||
+				unit.phase !== 'travel' ||
+				unit.target !== planetId ||
+				unit.hp <= 0
+			)
+				return sum;
+			return sum + 1;
+		}, 0);
+	};
 	const canLaunch = function (entity: PlanetEntity): boolean {
 		return !isBlockaded(world, entity.id) && blueShips(entity.id) === 0;
 	};
@@ -127,13 +141,17 @@ export const runAI = function (
 				return score(a) - score(b);
 			})[0];
 	};
-	const donors = function (target: PlanetEntity): PlanetEntity[] {
+	const donors = function (
+		target: PlanetEntity,
+		includeFutureProduction = false,
+	): PlanetEntity[] {
 		return redPlanets
 			.filter(function (entity) {
+				const planet = entity.components.planet;
 				return (
 					canLaunch(entity) &&
 					!troopSources.has(entity.id) &&
-					entity.components.planet.troops > 0
+					(planet.troops > 0 || (includeFutureProduction && planet.rate > 0))
 				);
 			})
 			.sort(byDistance(target));
@@ -233,7 +251,18 @@ export const runAI = function (
 			prefix++;
 			if (fullCover >= minimum) break;
 		}
-		if (fullCover < minimum) continue;
+		if (fullCover < minimum) {
+			const producers = donors(target, true);
+			if (!producers.some(function (source) {
+				return source.components.planet.rate > 0;
+			})) continue;
+			for (const source of producers) {
+				if (source.components.planet.rate > 0)
+					setProduction(world, [source.id], 'troops', 'red');
+				troopSources.add(source.id);
+			}
+			continue;
+		}
 		const plan: { id: number; fraction: number }[] = [];
 		let pledged = 0;
 		let index = 0;
@@ -261,6 +290,7 @@ export const runAI = function (
 
 	for (const source of redPlanets) {
 		if (!canLaunch(source)) continue;
+		if (troopSources.has(source.id)) continue;
 		const target = chooseTarget(source);
 		if (!target) continue;
 		const planet = source.components.planet;
@@ -270,14 +300,21 @@ export const runAI = function (
 		const resistance =
 			(defender.owner === 'blue' ? defender.guns : 0) + blueShips(target.id);
 		const desiredShips = Math.max(4, Math.ceil(resistance * 1.8) + 2);
+		const minimumTroops = defender.troops + 1 - inboundCargo(target.id);
+		const canCapture =
+			minimumTroops <= 0 ||
+			troopFraction(planet.troops, minimumTroops) !== undefined;
+		const committedShips = redShips(target.id) + inboundShips(target.id);
+		const requiredShips = Math.max(5, desiredShips);
+		const needsEscort =
+			resistance > 0 && ships + committedShips < requiredShips;
 		setProduction(
 			world,
 			[source.id],
-			planet.troops >= 24 && ships < desiredShips ? 'ships' : 'troops',
+			canCapture && needsEscort ? 'ships' : 'troops',
 			'red',
 		);
-		if (troopSources.has(source.id)) continue;
-		const fraction = troopFraction(planet.troops, defender.troops + 1);
+		const fraction = troopFraction(planet.troops, minimumTroops);
 		const escorted =
 			fraction !== undefined &&
 			(resistance === 0 || Math.ceil(ships * fraction) > resistance * 1.4);
