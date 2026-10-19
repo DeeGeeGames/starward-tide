@@ -492,6 +492,52 @@ test('AI pools troops from several worlds when no single reserve can capture', a
 	}
 });
 
+test('AI uses one world that can capture instead of pooling a nearer shortfall', async function () {
+	const map = {
+		width: 1000,
+		height: 300,
+		planets: [
+			['Near', 400, 150, 28, 'red', 10, 0],
+			['Far', 80, 150, 28, 'red', 40, 0],
+			['Terra', 700, 150, 31, 'blue', 20, 0],
+		],
+	} as const;
+	const world = await createGame('skirmish', map);
+	try {
+		clearUnits(world);
+		spawnShip(world, named(world, 'Terra').id, 'red');
+		decideOnce(world);
+		expect(redCargoTo(world, named(world, 'Terra').id)).toBe(30);
+		expect(named(world, 'Near').components.planet.troops).toBe(10);
+		expect(named(world, 'Far').components.planet.troops).toBe(10);
+	} finally {
+		await world.dispose();
+	}
+});
+
+test('AI lands on a neutral world that has defense platforms and no orbital ships', async function () {
+	const map = {
+		width: 1000,
+		height: 300,
+		planets: [
+			['Vega', 100, 150, 31, 'red', 40, 0],
+			['Haven', 250, 150, 25, 'neutral', 5, 0],
+			['Terra', 900, 150, 31, 'blue', 40, 0],
+		],
+	} as const;
+	const world = await createGame('skirmish', map);
+	try {
+		clearUnits(world);
+		const haven = named(world, 'Haven');
+		haven.components.planet.guns = 1;
+		decideOnce(world);
+		expect(named(world, 'Vega').components.planet.troops).toBe(10);
+		expect(redCargoTo(world, haven.id)).toBe(30);
+	} finally {
+		await world.dispose();
+	}
+});
+
 test('AI does not send a second landing wave while the first already exceeds the garrison', async function () {
 	const map = {
 		width: 800,

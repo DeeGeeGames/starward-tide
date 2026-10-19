@@ -198,6 +198,20 @@ export const runAI = function (
 		const minimum = target.components.planet.troops + 1 - inboundCargo(target.id);
 		if (minimum <= 0) continue;
 		const eligible = donors(target);
+		// One world that can capture alone does so. Pool only when none can.
+		const solo = eligible.find(function (source) {
+			return (
+				troopFraction(source.components.planet.troops, minimum) !== undefined
+			);
+		});
+		if (solo) {
+			const fraction = troopFraction(solo.components.planet.troops, minimum);
+			if (fraction !== undefined) {
+				dispatch(world, [solo.id], target.id, fraction, 'troops', 'red');
+				troopSources.add(solo.id);
+				continue;
+			}
+		}
 		let mildCover = 0;
 		const mild: number[] = [];
 		for (const source of eligible) {
@@ -252,7 +266,9 @@ export const runAI = function (
 		const planet = source.components.planet;
 		const defender = target.components.planet;
 		const ships = redShips(source.id);
-		const resistance = defender.guns + blueShips(target.id);
+		// Neutral platforms do not fire or block a landing, so they are not escorts.
+		const resistance =
+			(defender.owner === 'blue' ? defender.guns : 0) + blueShips(target.id);
 		const desiredShips = Math.max(4, Math.ceil(resistance * 1.8) + 2);
 		setProduction(
 			world,
