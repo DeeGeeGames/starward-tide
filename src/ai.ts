@@ -253,9 +253,17 @@ export const runAI = function (
 		}
 		if (fullCover < minimum) {
 			const producers = donors(target, true);
-			if (!producers.some(function (source) {
-				return source.components.planet.rate > 0;
-			})) continue;
+			const productionRate = producers.reduce(function (sum, source) {
+				return sum + source.components.planet.rate;
+			}, 0);
+			const targetProduction = target.components.planet;
+			const defenderRate =
+				targetProduction.owner === 'blue' &&
+				targetProduction.production === 'troops'
+					? targetProduction.rate
+					: 0;
+			// Leave donors free to expand when their combined production cannot close the gap.
+			if (productionRate <= defenderRate) continue;
 			for (const source of producers) {
 				if (source.components.planet.rate > 0)
 					setProduction(world, [source.id], 'troops', 'red');

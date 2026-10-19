@@ -619,6 +619,30 @@ test('AI secures orbit instead of waiting on an uncatchable growing garrison', a
 	}
 });
 
+test('AI expands when held-orbit donors cannot outproduce the garrison', async function () {
+	const map = {
+		width: 500,
+		height: 300,
+		planets: [
+			['Vega', 100, 150, 31, 'red', 8, 2.6],
+			['Held', 250, 150, 31, 'blue', 20, 2.6],
+			['Near', 125, 200, 31, 'neutral', 1, 2.6],
+		],
+	} as const;
+	const world = await createGame('skirmish', map);
+	try {
+		clearUnits(world);
+		const held = named(world, 'Held');
+		spawnShip(world, held.id, 'red');
+
+		step(world, Math.ceil(600 / CONFIG.step));
+
+		expect(named(world, 'Near').components.planet.owner).toBe('red');
+	} finally {
+		await world.dispose();
+	}
+});
+
 test('AI produces ships only when an achievable target needs an escort', async function () {
 	const map = {
 		width: 500,
