@@ -100,21 +100,28 @@ test('same-time hostile arrivals resolve once in identity order without generati
 	expect(run(returned, 100).time).toBe(10);
 });
 
-test('neutral claim price follows system planet values and a successful claim resets every captured planet', function () {
+test('partial arrivals reduce resistance, equality stays neutral, and surplus funds capture', function () {
 	const state = initial();
-	const minimum = neutralClaimMinimum(state, 'deneb');
-	expect(minimum).toBe(20);
-	const claim = { ...order('claim', minimum), destinationSystemId: 'deneb' };
-	expect(function () { commitExpedition(state, { ...claim, contributions: [{ planetId: 'sol:1', points: minimum - 1 }] }); }).toThrow();
-	const returned = run(commitExpedition(state, claim), 10);
-	expect(returned.encounter).toBeNull();
-	expect(returned.planets.filter(function (planet) { return planet.systemId === 'deneb'; })
-		.every(function (planet) { return planet.factionId === 'blue' && planet.points === 0; })).toBe(true);
-	const fundedClaim = { ...returned, planets: returned.planets.map(function (planet) {
-		return planet.id === 'deneb:1' ? { ...planet, points: 1 } : planet;
-	}) };
-	const next = commitExpedition(fundedClaim, { ...order('new', 1), sourceSystemId: 'deneb', contributions: [{ planetId: 'deneb:1', points: 1 }] });
-	expect(next.expeditions).toHaveLength(2);
+	const send = function (current: CampaignState, id: string, points: number): CampaignState {
+		return run(commitExpedition(current, { ...order(id, points), destinationSystemId: 'deneb' }), 10);
+	};
+	expect(neutralClaimMinimum(state, 'deneb')).toBe(20);
+	const partial = send(state, 'partial', 7);
+	expect(neutralClaimMinimum(partial, 'deneb')).toBe(13);
+	expect(partial.planets.filter(function (planet) { return planet.systemId === 'deneb'; }).every(function (planet) { return planet.factionId === null; })).toBe(true);
+	const equal = send(partial, 'equal', 13);
+	expect(neutralClaimMinimum(equal, 'deneb')).toBe(0);
+	expect(equal.planets.find(function (planet) { return planet.systemId === 'deneb'; })?.factionId).toBeNull();
+	const captured = send(equal, 'capture', 11);
+	const local = captured.planets.filter(function (planet) { return planet.systemId === 'deneb'; });
+	expect(local.every(function (planet) { return planet.factionId === 'blue'; })).toBe(true);
+	expect(local.reduce(function (sum, planet) { return sum + planet.points; }, 0)).toBeCloseTo(11);
+	const first = local[0];
+	if (!first) throw new Error('Expected captured planet');
+	expect(first.points).toBeCloseTo(11 * first.value / local.reduce(function (sum, planet) { return sum + planet.value; }, 0));
+	const dispatched = commitExpedition(captured, { ...order('new', 1), sourceSystemId: 'deneb', contributions: [{ planetId: first.id, points: 1 }] });
+	expect(dispatched.expeditions).toHaveLength(4);
+	expect(neutralClaimMinimum(state, 'deneb')).toBe(20);
 });
 
 test('friendly arrivals into systems with neutral planets add points only to owned planets', function () {
@@ -273,7 +280,7 @@ test('opposing same-time arrivals claim first then fight the new owner', functio
 		return system.id === 'sirius' ? { ...system, x: 100, y: 300 } : system;
 	}) };
 	const claimPrice = neutralClaimMinimum(equalRoutes, 'deneb');
-	const blue = commitExpedition(equalRoutes, { ...order('a-claim', claimPrice), destinationSystemId: 'deneb' });
+	const blue = commitExpedition(equalRoutes, { ...order('a-claim', claimPrice + 1), destinationSystemId: 'deneb' });
 	const both = commitExpedition(blue, { id: 'z-attack', factionId: 'red', sourceSystemId: 'sirius', destinationSystemId: 'deneb',
 		contributions: [{ planetId: 'sirius:1', points: claimPrice }] });
 	const battle = run(both, 100);
@@ -315,4 +322,18 @@ test('unsafe timing rules are rejected before scheduling or advancing galaxy tim
 	const supported = { ...state, rules: { ...state.rules, minimumTravelTime: MINIMUM_CAMPAIGN_EVENT_SECONDS,
 		rivalInterval: MINIMUM_CAMPAIGN_EVENT_SECONDS } };
 	expect(function () { run(supported, 0.1); }).not.toThrow();
+});
+
+
+test('opposing partial arrivals reduce the same resistance and the capturing arrival keeps its surplus', function () {
+	const base = initial();
+	const state = { ...base, rules: { ...base.rules, travelSpeed: 200 } };
+	const first = commitExpedition(state, { ...order('a', 7), destinationSystemId: 'deneb' });
+	const sent = commitExpedition(first, { id: 'z', factionId: 'red', sourceSystemId: 'sirius', destinationSystemId: 'deneb',
+		contributions: [{ planetId: 'sirius:1', points: 18 }] });
+	const arrived = run(sent, 10);
+	const local = arrived.planets.filter(function (planet) { return planet.systemId === 'deneb'; });
+	expect(local.every(function (planet) { return planet.factionId === 'red'; })).toBe(true);
+	expect(local.reduce(function (sum, planet) { return sum + planet.points; }, 0)).toBeCloseTo(5);
+	expect(arrived.phase).toBe('galaxy');
 });

@@ -91,11 +91,11 @@ Travel time is `max(10 seconds, distance / 10)` in galaxy time. Before any galax
 
 Arrivals resolve chronologically, with expedition identity breaking simultaneous ties:
 
-- **Entirely unclaimed system:** the first qualifying expedition claims all planets without battle. The minimum is 10% of total baseline capacity, rounded up, with at least one point: initially **30 points** per system. Commitment is spent, not refunded into the new system. Later hostile arrivals encounter its new owner.
+- **Entirely unclaimed system:** any positive whole-point expedition can reduce its remaining capture resistance, initially combined planet value × the configured neutral claim rate, rounded up with a minimum of one. Progress persists across arrivals and saves, and either faction reduces the same resistance. Equality leaves it neutral at zero resistance. An arrival exceeding the remainder claims all planets without battle; its surplus becomes starting points, distributed by planet value without a cap. Later hostile arrivals encounter its new owner.
 - **Entirely friendly system:** replenish the most depleted destination planets first, breaking ties by planet identity; discard surplus.
 - **Hostile or mixed system:** freeze galaxy time and create an encounter using destination planets' available budgets and the arriving expedition's committed budget. Arrivals do not reinforce a battle already underway; each is resolved separately.
 
-Every **10 galaxy seconds**, the rival considers routes to systems not wholly red, nearest first, and commits up to half the source's available points from its owned planets in whole-point contributions. It skips routes that cannot meet an unclaimed system's minimum. At most one expedition launches per decision. This is separate from the tactical AI.
+Every **10 galaxy seconds**, the rival considers routes to systems not wholly red, nearest first, and commits up to half the source's available points from its owned planets in whole-point contributions. Partial commitments can reduce unclaimed resistance. At most one expedition launches per decision. This is separate from the tactical AI.
 
 Orders and its header count include only active player expeditions. Selecting a system scopes the list to routes with that source or destination; Show all retains selection and overrides filtering until selection changes. Rival expeditions remain part of simulation and map presentation. System details and the auxiliary Orders/menu/report panel have separate space. Escape closes Orders first; otherwise it clears selection and the auxiliary panel, while respecting text editing and native fullscreen behavior.
 

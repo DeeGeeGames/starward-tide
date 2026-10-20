@@ -10,6 +10,8 @@ import { commitEncounterDefenses, createDefaultEncounterSetup } from './campaign
 import { createCampaignBattle } from './campaign-encounter';
 import { captureConquestSave } from './game-save';
 import { units } from './game';
+import { createCampaign } from './campaign-scenario';
+import { neutralClaimMinimum } from './campaign-state';
 
 const makeSave = function (): CampaignSave {
 	const map = { width: 100, height: 100, planets: [
@@ -473,4 +475,30 @@ test('large defense balances reject whole-point mismatches without reconstructio
 			return planet.id === 'away:One' ? { ...planet, points: planet.points - difference } : planet;
 		}) }).success).toBe(false);
 	}
+});
+
+
+test('partial neutral capture progress survives saves and existing saves need no progress field', function () {
+	const base = createCampaign();
+	const original = { ...base, nextRivalTime: 10000, planets: base.planets.map(function (planet) {
+		return planet.id === 'sol:1' ? { ...planet, points: 100 } : planet;
+	}) };
+	const send = function (state: CampaignState, id: string, points: number): CampaignState {
+		return advanceCampaign(setCampaignPaused(commitExpedition(state, { id, factionId: 'blue', sourceSystemId: 'sol', destinationSystemId: 'deneb',
+			contributions: [{ planetId: 'sol:1', points }] }), false), 10);
+	};
+	const partial = send(original, 'partial', 5);
+	const saved = { ...makeSave(), campaign: partial };
+	const restored = parseCampaignSave(JSON.parse(JSON.stringify(saved))).campaign;
+	expect(neutralClaimMinimum(restored, 'deneb')).toBe(15);
+	const captured = send(restored, 'capture', 25);
+	expect(captured.planets.filter(function (planet) { return planet.systemId === 'deneb'; })
+		.reduce(function (sum, planet) { return sum + planet.points; }, 0)).toBeCloseTo(10);
+	expect(isSupportedCampaignSave({ ...saved, campaign: captured })).toBe(true);
+	for (const progress of [-1, 1.5, 21, NaN, Infinity]) {
+		expect(isSupportedCampaignSave({ ...saved, campaign: { ...partial, systems: partial.systems.map(function (system) {
+			return system.id === 'deneb' ? { ...system, neutralCaptureProgress: progress } : system;
+		}) } })).toBe(false);
+	}
+	expect(parseCampaignSave({ ...saved, campaign: original }).campaign).toEqual(original);
 });

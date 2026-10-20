@@ -98,6 +98,7 @@ export const describeCampaignTransition = function (
 	const previouslyResolved = new Set(before.expeditions.filter(function (item) { return item.status === 'resolved'; }).map(function (item) { return item.id; }));
 	const resolved = after.expeditions.filter(function (item) { return item.status === 'resolved' && !previouslyResolved.has(item.id); })
 		.toSorted(function (a, b) { return expeditionArrival(a) - expeditionArrival(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0); });
+	const resistance = new Map<string, number>();
 	const resolvedExpeditions = resolved.map(function (expedition): CampaignResolvedExpedition {
 		if (expedition.recalledTime !== undefined) return { expeditionId: expedition.id, systemId: expedition.sourceSystemId,
 			factionId: expedition.factionId, points: expedition.points, kind: 'return' };
@@ -108,10 +109,13 @@ export const describeCampaignTransition = function (
 			kind = 'encounter';
 			for (const planet of result.ownership) ownership.set(planet.planetId, planet.factionId);
 		} else if (local.length > 0 && local.every(function (planet) { return ownership.get(planet.id) === expedition.factionId; })) kind = 'friendly';
-		else if (local.length > 0 && local.every(function (planet) { return ownership.get(planet.id) === null; }) &&
-			expedition.points >= neutralClaimMinimum(before, expedition.destinationSystemId)) {
-			kind = 'claim';
-			for (const planet of local) ownership.set(planet.id, expedition.factionId);
+		else if (local.length > 0 && local.every(function (planet) { return ownership.get(planet.id) === null; })) {
+			const remaining = resistance.get(expedition.destinationSystemId) ?? neutralClaimMinimum(before, expedition.destinationSystemId);
+			resistance.set(expedition.destinationSystemId, Math.max(0, remaining - expedition.points));
+			if (expedition.points > remaining) {
+				kind = 'claim';
+				for (const planet of local) ownership.set(planet.id, expedition.factionId);
+			}
 		}
 		return { expeditionId: expedition.id, systemId: expedition.destinationSystemId, factionId: expedition.factionId,
 			points: expedition.points, kind };
