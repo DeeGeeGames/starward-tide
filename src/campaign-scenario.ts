@@ -1,7 +1,11 @@
+import { planetGenerationRate } from './campaign-economy';
 import type { Owner } from './config';
 import type { StarMap } from './maps';
 import { CAMPAIGN_RULES } from './campaign-state';
 import type { CampaignPlanet, CampaignState, CampaignSystem } from './campaign-state';
+
+/** Placeholder opening reserve, expressed as seconds of normal point generation. */
+export const HOME_STARTING_GENERATION_SECONDS = 120;
 
 const systemMap = function (factionId: Owner, names: readonly [string, string, string]): StarMap {
 	return { width: 1000, height: 700, planets: [
@@ -45,8 +49,11 @@ const campaignFromSystems = function (
 			throw new Error('Campaign systems require a finite nonnegative value.');
 		const valueMultiplier = systemValue / 2.6;
 		return system.map.planets.map(function (seed, index) {
+			const value = seed[6] * valueMultiplier;
+			const points = seed[4] === 'neutral' ? 0
+				: Math.floor(planetGenerationRate(value, CAMPAIGN_RULES.economy) * HOME_STARTING_GENERATION_SECONDS);
 			return { id: `${system.id}:${index + 1}`, systemId: system.id, name: seed[0],
-				factionId: seed[4] === 'neutral' ? null : seed[4], points: 0, value: seed[6] * valueMultiplier };
+				factionId: seed[4] === 'neutral' ? null : seed[4], points, value };
 		});
 	});
 	return { time: 0, paused: true, pace: 1, nextRivalTime: CAMPAIGN_RULES.rivalInterval, phase: 'galaxy', rules: structuredClone(CAMPAIGN_RULES), systems, planets,
