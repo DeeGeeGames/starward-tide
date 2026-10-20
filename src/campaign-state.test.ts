@@ -26,13 +26,12 @@ const result = function (state: CampaignState, capture: boolean): CampaignEncoun
 		ownership: encounter.planets.map(function (planet) { return { planetId: planet.planetId, factionId: capture ? encounter.attacker : planet.factionId }; }) };
 };
 
-test('campaign starts at zero, owned planets generate by value, and neutral planets stay at zero', function () {
-	const empty = createCampaign();
-	expect(empty.planets.every(function (planet) { return planet.points === 0; })).toBe(true);
-	const state = { ...empty, nextRivalTime: 10000 };
+test('home reserves grow by value while neutral planets stay at zero', function () {
+	const opening = createCampaign();
+	const state = { ...opening, nextRivalTime: 10000 };
 	const advanced = run(state, 1000);
-	expect(advanced.planets.find(function (planet) { return planet.id === 'sol:1'; })?.points).toBeCloseTo(180);
-	expect(advanced.planets.find(function (planet) { return planet.id === 'sol:2'; })?.points).toBeCloseTo(220);
+	expect(advanced.planets.find(function (planet) { return planet.id === 'sol:1'; })?.points).toBeCloseTo(201);
+	expect(advanced.planets.find(function (planet) { return planet.id === 'sol:2'; })?.points).toBeCloseTo(246);
 	expect(advanced.planets.filter(function (planet) { return planet.factionId === null; })
 		.every(function (planet) { return planet.points === 0; })).toBe(true);
 	expect(advanced.planets.some(function (planet) { return planet.points > 120; })).toBe(true);
@@ -215,7 +214,8 @@ test('captures and recaptures clear only the planet whose ownership changes', fu
 });
 
 test('rival expands from zero after generation and budgets only whole available points', function () {
-	const empty = createCampaign();
+	const opening = createCampaign();
+	const empty = { ...opening, planets: opening.planets.map(function (planet) { return { ...planet, points: 0 }; }) };
 	expect(commitCampaignRival(empty)).toBe(empty);
 	const firstDecision = advanceCampaign(setCampaignPaused(empty, false), 10);
 	expect(firstDecision.expeditions).toHaveLength(1);
