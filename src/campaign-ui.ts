@@ -208,9 +208,7 @@ export const createCampaignView = function (options: {
 		const contributions = [...allocationsFor(source.id)].filter(function ([, points]) { return points > 0; })
 			.map(function ([planetId, points]) { return { planetId, points }; });
 		const total = contributions.reduce(function (sum, contribution) { return sum + contribution.points; }, 0);
-		const target = localPlanets(id);
-		const minimum = target.length > 0 && target.every(function (planet) { return planet.factionId === null; }) ? neutralClaimMinimum(state, id) : 1;
-		if (total < minimum) { notify(`${destination.name} requires at least ${amount(minimum)} points. No points spent.`); return; }
+		if (total < 1) { notify('Send at least one point. No points spent.'); return; }
 		const sourceId = source.id;
 		void run(function () { return options.order({ sourceSystemId: sourceId, destinationSystemId: id, contributions }); }, function () {
 			if (activePreset === null) {
@@ -259,7 +257,9 @@ export const createCampaignView = function (options: {
 		const unclaimed = local.every(function (planet) { return planet.factionId === null; });
 		heading(panel, system.name, clearSelection, 'Clear selection');
 		const balances = node('p', undefined, 'campaign-muted'); panel.append(balances);
-		live(function () { balances.textContent = `${local.length} planets · ${amount(localPlanets(system.id).reduce(function (sum, planet) { return sum + availablePoints(planet.points); }, 0))} points available`; });
+		live(function () {
+			if (unclaimed && state) { balances.textContent = `${local.length} planets · ${wholeAmount(neutralClaimMinimum(state, system.id))} to capture`; return; }
+			balances.textContent = `${local.length} planets · ${amount(localPlanets(system.id).reduce(function (sum, planet) { return sum + availablePoints(planet.points); }, 0))} points available`; });
 		if (owned.length) {
 			const presets = node('div', undefined, 'campaign-presets');
 			presets.setAttribute('role', 'group'); presets.setAttribute('aria-label', 'Send percentage preset');
@@ -281,7 +281,7 @@ export const createCampaignView = function (options: {
 			};
 			updatePresetStatus();
 			panel.append(node('p', 'SEND AMOUNT · SOURCE POINTS', 'campaign-label'), presets, presetStatus,
-				node('p', 'Hold or right-click another system to send immediately. Unclaimed systems require their listed minimum.', 'campaign-rule'));
+				node('p', 'Hold or right-click another system to send immediately. Arrivals reduce unclaimed resistance; surplus points fund the captured system.', 'campaign-rule'));
 			const details = node('details', undefined, 'campaign-contributions');
 			details.open = contributionDisclosure.get(system.id) ?? window.matchMedia('(min-width: 601px)').matches;
 			details.addEventListener('toggle', function () { contributionDisclosure.set(system.id, details.open); });
@@ -345,8 +345,11 @@ export const createCampaignView = function (options: {
 		economy.open = economyDisclosure.get(system.id) ?? false;
 		economy.addEventListener('toggle', function () { economyDisclosure.set(system.id, economy.open); });
 		const economySummary = node('summary', 'Point economy'); economySummary.dataset.focusKey = 'system:economy'; economy.append(economySummary,
-			node('p', `Owned planets generate value × ${rateAmount(state.rules.economy.generationPerValueSecond)} points per galaxy second. Neutral planets generate none. Spending reduces the balance; each ownership change resets it to zero. There is no gameplay cap. Neutral claim cost is combined planet value × ${rateAmount(state.rules.economy.neutralClaimPointsPerValue)}, rounded up to a whole point.`)); panel.append(economy);
-		if (unclaimed) panel.append(node('p', `Minimum ${amount(neutralClaimMinimum(state, system.id))} points. First qualifying arrival claims all ${local.length} planets without battle; committed points remain spent.`, 'campaign-rule'));
+			node('p', `Owned planets generate value × ${rateAmount(state.rules.economy.generationPerValueSecond)} points per galaxy second. Neutral planets generate none. Spending reduces the balance. Battle ownership changes reset it to zero; neutral claims retain surplus arriving points. There is no gameplay cap. Neutral claim cost is combined planet value × ${rateAmount(state.rules.economy.neutralClaimPointsPerValue)}, rounded up to a whole point.`)); panel.append(economy);
+		if (unclaimed) {
+			const resistance = node('p', undefined, 'campaign-rule'); panel.append(resistance);
+			live(function () { if (state) resistance.textContent = `${wholeAmount(neutralClaimMinimum(state, system.id))} capture resistance remains. Send any positive number of points to reduce it. Exceed the remaining resistance to claim all ${local.length} planets; surplus becomes available points.`; });
+		}
 		else if (!owned.length) panel.append(node('p', 'Hostile arrivals start separate real-time encounters. The galaxy waits until each battle resolves.', 'campaign-rule'));
 	};
 	let encounterSetup: CampaignEncounterSetup | undefined;
@@ -510,11 +513,11 @@ export const createCampaignView = function (options: {
 			const marker = node('button', undefined, `campaign-system${selection.selectedSystemId === system.id ? ' selected' : ''}`); marker.type = 'button'; marker.dataset.systemIndex = String(index); marker.dataset.focusKey = `system:${system.id}`;
 			const location = position(system); marker.style.left = `${location.x}px`; marker.style.top = `${location.y}px`;
 			marker.style.setProperty('--owner', owner === 'blue' ? '#60d9ff' : owner === 'red' ? '#ff867e' : owner === null ? '#8e9cae' : '#cbbcf1');
-			const minimum = owner === null ? neutralClaimMinimum(state, system.id) : undefined;
+			let minimum = owner === null ? neutralClaimMinimum(state, system.id) : undefined;
 			const source = state.systems.find(function (item) { return item.id === selection.sourceSystemId; });
 			const travel = source ? Math.ceil(Math.max(state.rules.minimumTravelTime, Math.hypot(system.x - source.x, system.y - source.y) / state.rules.travelSpeed)) : undefined;
-			marker.title = `${system.name} · ${minimum !== undefined ? `Claim minimum ${wholeAmount(minimum)} points` : owner === undefined ? 'Mixed ownership' : factionLabel(owner)}${travel !== undefined && source?.id !== system.id ? ` · ${travel}s travel` : ''}`;
-			marker.setAttribute('aria-label', `${system.name}, ${owner === undefined ? 'mixed ownership' : factionLabel(owner)}, ${amount(points)} points${minimum !== undefined ? `, minimum claim ${wholeAmount(minimum)} points` : ''}`);
+			marker.title = `${system.name} · ${minimum !== undefined ? `Capture resistance ${wholeAmount(minimum)} points` : owner === undefined ? 'Mixed ownership' : factionLabel(owner)}${travel !== undefined && source?.id !== system.id ? ` · ${travel}s travel` : ''}`;
+			marker.setAttribute('aria-label', `${system.name}, ${owner === undefined ? 'mixed ownership' : factionLabel(owner)}, ${minimum !== undefined ? `capture resistance ${wholeAmount(minimum)} points` : `${amount(points)} points`}`);
 			const art = svg('svg', { viewBox: '0 0 100 80', class: 'campaign-system-art', 'aria-hidden': 'true' });
 			for (const radius of [21, 34, 46]) art.append(svg('ellipse', { cx: '50', cy: '40', rx: String(radius), ry: String(radius * .55), transform: 'rotate(-25 50 40)', class: 'campaign-orbit' }));
 			art.append(svg('circle', { cx: '50', cy: '40', r: '19', class: 'campaign-star-halo' }), svg('path', { d: 'M50 23V57M33 40H67M39 29L61 51M39 51L61 29', class: 'campaign-star-ray' }), svg('circle', { cx: '50', cy: '40', r: '6', class: 'campaign-star-core' }));
@@ -525,8 +528,11 @@ export const createCampaignView = function (options: {
 			const copy = node('span', undefined, 'campaign-system-copy'); copy.append(node('strong', system.name), node('span', `${amount(points)} points`, 'campaign-system-points'), node('small', minimum !== undefined ? `UNCLAIMED · min ${wholeAmount(minimum)} points` : `${owner === undefined ? 'MIXED' : factionLabel(owner)} · ${planets.length} planets`)); marker.append(art, copy); world.append(marker);
 			live(function () {
 				const points = localPlanets(system.id).reduce(function (sum, planet) { return sum + availablePoints(planet.points); }, 0);
-				const balance = copy.querySelector('.campaign-system-points'); if (balance) balance.textContent = `${amount(points)} points`;
-				marker.setAttribute('aria-label', `${system.name}, ${owner === undefined ? 'mixed ownership' : factionLabel(owner)}, ${amount(points)} points${minimum !== undefined ? `, minimum claim ${wholeAmount(minimum)} points` : ''}`);
+				if (state && owner === null) minimum = neutralClaimMinimum(state, system.id);
+				const balance = copy.querySelector('.campaign-system-points'); if (balance) balance.textContent = minimum === undefined ? `${amount(points)} points` : `${wholeAmount(minimum)} to capture`;
+				const status = copy.querySelector('small'); if (status && minimum !== undefined) status.textContent = 'UNCLAIMED';
+				if (minimum !== undefined) marker.title = `${system.name} · Capture resistance ${wholeAmount(minimum)} points${travel !== undefined && source?.id !== system.id ? ` · ${travel}s travel` : ''}`;
+				marker.setAttribute('aria-label', `${system.name}, ${owner === undefined ? 'mixed ownership' : factionLabel(owner)}, ${minimum !== undefined ? `capture resistance ${wholeAmount(minimum)} points` : `${amount(points)} points`}`);
 			});
 		}
 		panel.hidden = selection.selectedSystemId === undefined;

@@ -33,6 +33,8 @@ export interface CampaignSystem {
 	readonly x: number;
 	readonly y: number;
 	readonly map: StarMap;
+	/** Arrived points spent reducing neutral resistance; absent in older saves. */
+	readonly neutralCaptureProgress?: number;
 }
 export interface CampaignPlanet extends PlanetEconomy {
 	readonly id: string;
@@ -146,12 +148,15 @@ const distributeFriendlyPoints = function (
 	return creditPlanetBalances(planets, credits, factionId);
 };
 
-/** Neutral colonization cost scales with the combined value of the destination's planets. */
+/** Remaining neutral resistance, reduced by arrivals from either faction. */
 export const neutralClaimMinimum = function (state: CampaignState, systemId: string): number {
 	const local = state.planets.filter(function (planet) { return planet.systemId === systemId; });
 	if (!state.systems.some(function (system) { return system.id === systemId; }) || local.length === 0)
 		throw new Error('Neutral claim requires a known populated system.');
-	return calculateNeutralClaimMinimum(local.map(function (planet) { return planet.value; }), state.rules.economy);
+	const minimum = calculateNeutralClaimMinimum(local.map(function (planet) { return planet.value; }), state.rules.economy);
+	const progress = state.systems.find(function (system) { return system.id === systemId; })?.neutralCaptureProgress ?? 0;
+	if (!Number.isSafeInteger(progress) || progress < 0 || progress > minimum) throw new Error('Invalid neutral capture progress.');
+	return minimum - progress;
 };
 const sameOrder = function (a: ExpeditionOrder, b: ExpeditionOrder): boolean {
 	return a.factionId === b.factionId && a.sourceSystemId === b.sourceSystemId &&
@@ -184,10 +189,6 @@ export const commitExpedition = function (state: CampaignState, order: Expeditio
 			points: planet.points };
 	}), source.id, order.factionId, order.contributions);
 	if (committed.totalPoints === 0) throw new Error('An expedition must commit points.');
-	const destinationPlanets = state.planets.filter(function (planet) { return planet.systemId === destination.id; });
-	if (destinationPlanets.length > 0 && destinationPlanets.every(function (planet) { return planet.factionId === null; }) &&
-		committed.totalPoints < neutralClaimMinimum(state, destination.id))
-		throw new Error('The expedition does not meet the unclaimed system commitment minimum.');
 	const debits = new Map(committed.balances.map(function (balance) { return [balance.planetId, balance.points] as const; }));
 	const expedition: CampaignExpedition = { ...order, contributions: committed.debits, points: committed.totalPoints,
 		departureTime: state.time, arrivalTime, status: 'traveling' };
@@ -247,11 +248,16 @@ const resolveArrivals = function (initial: CampaignState): CampaignState {
 		const destination = state.planets.filter(function (planet) { return planet.systemId === expedition.destinationSystemId; });
 		if (destination.length === 0) throw new Error('Destination system has no planets.');
 		if (destination.every(function (planet) { return planet.factionId === null; })) {
-			const qualifies = expedition.points >= neutralClaimMinimum(state, expedition.destinationSystemId);
+			const requirement = neutralClaimMinimum(state, expedition.destinationSystemId);
+			const qualifies = expedition.points > requirement;
 			state = { ...state,
-				planets: qualifies ? state.planets.map(function (planet) {
-						return planet.systemId !== expedition.destinationSystemId ? planet : changePlanetOwnership(planet, expedition.factionId);
-				}) : state.planets,
+				systems: state.systems.map(function (system) {
+					return system.id !== expedition.destinationSystemId ? system : { ...system,
+						neutralCaptureProgress: qualifies ? 0 : (system.neutralCaptureProgress ?? 0) + expedition.points };
+				}),
+				planets: qualifies ? distributeFriendlyPoints(state.planets.map(function (planet) {
+					return planet.systemId !== expedition.destinationSystemId ? planet : changePlanetOwnership(planet, expedition.factionId);
+				}), expedition.destinationSystemId, expedition.factionId, expedition.points - requirement) : state.planets,
 				expeditions: state.expeditions.map(function (item) {
 					return item.id === expedition.id ? { ...item, status: 'resolved' as const } : item;
 				}),
@@ -390,9 +396,6 @@ export const commitCampaignRival = function (state: CampaignState): CampaignStat
 			return points > 0 ? [{ planetId: planet.id, points }] : [];
 		});
 		if (contributions.length === 0) continue;
-		if (state.planets.filter(function (planet) { return planet.systemId === route.destination.id; })
-			.every(function (planet) { return planet.factionId === null; }) &&
-			contributions.reduce(function (total, contribution) { return total + contribution.points; }, 0) < neutralClaimMinimum(state, route.destination.id)) continue;
 		return commitExpedition(state, { id, factionId: 'red', sourceSystemId: route.source.id,
 			destinationSystemId: route.destination.id, contributions });
 	}

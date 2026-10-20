@@ -113,7 +113,7 @@ test('ordered arrival summaries distinguish a neutral claim from a subsequent fr
 		.every(function (planet) { return planet.before.factionId === null && planet.after.factionId === 'blue' && planet.after.availablePoints > 0; })).toBe(true);
 });
 
-test('a claim followed by a hostile arrival resets captured worlds and freezes further production', function () {
+test('a claim followed by a hostile arrival retains surplus and freezes further production', function () {
 	const initial = campaign();
 	const fast = { ...initial, rules: { ...initial.rules, travelSpeed: 200 } };
 	const blue = commit(fast, 'a', 'deneb');
@@ -129,5 +129,13 @@ test('a claim followed by a hostile arrival resets captured worlds and freezes f
 	expect(after.encounter?.expeditionId).toBe('z');
 	expect(report.resolvedExpeditions).toEqual([{ expeditionId: 'a', systemId: 'deneb', factionId: 'blue', points: 30, kind: 'claim' }]);
 	expect(report.planets.filter(function (planet) { return planet.after.systemId === 'deneb'; })
-		.every(function (planet) { return planet.after.factionId === 'blue' && planet.after.availablePoints === 0; })).toBe(true);
+		.every(function (planet) { return planet.after.factionId === 'blue' && planet.after.availablePoints > 0; })).toBe(true);
+});
+
+
+test('arrival reports accumulate partial resistance reductions in chronological order', function () {
+	const before = commit(commit(commit(campaign(), 'a', 'deneb', 7), 'b', 'deneb', 13), 'c', 'deneb', 5);
+	const after = finish(before);
+	expect(describeCampaignTransition(before, after).resolvedExpeditions.map(function (item) { return item.kind; }))
+		.toEqual(['resolved', 'resolved', 'claim']);
 });

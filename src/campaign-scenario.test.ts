@@ -70,7 +70,8 @@ test('home reserves can fund an immediate claim and saved balances are never res
 	expect(restored).toEqual(sent);
 	const arrived = finish(restored);
 	expect(arrived.planets.filter(function (planet) { return planet.systemId === 'deneb'; })
-		.every(function (planet) { return planet.factionId === 'blue' && planet.points === 0; })).toBe(true);
+		.every(function (planet) { return planet.factionId === 'blue' && planet.points > 0; })).toBe(true);
+	expect(arrived.planets.filter(function (planet) { return planet.systemId === 'deneb'; }).reduce(function (total, planet) { return total + planet.points; }, 0)).toBeCloseTo(45);
 	const advanced = advanceCampaign(setCampaignPaused(restored, false), 1);
 	expect(advanced.planets.find(function (planet) { return planet.id === 'sol:1'; })?.points).toBeCloseTo(0.18);
 });
@@ -122,7 +123,7 @@ test('rival floors odd balances and schedules only one decision per interval', f
 	expect(parseCampaignSave({ schemaVersion: CAMPAIGN_SAVE_SCHEMA_VERSION, mode: 'campaign', profileId: 'rival', savedAt: 100, campaign: next }).campaign).toEqual(next);
 });
 
-test('rival skips unaffordable neutral colonization without increasing its half-budget', function () {
+test('rival sends partial neutral commitments without increasing its half-budget', function () {
 	const base = createCampaign();
 	const initial = { ...base, planets: base.planets.map(function (planet) {
 		return planet.factionId === 'red' ? { ...planet, points: 100 } : planet;
@@ -132,7 +133,7 @@ test('rival skips unaffordable neutral colonization without increasing its half-
 	}) };
 	const sent = commitCampaignRival(state);
 	expect(sent.expeditions[0]?.points).toBe(15);
-	expect(sent.expeditions[0]?.destinationSystemId).toBe('sol');
+	expect(sent.expeditions[0]?.destinationSystemId).toBe('arcturus');
 	expect(function () { finish(sent); }).not.toThrow();
 });
 

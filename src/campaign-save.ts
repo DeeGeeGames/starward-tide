@@ -1,4 +1,4 @@
-import { expeditionArrival, isActiveExpedition, MINIMUM_CAMPAIGN_EVENT_SECONDS } from './campaign-state';
+import { expeditionArrival, isActiveExpedition, MINIMUM_CAMPAIGN_EVENT_SECONDS, neutralClaimMinimum } from './campaign-state';
 import * as z from 'zod/mini';
 import type { CampaignState, CampaignEncounterResult } from './campaign-state';
 import { commitEncounterDefenses, validateCampaignEncounterSetup } from './campaign-setup';
@@ -61,6 +61,10 @@ const hasCampaignIntegrity = function (state: CampaignState): boolean {
 		!unique(state.resolvedEncounters.map(function (item) { return item.encounterId; }))) return false;
 	for (const system of state.systems) {
 		const local = state.planets.filter(function (item) { return item.systemId === system.id; });
+		if (system.neutralCaptureProgress !== undefined) {
+			try { neutralClaimMinimum(state, system.id); } catch { return false; }
+		}
+		if ((system.neutralCaptureProgress ?? 0) > 0 && local.some(function (item) { return item.factionId !== null; })) return false;
 		if (local.length !== system.map.planets.length || !unique(local.map(function (item) { return item.name; })) ||
 			!unique(system.map.planets.map(function (seed) { return seed[0]; })) ||
 			local.some(function (item) { return !system.map.planets.some(function (seed) { return seed[0] === item.name; }); })) return false;
@@ -157,7 +161,7 @@ export const campaignStateSchema = z.object({
 		rivalInterval: z.number().check(z.gte(MINIMUM_CAMPAIGN_EVENT_SECONDS), z.lte(Number.MAX_SAFE_INTEGER)),
 		economy: z.object({ generationPerValueSecond: amount, neutralClaimPointsPerValue: amount }),
 	}),
-	systems: z.array(z.object({ id, name: id, x: galaxyCoordinate, y: galaxyCoordinate, map: gameSnapshotSchema.shape.map })).check(z.minLength(1), z.maxLength(100)),
+	systems: z.array(z.object({ id, name: id, x: galaxyCoordinate, y: galaxyCoordinate, neutralCaptureProgress: z.optional(integer), map: gameSnapshotSchema.shape.map })).check(z.minLength(1), z.maxLength(100)),
 	planets: z.array(planet).check(z.minLength(1), z.maxLength(10000)),
 	expeditions: z.array(expedition).check(z.maxLength(10000)),
 	encounter: z.nullable(encounter),
