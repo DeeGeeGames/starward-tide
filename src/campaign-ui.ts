@@ -494,13 +494,16 @@ export const createCampaignView = function (options: {
 					const a = position(source); const b = position(destination);
 					const line = svg('line', { x1: String(a.x), y1: String(a.y), x2: String(b.x), y2: String(b.y), stroke: expedition.factionId === 'blue' ? '#60d9ff' : '#ff867e' });
 					const moving = svg('circle', { r: '4', fill: expedition.factionId === 'blue' ? '#60d9ff' : '#ff867e' });
+					const label = svg('text', {}); label.textContent = `${expedition.status === 'returning' ? '↶ ' : ''}${amount(expedition.points)}`;
 					routeUpdates.push(function () {
 						if (!state) return;
 						const distanceTime = expedition.recalledTime === undefined ? state.time - expedition.departureTime : 2 * expedition.recalledTime - state.time - expedition.departureTime;
 						const fraction = Math.max(0, Math.min(1, distanceTime / (expedition.arrivalTime - expedition.departureTime)));
-						moving.setAttribute('cx', String(a.x + (b.x - a.x) * fraction)); moving.setAttribute('cy', String(a.y + (b.y - a.y) * fraction));
+						const x = a.x + (b.x - a.x) * fraction; const y = a.y + (b.y - a.y) * fraction;
+						moving.setAttribute('cx', String(x)); moving.setAttribute('cy', String(y));
+						label.setAttribute('x', String(x + 12)); label.setAttribute('y', String(y - 12));
 					});
-					const label = svg('text', { x: String((a.x + b.x) / 2 + 12), y: String((a.y + b.y) / 2 - 12) }); label.textContent = `${expedition.status === 'returning' ? '↶ ' : ''}${amount(expedition.points)}`; routes.append(line, label, moving);
+					routes.append(line, label, moving);
 				}
 				world.prepend(routes);
 			}
