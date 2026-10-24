@@ -10,11 +10,6 @@ import {
 import type { ProfileDatabase, StoredProfile } from './profile-storage';
 import { SAVE_SCHEMA_VERSION } from './save-state';
 import type { ConquestSave } from './save-state';
-import { CAMPAIGN_SAVE_SCHEMA_VERSION, type CampaignSave } from './campaign-save';
-import { CAMPAIGN_RULES, commitExpedition, advanceCampaign, setCampaignPaused } from './campaign-state';
-import { createDefaultEncounterSetup } from './campaign-setup';
-import { createCampaignBattle } from './campaign-encounter';
-import { captureConquestSave } from './game-save';
 
 class MemoryProfileDatabase implements ProfileDatabase {
 	private readonly profiles = new Map<string, StoredProfile>();
@@ -255,7 +250,6 @@ test('legacy skirmish profiles load without a campaign slot or metadata migratio
 	expect(await repository.loadSave('legacy')).toEqual(save);
 	expect(await repository.listProfiles()).toEqual([{
 		id: 'legacy', name: 'Legacy', hasSave: true, savedAt: 100,
-		hasCampaignSave: false, campaignSavedAt: null,
 	}]);
 	expect(await database.getProfile('legacy')).toEqual(legacy);
 	repository.close();
@@ -269,7 +263,6 @@ test('campaign metadata is independent of the existing skirmish slot', async fun
 	expect(await repository.loadSave('campaign')).toBeUndefined();
 	expect(await repository.listProfiles()).toEqual([{
 		id: 'campaign', name: 'Campaign', hasSave: false, savedAt: null,
-		hasCampaignSave: true, campaignSavedAt: 250,
 	}]);
 	await repository.saveProfile(makeSave('campaign', 300));
 	await repository.renameProfile('campaign', 'Renamed');
@@ -278,7 +271,6 @@ test('campaign metadata is independent of the existing skirmish slot', async fun
 	expect(await database.getProfile('campaign')).toEqual({
 		id: 'campaign', name: 'Renamed', campaignSave, save: makeSave('campaign', 300),
 	});
-	expect((await repository.listProfiles())[0]?.campaignSavedAt).toBe(250);
 	repository.close();
 });
 
@@ -290,8 +282,8 @@ test('malformed campaign metadata survives listing, rename and failed or success
 		await database.updateProfile(profile.id, function (stored) { return { ...stored, campaignSave }; });
 		const before = await database.getProfile(profile.id);
 		const summary = (await repository.listProfiles()).find(function (entry) { return entry.id === profile.id; });
-		expect(summary?.hasCampaignSave).toBe(true);
-		expect(summary?.campaignSavedAt).toBeNull();
+		expect(summary?.hasSave).toBe(false);
+		expect(summary?.savedAt).toBeNull();
 		expect(await database.getProfile(profile.id)).toEqual(before);
 		await repository.renameProfile(profile.id, 'Kept');
 		database.failNextUpdate(new Error('quota exceeded'));
@@ -325,131 +317,6 @@ test('deleting a profile removes both its slots while preserving the other profi
 	expect(await repository.listProfiles()).toHaveLength(1);
 	repository.close();
 });
-
-const makeCampaignSave = function (profileId: string, savedAt: number): CampaignSave {
-	const map = { width: 100, height: 100, planets: [
-		['One', 20, 20, 10, 'blue', 0, 1] as const, ['Two', 70, 70, 10, 'red', 0, 1] as const,
-	] };
-	return { schemaVersion: CAMPAIGN_SAVE_SCHEMA_VERSION, mode: 'campaign', profileId, savedAt, campaign: {
-		time: 0, paused: true, pace: 1, nextRivalTime: CAMPAIGN_RULES.rivalInterval, phase: 'galaxy', rules: CAMPAIGN_RULES,
-		systems: [{ id: 'home', name: 'Home', x: 0, y: 0, map }],
-		planets: ['One', 'Two'].map(function (name) {
-			return { id: name, name, systemId: 'home', factionId: 'blue' as const,
-				points: 0, value: name === 'One' ? 1 : 2 };
-		}), expeditions: [], encounter: null, resolvedEncounters: [],
-	} };
-};
-
-test('campaign writes and skirmish writes use separate slots and preserve profile isolation', async function () {
-	const database = new MemoryProfileDatabase();
-	const repository = new ProfileRepository(database);
-	const first = await repository.createProfile('First');
-	const second = await repository.createProfile('Second');
-	expect(await repository.loadCampaignSave(first.id)).toBeUndefined();
-	await repository.saveProfile(makeSave(first.id, 100));
-	await repository.saveCampaign(makeCampaignSave(first.id, 200));
-	await repository.saveCampaign(makeCampaignSave(second.id, 300));
-	await repository.saveProfile(makeSave(first.id, 400));
-	expect(await repository.loadSave(first.id)).toEqual(makeSave(first.id, 400));
-	expect(await repository.loadCampaignSave(first.id)).toEqual(makeCampaignSave(first.id, 200));
-	expect(await repository.loadSave(second.id)).toBeUndefined();
-	expect(await repository.loadCampaignSave(second.id)).toEqual(makeCampaignSave(second.id, 300));
-	repository.close();
-});
-
-test('malformed and unsupported campaign loads do not change either stored slot', async function () {
-	const database = new MemoryProfileDatabase();
-	const repository = new ProfileRepository(database);
-	for (const campaignSave of [null, 'invalid', { ...makeCampaignSave('unknown', 100), schemaVersion: CAMPAIGN_SAVE_SCHEMA_VERSION + 1 },
-		makeCampaignSave('different-profile', 200)]) {
-		const profile = await repository.createProfile('Saved');
-		await repository.saveProfile(makeSave(profile.id, 100));
-		await database.updateProfile(profile.id, function (stored) { return { ...stored, campaignSave }; });
-		const before = await database.getProfile(profile.id);
-		await expect(repository.loadCampaignSave(profile.id)).rejects.toThrow();
-		expect(await database.getProfile(profile.id)).toEqual(before);
-	}
-	await expect(repository.loadCampaignSave('missing')).rejects.toBeInstanceOf(ProfileNotFoundError);
-	repository.close();
-});
-
-test('early-development version 2 campaign saves are deleted while profile and skirmish data remain', async function () {
-	const database = new MemoryProfileDatabase();
-	const repository = new ProfileRepository(database);
-	const profile = await repository.createProfile('Early campaign');
-	const skirmish = makeSave(profile.id, 100);
-	await repository.saveProfile(skirmish);
-	const oldCampaign = { ...makeCampaignSave(profile.id, 200), schemaVersion: 2 };
-	await database.updateProfile(profile.id, function (stored) { return { ...stored, campaignSave: oldCampaign }; });
-	await expect(repository.loadCampaignSave(profile.id)).rejects.toThrow('Early development reset');
-	const after = await database.getProfile(profile.id);
-	expect(after).toMatchObject({ id: profile.id, name: profile.name, save: skirmish });
-	expect(after).not.toHaveProperty('campaignSave');
-	expect((await repository.listProfiles())[0]).toMatchObject({ hasSave: true, hasCampaignSave: false });
-	repository.close();
-});
-
-test('campaign snapshots clone before shared-queue waits and failed saves preserve prior campaigns', async function () {
-	const database = new MemoryProfileDatabase();
-	const repository = new ProfileRepository(database);
-	const profile = await repository.createProfile('Queued');
-	await repository.saveCampaign(makeCampaignSave(profile.id, 100));
-	let release: (() => void) | undefined;
-	let entered: (() => void) | undefined;
-	const blocked = new Promise<void>(function (resolve) { release = resolve; });
-	const updateStarted = new Promise<void>(function (resolve) { entered = resolve; });
-	database.waitForNextUpdate(function () { entered?.(); return blocked; });
-	const renaming = repository.renameProfile(profile.id, 'Renamed');
-	await updateStarted;
-	const input = makeCampaignSave(profile.id, 200);
-	const saving = repository.saveCampaign(input);
-	input.savedAt = 999;
-	const invalid = repository.saveCampaign({ ...input, schemaVersion: CAMPAIGN_SAVE_SCHEMA_VERSION + 1 });
-	await expect(invalid).rejects.toThrow();
-	release?.();
-	await Promise.all([renaming, saving]);
-	expect((await repository.loadCampaignSave(profile.id))?.savedAt).toBe(200);
-	expect((await repository.listProfiles())[0]?.name).toBe('Renamed');
-	database.failNextUpdate(new Error('quota exceeded'));
-	await expect(repository.saveCampaign(makeCampaignSave(profile.id, 300))).rejects.toThrow('quota exceeded');
-	expect((await repository.loadCampaignSave(profile.id))?.savedAt).toBe(200);
-	repository.close();
-});
-
-
-test('separate campaign slot stores allocation drafts and active battles without modifying skirmish', async function () {
-	const database = new MemoryProfileDatabase();
-	const repository = new ProfileRepository(database);
-	const profile = await repository.createProfile('Continuing');
-	await repository.saveProfile(makeSave(profile.id, 50));
-	const save = makeCampaignSave(profile.id, 100);
-	const home = save.campaign.systems[0];
-	if (!home) throw new Error('Missing fixture system');
-	const expanded = { ...save.campaign, systems: [home, { ...home, id: 'away', name: 'Away', x: 100 }],
-		planets: [...save.campaign.planets.map(function (planet) {
-			return planet.id === 'One' ? { ...planet, points: 100 } : planet;
-		}), ...save.campaign.planets.map(function (planet) {
-			return { ...planet, id: `away:${planet.id}`, systemId: 'away', factionId: 'red' as const };
-		})] };
-	const committed = commitExpedition(expanded, { id: 'one', factionId: 'blue', sourceSystemId: 'home', destinationSystemId: 'away',
-		contributions: [{ planetId: 'One', points: 40 }] });
-	const campaign = advanceCampaign(setCampaignPaused(committed, false), CAMPAIGN_RULES.minimumTravelTime);
-	if (!campaign.encounter) throw new Error('Missing encounter');
-	const setup = createDefaultEncounterSetup(campaign.encounter);
-	const draft: CampaignSave = { ...save, campaign, encounterState: { phase: 'allocation', encounterId: campaign.encounter.id, setup } };
-	await repository.saveCampaign(draft);
-	expect(await repository.loadCampaignSave(profile.id)).toEqual(draft);
-	const battle = await createCampaignBattle(campaign, setup);
-	try {
-		const game = captureConquestSave(battle.world, battle.map, 'skirmish', 1, profile.id).game;
-		const active: CampaignSave = { ...draft, savedAt: 200, encounterState: { phase: 'battle', encounterId: campaign.encounter.id, setup,
-			game, captureEvents: battle.runtime.getCaptureEvents() } };
-		await repository.saveCampaign(active);
-		expect(await repository.loadCampaignSave(profile.id)).toEqual(active);
-		expect(await repository.loadSave(profile.id)).toEqual(makeSave(profile.id, 50));
-	} finally { await battle.world.dispose(); repository.close(); }
-});
-
 
 test('profiles can be created when HTTP browsers omit crypto.randomUUID', async function () {
 	const previous = Object.getOwnPropertyDescriptor(crypto, 'randomUUID');
