@@ -1,3 +1,4 @@
+import { createCarrierArtwork } from './carrier-art';
 import { createPerformanceDiagnostics, type PerformanceDiagnostics, type DiagnosticsReport } from './performance-diagnostics';
 import { createCrowdedBaseline } from './performance-scenario';
 import { createPixiRenderer } from './pixi-renderer';
@@ -320,6 +321,7 @@ const mountPlanets = function (): void {
 		button.style.top = `${p.y}px`;
 		button.innerHTML =
 			'<span class="surface"></span><span class="count"></span><span class="name"></span><span class="orbit-count"></span><span class="production-mark"></span><span class="production-progress"><i></i></span>';
+		if (p.carrier) button.querySelector('.surface')?.append(createCarrierArtwork());
 		const count = button.querySelector('.count');
 		const name = button.querySelector('.name');
 		const orbit = button.querySelector('.orbit-count');
@@ -408,7 +410,7 @@ const refreshContent = function (): void {
 			span.textContent = `◆${count} `;
 			view.orbit.append(span);
 		}
-		if (p.carrier) view.orbit.append(`▣${docked} docked${blue > 0 || red > 0 ? ' · external contact' : ''}${(p.owner === 'blue' ? red : blue) > 0 ? ' · docking blocked' : ''}`);
+		if (p.carrier) view.orbit.append(`▣${docked} docked`);
 		if (guns > 0) view.orbit.append(`✣${guns}`);
 		view.mark.textContent = p.owner === 'neutral' ? '' : icons[p.production];
 		view.progress.style.width = `${(p.progress / CONFIG.cost[p.production]) * 100}%`;
