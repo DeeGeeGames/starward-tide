@@ -630,6 +630,41 @@ input {
 }
 
 /* Carrier hull, with a fixed readable crew counter and moving heading. */
-.planet.carrier .surface { border-radius: 5px; clip-path: polygon(50% 0, 90% 25%, 90% 85%, 65% 100%, 35% 100%, 10% 85%, 10% 25%); transform: rotate(calc(var(--heading) + 1.5708rad)); background: linear-gradient(90deg, #172c42, var(--owner), #172c42); }
-.planet.carrier .orbit-count { white-space: nowrap; }
-.planet.carrier .name { font-weight: 700; }
+.planet.carrier .surface {
+	width: calc(var(--diameter) * 1.5);
+	height: calc(var(--diameter) * 1.5);
+	border: 0;
+	border-radius: 0;
+	background: none;
+	box-shadow: none;
+	color: var(--owner);
+	transform: rotate(var(--heading));
+	pointer-events: none;
+}
+.planet.carrier .surface svg {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+.planet.carrier .count {
+	padding: 2px 4px;
+	border-radius: 3px;
+	background: #0b1723;
+	font-size: 15px;
+	font-variant-numeric: tabular-nums;
+}
+.planet.carrier .orbit-count {
+	top: calc(50% - var(--diameter) * 0.75 - 18px);
+	white-space: nowrap;
+}
+.planet.carrier .name {
+	top: calc(50% + var(--diameter) * 0.75 + 7px);
+	font-weight: 700;
+}
+.planet.carrier .production-progress {
+	bottom: calc(50% - var(--diameter) * 0.75 - 4px);
+}
+.planet.carrier .production-mark {
+	right: calc(50% - var(--diameter) * 0.75 - 5px);
+	bottom: calc(50% - var(--diameter) * 0.75 + 1px);
+}

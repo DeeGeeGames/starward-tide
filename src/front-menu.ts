@@ -1,3 +1,4 @@
+import { createCarrierArtwork } from './carrier-art';
 import ECSpresso from 'ecspresso';
 import { COLORS } from './config';
 import {
@@ -258,13 +259,14 @@ export const createFrontMenu = async function (options: {
 					'stroke-dasharray': '5 4',
 					'stroke-width': 3,
 				}),
-				svgElement('polygon', {
-					points: `${x},${y - 10} ${x + 10},${y} ${x},${y + 10} ${x - 10},${y}`,
-					fill: COLORS[owner],
-					stroke: '#e8f7ff',
-					'stroke-width': 1.5,
-				}),
 			);
+			const artwork = createCarrierArtwork();
+			artwork.setAttribute('x', String(x - radius * 1.5));
+			artwork.setAttribute('y', String(y - radius * 1.5));
+			artwork.setAttribute('width', String(radius * 3));
+			artwork.setAttribute('height', String(radius * 3));
+			artwork.style.color = COLORS[owner];
+			node.append(artwork);
 			preview.append(node);
 		}
 		const count = document.createElement('strong');
