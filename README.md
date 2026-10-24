@@ -1,10 +1,10 @@
 # Galaxy Conquest
 
-A touch-first, single-player real-time strategy game. Expand between planets, choose troops, ships, or defense platforms, and conquer the rival. Skirmish is the default mode; a galaxy campaign is available as a development preview.
+A touch-first, single-player real-time strategy game. Expand between planets, choose troops, ships, or defense platforms, and conquer the rival. Battles take place within a single star system.
 
 Bun serves and bundles HTML/TypeScript/CSS directly. ECSpresso 0.24.1 runs the tactical simulation; PixiJS 8.19.0 renders units beneath DOM planets and controls.
 
-The [current game design](docs/game-design.md) documents both modes, combat, production, campaign points, victory, persistence, and remaining playtest questions. Technical evidence is in [performance diagnostics](docs/performance-diagnostics.md), [renderer migration](docs/renderer-migration.md), and [viewport culling](docs/viewport-culling.md).
+The [current game design](docs/game-design.md) documents star system combat, production, victory, persistence, and remaining playtest questions. Technical evidence is in [performance diagnostics](docs/performance-diagnostics.md), [renderer migration](docs/renderer-migration.md), and [viewport culling](docs/viewport-culling.md).
 
 ```sh
 bun install --frozen-lockfile
@@ -21,23 +21,9 @@ After the first online visit finishes caching, the game can reopen and play offl
 
 The page includes X player-card metadata intended to embed the game in a post, using [assets/x-card.jpg](assets/x-card.jpg) as the poster. Metadata and a successful build alone do not verify live inline playback on X. Use the deployed standalone URL, including the trailing slash, when checking card behavior. An embedding host must permit framing.
 
-## Campaign development preview
-
-Open the game with `?campaign=1` to enable **New campaign preview** and **Continue campaign** on the title screen. The ordinary entry remains skirmish while the campaign loop and presentation await owner acceptance. Each local profile has independent campaign and skirmish saves; replacing one leaves the other intact.
-
-Choose Small (12 systems), Medium (18), or Large (30), inspect the preview, and reroll with **Generate another map**. **Start campaign** uses that exact galaxy, with three planets per system and one starting system per side. The campaign starts paused. Each home planet banks two minutes of its normal point generation: `floor(planetGenerationRate(value, economy) × HOME_STARTING_GENERATION_SECONDS)`. The placeholder duration is 120 seconds in [src/campaign-scenario.ts](src/campaign-scenario.ts); the current generated homes start with 21, 26, and 18 points (65 per side). Neutral planets start at zero. Existing campaign saves retain their stored balances. Earlier turn-based campaign saves are unsupported.
-
-Tap a system to inspect it; a system containing your planets becomes the funding source. Tapping it again or closing its panel clears selection. Inspecting a rival or unclaimed system clears the previous source, so select your funding system again before sending. Choose 25%, 50% (default), or 100% of each owned planet's current points, or edit individual contributions with sliders and −/+ controls. Manual edits clear the percentage preset; an active preset recalculates at dispatch. Right-click another system or hold it for 500 ms to commit immediately, then **Resume** galaxy time. An unclaimed system initially requires at least 30 points to claim without battle.
-
-**Pause** leaves navigation and orders available. **Orders** shows your active expeditions involving the selected system; **Show all** preserves selection and shows all your routes until selection changes. Rival expeditions are excluded from this list and its count. **Cancel launch** refunds an order before galaxy time advances; **Recall** sends a traveling expedition back. System details and the auxiliary Orders/menu/report panel can remain open together. Escape closes Orders first; otherwise it clears selection and closes the auxiliary panel, except while editing an input or using native fullscreen Escape.
-
-The header shows planet counts, an MM:SS galaxy clock, and persistent save status. The game menu contains pace (0.5×, 1×, 2×), fullscreen, **Save campaign**, and **Save & menu**. Switching away from the tab pauses the galaxy; resume it explicitly when you return.
-
-Hostile arrivals freeze the galaxy and open encounter allocation. Owned planets spend allocated defense points once on launch and retain unassigned points; neutral garrisons do not spend points. Existing in-progress battles retain their original balances. A rival invasion reveals only its total attacking points; its allocation and entry edge stay hidden until battle. Select planets to edit your defenses or split your attacking expedition among beachheads; opposing and neutral defenses and rival invasion beachheads remain unknown until battle starts. Only your own allocations are shown; galaxy-map expedition visibility and tactical visibility after launch are unchanged. Start the battle in the existing star-system interface. After victory or defeat, inspect the result and choose **Return to galaxy** to apply it and resolve other arrivals at that timestamp. The galaxy returns paused. See the [campaign rules](docs/game-design.md#campaign-preview) for point recovery, development, travel, encounter outcomes, and victory. Actions, valid allocation drafts, and active battles save in the campaign slot; continued battles restore paused.
-
 ## Skirmish and local profiles
 
-The title screen offers up to 10 local profiles. On first use, a **Player** profile is created and selected automatically so you can start immediately. You can rename it or create another profile. Each profile has one ongoing skirmish in addition to its separate campaign slot: **Continue** restores its saved map and game state paused, and **New game** starts over after confirmation. Rename keeps progress; deleting a profile requires confirmation and removes only that profile. Choose **Save** at any time or rely on periodic autosaves, including while paused. Save status and failures appear in the game header and game menu.
+The title screen offers up to 10 local profiles. On first use, a **Player** profile is created and selected automatically so you can start immediately. You can rename it or create another profile. Each profile has one ongoing star system battle: **Continue** restores its saved map and game state paused, and **New game** starts over after confirmation. Rename keeps progress; deleting a profile requires confirmation and removes only that profile. Choose **Save** at any time or rely on periodic autosaves, including while paused. Save status and failures appear in the game header and game menu.
 
 Starting a new conquest or replacing the current map requires confirmation when it would replace progress. From **New game**, choose **Small** (12 worlds), **Medium** (18), or **Large** (30), inspect the preview, and use **Generate another map** to reroll it. **Start conquest** launches that exact layout with one world and three ships per side. Generated worlds have mirrored positions and resources for equal expansion opportunities, with at least 216 units between centers. **Restart map** replays the same layout.
 

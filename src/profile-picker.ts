@@ -98,9 +98,7 @@ export const createProfilePicker = function (
 			const name = document.createElement('strong');
 			name.textContent = profile.name;
 			const detail = document.createElement('small');
-			detail.textContent = profile.hasCampaignSave
-				? `${profile.hasSave ? 'Skirmish saved' : 'No skirmish save'} · Campaign ${profile.campaignSavedAt === null ? 'needs validation' : 'saved'}`
-				: profile.hasSave
+			detail.textContent = profile.hasSave
 				? profile.savedAt === null
 					? 'Saved conquest · validation needed'
 					: 'Saved ' + new Date(profile.savedAt).toLocaleString()

@@ -608,16 +608,6 @@
 			padding: 48px;
 		}
 	}
-	.campaign-entry {
-		flex-wrap: nowrap;
-		margin-top: 10px;
-	}
-	.campaign-entry button {
-		flex: 1;
-		min-width: 0;
-		padding: 6px;
-		font-size: 11px;
-	}
 	@media (max-height: 740px) {
 		.screen {
 			padding: 20px;
@@ -742,9 +732,6 @@
 		.hero p {
 			font-size: 12px;
 			margin: 6px 0;
-		}
-		.campaign-entry button {
-			font-size: 10px;
 		}
 		#setup {
 			display: grid;

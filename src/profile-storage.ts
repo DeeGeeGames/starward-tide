@@ -3,8 +3,6 @@ import { v4 as createId } from 'uuid';
 import type { DBSchema, IDBPDatabase, IDBPTransaction } from 'idb';
 import { InvalidSaveError, parseConquestSave } from './save-state';
 import type { ConquestSave } from './save-state';
-import { parseCampaignSave } from './campaign-save';
-import type { CampaignSave } from './campaign-save';
 
 export const MAX_PROFILES = 10;
 const DATABASE_NAME = 'galaxy-conquest-local';
@@ -18,14 +16,13 @@ export interface ProfileSummary {
 	name: string;
 	hasSave: boolean;
 	savedAt: number | null;
-	hasCampaignSave: boolean;
-	campaignSavedAt: number | null;
 }
 
 export interface StoredProfile {
 	id: string;
 	name: string;
 	save?: unknown;
+	// Preserve retired preview data so reverting the removal can restore progress.
 	campaignSave?: unknown;
 }
 
@@ -110,8 +107,6 @@ const summarize = function (profile: StoredProfile): ProfileSummary {
 		name: profile.name,
 		hasSave: profile.save !== undefined,
 		savedAt: profile.save === undefined ? null : getSavedAt(profile.save),
-		hasCampaignSave: profile.campaignSave !== undefined,
-		campaignSavedAt: profile.campaignSave === undefined ? null : getSavedAt(profile.campaignSave),
 	};
 };
 const errorMessage = function (error: unknown): string {
@@ -188,49 +183,6 @@ export class ProfileRepository {
 		await this.enqueueWrite(save.profileId, function () {
 			return database.updateProfile(save.profileId, function (profile) {
 				return { ...profile, save };
-			});
-		});
-	}
-
-	async loadCampaignSave(id: string): Promise<CampaignSave | undefined> {
-		try {
-			const raw = await this.database.getProfile(id);
-			if (raw === undefined) throw new ProfileNotFoundError();
-			let profile = parseStoredProfile(raw);
-			if (profile.campaignSave === undefined) return undefined;
-			if (isRecord(profile.campaignSave) && profile.campaignSave.schemaVersion === 2) {
-				let discarded = false;
-				const database = this.database;
-				await this.enqueueWrite(id, function () {
-					return database.updateProfile(id, function (current) {
-						if (!isRecord(current.campaignSave) || current.campaignSave.schemaVersion !== 2) return current;
-						const next = { ...current };
-						delete next.campaignSave;
-						discarded = true;
-						return next;
-					});
-				});
-				if (discarded)
-					throw new InvalidSaveError('Early development reset: this older campaign save was deleted. Your profile and skirmish save were preserved. Start a new campaign.');
-				const latest = await database.getProfile(id);
-				if (latest === undefined) throw new ProfileNotFoundError();
-				profile = parseStoredProfile(latest);
-				if (profile.campaignSave === undefined) return undefined;
-			}
-			return parseCampaignSave(profile.campaignSave, id);
-		} catch (error) {
-			if (error instanceof InvalidSaveError || error instanceof ProfileNotFoundError)
-				throw error;
-			throw this.storageFailure('The saved campaign could not be read', error);
-		}
-	}
-
-	async saveCampaign(input: CampaignSave): Promise<void> {
-		const campaignSave = structuredClone(parseCampaignSave(input, input.profileId));
-		const database = this.database;
-		await this.enqueueWrite(campaignSave.profileId, function () {
-			return database.updateProfile(campaignSave.profileId, function (profile) {
-				return { ...profile, campaignSave };
 			});
 		});
 	}
