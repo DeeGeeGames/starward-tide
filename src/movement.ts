@@ -1,12 +1,29 @@
 import type { SystemRegistrarOf } from 'ecspresso';
 import { CONFIG } from './config';
 import { planPasses } from './combat';
-import type { Game } from './game';
+import type { Game, Planet, Unit } from './game';
+import type { Point } from './camera';
 import { interceptPoint } from './interception';
 
 // Below the slowest ordinary unit (transport = 0.5 travel speed), at every pace.
 export const CARRIER_SPEED = CONFIG.travelSpeed * 0.25;
 export const CARRIER_ARRIVAL_TOLERANCE = 0.01;
+
+// Shared by steering and presentation so hulls and routes show the actual lead.
+export const travelAim = function (unit: Unit, target: Planet): Point {
+	const destination = target.carrier?.destination;
+	if (!destination) return target;
+	const dx = destination.x - target.x;
+	const dy = destination.y - target.y;
+	const remaining = Math.hypot(dx, dy);
+	if (remaining <= CARRIER_ARRIVAL_TOLERANCE) return destination;
+	const velocity = { x: dx / remaining * CARRIER_SPEED, y: dy / remaining * CARRIER_SPEED };
+	const speed = CONFIG.travelSpeed * (unit.kind === 'transport' ? 0.5 : 1);
+	const projected = interceptPoint(unit, speed, target, velocity);
+	// Once the target stops, interception is at that fixed destination.
+	return Math.hypot(projected.x - target.x, projected.y - target.y) > remaining
+		? destination : projected;
+};
 
 // Return only scheduling capabilities so createGame owns the phase and edges.
 type ScheduledSystem = Pick<
@@ -59,10 +76,7 @@ export const registerMovement = function (
 					continue;
 				}
 				const speed = CONFIG.travelSpeed * (u.kind === 'transport' ? 0.5 : 1);
-				const velocity = p.carrier?.destination ? { x: Math.cos(p.carrier.heading) * CARRIER_SPEED, y: Math.sin(p.carrier.heading) * CARRIER_SPEED } : { x: 0, y: 0 };
-				const predicted = interceptPoint(u, speed, p, velocity);
-				const destination = p.carrier?.destination;
-				const aim = destination && Math.hypot(predicted.x - p.x, predicted.y - p.y) > Math.hypot(destination.x - p.x, destination.y - p.y) ? destination : predicted;
+				const aim = travelAim(u, p);
 				const dx = aim.x - u.x, dy = aim.y - u.y;
 				const distance = Math.hypot(dx, dy);
 				if (Math.hypot(p.x - u.x, p.y - u.y) <= p.radius + CONFIG.arrivalClearance) {

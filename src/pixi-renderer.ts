@@ -6,6 +6,7 @@ import type { Camera } from './camera';
 import type { StarMap } from './maps';
 import { isBlockaded, planets, shipsAt, orderUnits, unitPoint } from './game';
 import type { Game, Order } from './game';
+import { travelAim } from './movement';
 import { createRenderCandidates, type RenderSelection } from './render-candidates';
 import { createShipPainter } from './ship-art';
 import { canvasViewport, visibleMapViewport, mapClipInsets, dashedLine, shipDetailZoom, planetPlatformOrbitRadius } from './render-geometry';
@@ -299,9 +300,10 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 				const target = world.getComponent(u.target, 'planet');
 				if (!target) continue;
 				const point = unitPoint(u, target, match.time, entity.id);
+				const aim = u.phase === 'travel' ? travelAim(u, target) : target;
 				const segments = highlighted.state === 'pending'
-					? dashedLine(point, target, 8 / camera.scale, 5 / camera.scale)
-					: [[point, target]] as const;
+					? dashedLine(point, aim, 8 / camera.scale, 5 / camera.scale)
+					: [[point, aim]] as const;
 				for (const [from, to] of segments) routes.moveTo(from.x, from.y).lineTo(to.x, to.y);
 			}
 			routes.stroke({ color: COLORS.blue, width: 2 / camera.scale });
@@ -325,8 +327,9 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 				travelLines.addChild(route);
 				routeViews.set(id, route);
 			}
-			const dx = target.x - point.x;
-			const dy = target.y - point.y;
+			const aim = travelAim(u, target);
+			const dx = aim.x - point.x;
+			const dy = aim.y - point.y;
 			route.position.set(point.x, point.y);
 			route.rotation = Math.atan2(dy, dx);
 			route.width = Math.hypot(dx, dy);

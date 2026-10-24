@@ -12,7 +12,7 @@ import { createDiagnosticsPlugin, type DiagnosticsResourceTypes } from 'ecspress
 import { CONFIG } from './config';
 import { runAI } from './ai';
 import { registerCombat } from './combat';
-import { registerMovement, registerTravelerCleanup } from './movement';
+import { registerMovement, registerTravelerCleanup, travelAim } from './movement';
 import { initializeLabScenario, seedFreshGame } from './game-scenario';
 import { LAB_MAP } from './maps';
 import type { StarMap } from './maps';
@@ -283,10 +283,11 @@ export const unitPoint = function (
 ): UnitPoint {
 	if (unit.phase === 'docked') return { x: planet.x, y: planet.y, angle: planet.carrier?.heading ?? 0 };
 	if (unit.phase !== 'orbit') {
+		const aim = travelAim(unit, planet);
 		return {
 			x: unit.x,
 			y: unit.y,
-			angle: Math.atan2(planet.y - unit.y, planet.x - unit.x),
+			angle: Math.atan2(aim.y - unit.y, aim.x - unit.x),
 		};
 	}
 	const orbitAngle =
