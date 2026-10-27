@@ -265,6 +265,12 @@ const cancelMapCommand = function (): void {
 	mapInput.cancel();
 	choosingDestination = false;
 };
+const clearSelection = function (): void {
+	cancelMapCommand();
+	selected = [];
+	inspected = undefined;
+	multi = false;
+};
 const selectPlanet = function (id: number): void {
 	if (
 		busy ||
@@ -274,6 +280,7 @@ const selectPlanet = function (id: number): void {
 		return;
 	const p = world.getComponent(id, 'planet');
 	if (!p) return;
+	cancelMapCommand();
 	sheetCollapsed = false;
 	productionExpanded = false;
 	const selectable =
@@ -406,6 +413,7 @@ const refreshContent = function (): void {
 	const match = world.getResource('match');
 	element('opponent-summary', HTMLParagraphElement).textContent = `Opponent: ${opponentLabel(match.opponent ?? DEFAULT_OPPONENT)}`;
 	const all = planets(world);
+	const previousSources = selected.join(',');
 	selected = selected.filter(function (id) {
 		return (
 			world.getComponent(id, 'planet')?.owner === 'blue' ||
@@ -419,6 +427,7 @@ const refreshContent = function (): void {
 		!multi
 	)
 		selected = [inspected];
+	if (previousSources !== selected.join(',')) cancelMapCommand();
 	for (const {
 		id,
 		components: { planet: p },
@@ -512,7 +521,10 @@ const refreshContent = function (): void {
 		`${p?.owner === 'blue' ? 'YOUR' : p?.owner === 'red' ? 'RIVAL' : 'NEUTRAL'} ${p?.carrier ? 'CARRIER' : 'WORLD'}`;
 	selectionInfo.textContent = carrier && p?.owner === 'blue' ? 'Click empty space to move this carrier.' : shipsOnly ? `Your ships in orbit · ${p?.carrier ? 'carrier' : 'surface'} belongs to another faction.` : '';
 	selectionInfo.hidden = selectionInfo.textContent === '';
-	orbitalInfo.hidden = true;
+	const friendlyOrbit = first === undefined ? 0 : shipsAt(world, first, 'blue').length;
+	const rivalOrbit = first === undefined ? 0 : shipsAt(world, first, 'red').length;
+	orbitalInfo.hidden = selected.length > 1 || (rivalOrbit === 0 && !shipsOnly && !(carrier && friendlyOrbit > 0));
+	orbitalInfo.textContent = `Orbit · ${friendlyOrbit} your ships · ${rivalOrbit} rival ships`;
 	const names: Record<Production, string> = { troops: 'Troops', ships: 'Ships', guns: 'Platforms' };
 	const progress = p ? Math.floor(p.progress / CONFIG.cost[p.production] * 100) : 0;
 	productionInfo.textContent = p && ownedSelected.length === 1 && selected.length === 1
@@ -876,9 +888,7 @@ const installGame = async function (
 		speed = installation.pace;
 		speedSelect.value = String(speed);
 		scenarioSelect.value = activeMap === LAB_MAP ? scenario : 'generated';
-		selected = [];
-		inspected = undefined;
-		multi = false;
+		clearSelection();
 		drawer.reset();
 		cancelMapCommand();
 		sheetCollapsed = false;
@@ -1002,10 +1012,7 @@ multiButton.addEventListener('click', function () {
 	refresh();
 });
 element('clear', HTMLButtonElement).addEventListener('click', function () {
-	cancelMapCommand();
-	selected = [];
-	inspected = undefined;
-	multi = false;
+	clearSelection();
 	refresh();
 });
 const cancelDispatch = function (): void {
@@ -1199,9 +1206,7 @@ window.addEventListener('keydown', function (event) {
 			return;
 		}
 		if (!fieldGuide.hidden) toggleGuide();
-		selected = [];
-		inspected = undefined;
-		multi = false;
+		clearSelection();
 		refresh();
 	}
 	if (event.code === 'Space' && event.target === document.body) {

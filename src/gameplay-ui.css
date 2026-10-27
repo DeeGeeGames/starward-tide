@@ -218,4 +218,6 @@
 }
 
 #app .planet:hover .name,
-#app .planet:focus-visible .name { visibility: visible !important; background: #08121ded; border-radius: 3px; padding: 2px 4px; }
+#app .planet:focus-visible .name,
+#app .planet:hover .orbit-count,
+#app .planet:focus-visible .orbit-count { visibility: visible !important; background: #08121ded; border-radius: 3px; padding: 2px 4px; }
