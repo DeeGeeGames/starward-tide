@@ -11,6 +11,8 @@ import {
 import { createDiagnosticsPlugin, type DiagnosticsResourceTypes } from 'ecspresso/plugins/debug/diagnostics';
 import { CONFIG } from './config';
 import { runAI } from './ai';
+import { DEFAULT_OPPONENT, DIFFICULTIES } from './opponent';
+import type { OpponentSettings } from './opponent';
 import { registerCombat } from './combat';
 import { registerMovement, registerTravelerCleanup, travelAim } from './movement';
 import { initializeLabScenario, seedFreshGame } from './game-scenario';
@@ -85,6 +87,7 @@ export interface Engagement {
 	owner: Side;
 }
 export interface Match {
+	opponent?: OpponentSettings;
 	time: number;
 	paused: boolean;
 	winner: Side | null;
@@ -104,6 +107,7 @@ export interface CaptureEvent {
 	owner: Side;
 }
 export interface GameOptions {
+	opponent?: OpponentSettings;
 	evaluateWinner?: (world: Game) => Side | null;
 	onCapture?: (event: CaptureEvent, world: Game) => void;
 	seed?: (world: Game, map: StarMap) => void;
@@ -145,8 +149,9 @@ const syncUnitPosition = function (
 	}
 	world.addComponent(unitId, 'localTransform', localTransformAt(x, y));
 };
-const makeWorld = function (map: StarMap): Game {
+const makeWorld = function (map: StarMap, opponent: OpponentSettings): Game {
 	const match: Match = {
+		opponent: { ...opponent },
 		time: 0,
 		paused: false,
 		winner: null,
@@ -593,7 +598,7 @@ export const createGame = async function (
 	snapshot?: GameSnapshot,
 	options: GameOptions = {},
 ): Promise<Game> {
-	const world = makeWorld(map);
+	const world = makeWorld(map, options.opponent ?? DEFAULT_OPPONENT);
 	const active = function (): boolean {
 		const m = world.getResource('match');
 		return !m.paused && !m.winner;
@@ -656,7 +661,7 @@ export const createGame = async function (
 				else if (!owners.has('blue')) match.winner = 'red';
 			}
 			match.aiClock += dt;
-			if (match.ai && match.aiClock >= CONFIG.aiInterval) {
+			if (match.ai && match.aiClock >= DIFFICULTIES[(match.opponent ?? DEFAULT_OPPONENT).difficulty].interval) {
 				match.aiClock = 0;
 				runAI(ecs, aiDependencies);
 			}

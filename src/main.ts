@@ -7,6 +7,8 @@ import { createOrdersDrawer } from './orders-drawer';
 import { zoomCamera } from './camera';
 import type { Camera, Point } from './camera';
 import { CONFIG, COLORS } from './config';
+import { DEFAULT_OPPONENT, opponentLabel } from './opponent';
+import type { OpponentSettings } from './opponent';
 import { LAB_MAP } from './maps';
 import type { StarMap } from './maps';
 import { createFrontMenu } from './front-menu';
@@ -358,6 +360,7 @@ const refresh = function (): void {
 };
 const refreshContent = function (): void {
 	const match = world.getResource('match');
+	element('opponent-summary', HTMLParagraphElement).textContent = `Opponent: ${opponentLabel(match.opponent ?? DEFAULT_OPPONENT)}`;
 	const all = planets(world);
 	selected = selected.filter(function (id) {
 		return (
@@ -765,6 +768,7 @@ const restart = async function (
 	next: Scenario = scenario,
 	map: StarMap = activeMap,
 	replacementConfirmed = false,
+	opponent: OpponentSettings = world.getResource('match').opponent ?? DEFAULT_OPPONENT,
 ): Promise<void> {
 	if (busy) return;
 	busy = true;
@@ -793,7 +797,7 @@ const restart = async function (
 				return;
 			}
 		}
-		replacement = await createGame(next, map);
+		replacement = await createGame(next, map, undefined, { opponent });
 		replacement.getResource('match').paused = document.hidden;
 		const profileId = activeProfileId;
 		if (!profileRepository || profileId === null)
@@ -955,8 +959,8 @@ const continueProfile = async function (profileId: string): Promise<void> {
 	}
 };
 const frontMenu = await createFrontMenu({
-	start: async function (map) {
-		await restart('skirmish', map, true);
+	start: async function (map, opponent) {
+		await restart('skirmish', map, true, opponent);
 	},
 	continue: continueProfile,
 	profiles: profileRepository,

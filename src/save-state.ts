@@ -118,6 +118,10 @@ const noticeSchema = z.looseObject({
 	text: z.string(), time: nonnegativeNumber, side: ownerSchema,
 }) satisfies z.ZodMiniType<Notice>;
 const matchSchema = z.looseObject({
+	opponent: z.optional(z.looseObject({
+		difficulty: z.enum(['relaxed', 'standard', 'hard']),
+		style: z.enum(['expansionist', 'aggressive', 'defensive']),
+	})),
 	time: nonnegativeNumber,
 	paused: z.boolean(),
 	winner: z.nullable(sideSchema),

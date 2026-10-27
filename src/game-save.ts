@@ -1,3 +1,4 @@
+import { DEFAULT_OPPONENT } from './opponent';
 import type { Scenario } from './config';
 import type { Game } from './game';
 import { orderUnits, planets, units } from './game';
@@ -37,6 +38,7 @@ export const captureConquestSave = function (
 		scenario,
 		pace,
 		match: {
+			opponent: { ...(match.opponent ?? DEFAULT_OPPONENT) },
 			time: match.time,
 			paused: match.paused,
 			winner: match.winner,
