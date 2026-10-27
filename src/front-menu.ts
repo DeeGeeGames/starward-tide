@@ -1,6 +1,8 @@
 import { createCarrierArtwork } from './carrier-art';
 import ECSpresso from 'ecspresso';
 import { COLORS } from './config';
+import { DIFFICULTIES, STYLES, isOpponentDifficulty, isOpponentStyleChoice, resolveOpponent } from './opponent';
+import type { OpponentSettings } from './opponent';
 import {
 	carrierSeeds,
 	CARRIER_CREW,
@@ -53,7 +55,7 @@ const flowBuilder = ECSpresso.create().withScreens(function (screens) {
 type FrontMenu = ReturnType<typeof flowBuilder.build>;
 
 export const createFrontMenu = async function (options: {
-	start: (map: StarMap) => Promise<void>;
+	start: (map: StarMap, opponent: OpponentSettings) => Promise<void>;
 	continue: (profileId: string) => Promise<void>;
 	profiles: ProfileRepository | undefined;
 	initialProfiles: ProfileSummary[];
@@ -103,6 +105,12 @@ export const createFrontMenu = async function (options: {
 	const profileStatus = element('profile-status', HTMLParagraphElement);
 	const status = element('setup-status', HTMLDivElement);
 	const summary = element('summary', HTMLDivElement);
+	const difficultySelect = element('opponent-difficulty', HTMLSelectElement);
+	const styleSelect = element('opponent-style', HTMLSelectElement);
+	const difficultyDetail = element('difficulty-detail', HTMLParagraphElement);
+	const styleDetail = element('style-detail', HTMLParagraphElement);
+	difficultySelect.value = 'standard';
+	styleSelect.value = 'expansionist';
 	const detail = element('size-detail', HTMLParagraphElement);
 	const carrierToggle = element('carriers-toggle', HTMLInputElement);
 	const preview = document.getElementById('map-preview');
@@ -148,6 +156,8 @@ export const createFrontMenu = async function (options: {
 		start.disabled = !profileState.available || !selected || starting;
 		for (const button of sizeButtons) button.disabled = starting;
 		carrierToggle.disabled = starting;
+		difficultySelect.disabled = starting;
+		styleSelect.disabled = starting;
 		element('reroll', HTMLButtonElement).disabled = starting;
 		element('back', HTMLButtonElement).disabled = starting;
 	};
@@ -272,11 +282,19 @@ export const createFrontMenu = async function (options: {
 		const count = document.createElement('strong');
 		count.textContent = `${map.planets.length} worlds`;
 		const hasCarriers = carriers.length > 0;
+		const difficulty = difficultySelect.value;
+		const style = styleSelect.value;
+		if (!isOpponentDifficulty(difficulty) || !isOpponentStyleChoice(style))
+			throw new Error('Invalid opponent settings');
+		difficultyDetail.textContent = DIFFICULTIES[difficulty].detail;
+		styleDetail.textContent = style === 'random' ? 'Chooses one style when the match starts; keeps it for restarts and saves.' : STYLES[style].detail;
 		summary.replaceChildren(
 			count,
 			' · 1 rival',
 			document.createElement('br'),
 			hasCarriers ? 'One world and carrier per side' : 'One starting world per side',
+			document.createElement('br'),
+			`${DIFFICULTIES[difficulty].label} · ${style === 'random' ? 'Random style' : STYLES[style].label}`,
 		);
 		detail.textContent = MAP_SIZES[size].detail;
 		element('setup-title', HTMLHeadingElement).textContent = 'Choose your star system.';
@@ -335,6 +353,8 @@ export const createFrontMenu = async function (options: {
 		renderPreview();
 		void flow.setScreen('setup', {});
 	});
+	difficultySelect.addEventListener('change', renderPreview);
+	styleSelect.addEventListener('change', renderPreview);
 	carrierToggle.addEventListener('change', function () {
 		if (starting) return;
 		carriersEnabled = carrierToggle.checked;
@@ -383,7 +403,11 @@ export const createFrontMenu = async function (options: {
 				status.textContent = '';
 				return;
 			}
-			await options.start(map);
+			const difficulty = difficultySelect.value;
+			const style = styleSelect.value;
+			if (!isOpponentDifficulty(difficulty) || !isOpponentStyleChoice(style))
+				throw new Error('Choose a valid opponent difficulty and style.');
+			await options.start(map, resolveOpponent(difficulty, style));
 			await flow.setScreen('playing', {});
 			status.textContent = '';
 		} catch (error) {

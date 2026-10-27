@@ -909,3 +909,79 @@
 		background-color: var(--menu-background);
 	}
 }
+
+#front-menu .opponent-options {
+	margin: 24px 0 0;
+	padding: 18px;
+	border: 1px solid var(--menu-line);
+	border-radius: 8px;
+}
+#front-menu .opponent-options legend {
+	font: 10px ui-monospace, monospace;
+	letter-spacing: 1.8px;
+	color: #a4b7c9;
+	padding: 0 6px;
+}
+#front-menu .opponent-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 20px;
+}
+#front-menu .opponent-options label {
+	display: block;
+	margin-bottom: 8px;
+}
+#front-menu .opponent-options select {
+	width: 100%;
+	min-height: 44px;
+	padding: 8px;
+	font: inherit;
+	color: var(--menu-text);
+	background: var(--menu-panel);
+	border: 1px solid var(--menu-line);
+	border-radius: 6px;
+}
+#front-menu .opponent-options select:focus-visible {
+	outline: 2px solid white;
+	outline-offset: 3px;
+}
+@media (max-width: 599px) {
+	#front-menu .opponent-grid { grid-template-columns: 1fr; }
+}
+/* Setup can grow as rules are added; retain reachable controls on short screens. */
+#front-menu #setup {
+	overflow-y: auto;
+}
+#front-menu #setup > * {
+	flex-shrink: 0;
+}
+#front-menu #setup .setup-grid {
+	flex: 0 0 auto;
+	min-height: min-content;
+}
+#front-menu .opponent-options {
+	min-inline-size: 0;
+	grid-column: 1 / -1;
+}
+#front-menu .opponent-options select {
+	max-width: none;
+}
+@media (max-height: 650px) and (min-width: 541px) {
+	#front-menu #setup {
+		display: flex;
+	}
+	#front-menu #setup .setup-grid {
+		display: grid;
+	}
+	#front-menu #setup .setup-grid > div {
+		grid-column: auto;
+		grid-row: auto;
+	}
+}
+#front-menu #setup {
+	max-height: 100%;
+}
+#front-menu #setup .map-box {
+	flex: 0 0 260px;
+	height: 260px;
+}

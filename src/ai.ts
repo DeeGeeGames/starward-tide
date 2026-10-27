@@ -1,4 +1,5 @@
 import type { Game } from './game';
+import { DEFAULT_OPPONENT, DIFFICULTIES, STYLES } from './opponent';
 
 type AIDependencies = Pick<
 	typeof import('./game'),
@@ -53,6 +54,9 @@ export const runAI = function (
 	world: Game,
 	{ dispatch, isBlockaded, planets, setProduction, shipsAt, units, availableShips, dockedShips }: AIDependencies,
 ): void {
+	const opponent = world.getResource('match').opponent ?? DEFAULT_OPPONENT;
+	const difficulty = DIFFICULTIES[opponent.difficulty];
+	const style = STYLES[opponent.style];
 	const all = planets(world);
 	const troopSources = new Set<number>();
 	const redPlanets = all.filter(function (entity) {
@@ -135,7 +139,7 @@ export const runAI = function (
 					return (
 						distanceBetween(origin, planet) +
 						planet.troops * 5 +
-						(planet.owner === 'blue' ? 70 : 0)
+						(planet.owner === 'blue' ? style.playerTargetPenalty : 0)
 					);
 				};
 				return score(a) - score(b);
@@ -164,7 +168,15 @@ export const runAI = function (
 			setProduction(world, [source.id], 'ships', 'red');
 			continue;
 		}
-		if (!canLaunch(source)) setProduction(world, [source.id], 'ships', 'red');
+		if (!canLaunch(source)) {
+			setProduction(world, [source.id], 'ships', 'red');
+			continue;
+		}
+		const planet = source.components.planet;
+		if (!planet.carrier && planet.guns < style.platforms) {
+			setProduction(world, [source.id], 'guns', 'red');
+			troopSources.add(source.id);
+		}
 	}
 
 	// Equal fleets annihilate. Relief has to arrive with strictly more ships.
@@ -219,7 +231,7 @@ export const runAI = function (
 			);
 		});
 	for (const target of heldOrbits) {
-		const minimum = target.components.planet.troops + 1 - inboundCargo(target.id);
+		const minimum = target.components.planet.troops + difficulty.troopMargin - inboundCargo(target.id);
 		if (minimum <= 0) continue;
 		const eligible = donors(target);
 		// One world that can capture alone does so. Pool only when none can.
@@ -313,8 +325,8 @@ export const runAI = function (
 		// Neutral platforms do not fire or block a landing, so they are not escorts.
 		const resistance =
 			(defender.owner === 'blue' ? defender.guns : 0) + blueShips(target.id);
-		const desiredShips = Math.max(4, Math.ceil(resistance * 1.8) + 2);
-		const minimumTroops = defender.troops + 1 - inboundCargo(target.id);
+		const desiredShips = Math.max(4, Math.ceil(resistance * difficulty.fleetMargin) + 2);
+		const minimumTroops = defender.troops + difficulty.troopMargin - inboundCargo(target.id);
 		const canCapture =
 			minimumTroops <= 0 ||
 			troopFraction(planet.troops, minimumTroops) !== undefined;
@@ -344,7 +356,7 @@ export const runAI = function (
 		const fraction = troopFraction(planet.troops, minimumTroops);
 		const escorted =
 			fraction !== undefined &&
-			(resistance === 0 || Math.ceil(ships * fraction) > resistance * 1.4);
+			(resistance === 0 || Math.ceil(ships * fraction) > resistance * difficulty.escortMargin);
 		if (!landingBlocked(target) && fraction !== undefined && escorted)
 			dispatch(world, [source.id], target.id, fraction, 'combined', 'red');
 		else if (ships >= Math.max(5, desiredShips))

@@ -231,6 +231,31 @@
 						</button>
 					</div>
 				</div>
+				<fieldset class="opponent-options">
+					<legend>OPPONENT</legend>
+					<div class="opponent-grid">
+						<div>
+							<label for="opponent-difficulty">Difficulty</label>
+							<select id="opponent-difficulty" aria-describedby="difficulty-detail opponent-fairness">
+								<option value="relaxed">Relaxed</option>
+								<option value="standard" selected>Standard</option>
+								<option value="hard">Hard</option>
+							</select>
+							<p class="detail" id="difficulty-detail"></p>
+						</div>
+						<div>
+							<label for="opponent-style">Style</label>
+							<select id="opponent-style" aria-describedby="style-detail">
+								<option value="expansionist" selected>Expansionist</option>
+								<option value="aggressive">Aggressive</option>
+								<option value="defensive">Defensive</option>
+								<option value="random">Random</option>
+							</select>
+							<p class="detail" id="style-detail"></p>
+						</div>
+					</div>
+					<p class="detail" id="opponent-fairness">Both sides use the same production, movement, and combat rules. No resource bonuses.</p>
+				</fieldset>
 				<div class="setup-footer">
 					<div class="summary" id="summary">
 						<strong>18 worlds</strong> · 1 rival<br />One starting world per
@@ -365,6 +390,7 @@
 					<button id="setup-game">New game</button>
 					<button id="profiles-game">Profiles</button>
 				</div>
+				<p id="opponent-summary"></p>
 				<p id="save-status-menu" role="status" aria-live="polite">Not saved</p>
 				<details class="lab">
 					<summary>Prototype lab <span>scenarios & tuning</span></summary>
