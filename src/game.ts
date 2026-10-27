@@ -362,6 +362,31 @@ export const setProduction = function (
 		p.progress = 0;
 	}
 };
+const departureStock = function (world: Game, id: number, fraction: number, filter: DispatchFilter, side: Side): { blocked: boolean; ships: UnitEntity[]; troops: number } {
+	const planet = world.getComponent(id, 'planet');
+	const blocked = Boolean(planet && planet.owner === side && !planet.carrier && isBlockaded(world, id));
+	const valid = planet && !blocked && !world.getResource('match').winner && Number.isFinite(fraction) && fraction > 0 && fraction <= 1;
+	const available = valid && filter !== 'troops' ? availableShips(world, id, side) : [];
+	return {
+		blocked,
+		ships: available.slice(0, Math.ceil(available.length * fraction)),
+		troops: valid && planet.owner === side && filter !== 'ships' ? Math.floor(planet.troops * fraction) : 0,
+	};
+};
+
+export const previewDispatch = function (
+	world: Game,
+	sources: readonly number[],
+	fraction: number,
+	filter: DispatchFilter = 'combined',
+	side: Side = 'blue',
+): { troops: number; ships: number; blockedSources: number } {
+	return [...new Set(sources)].reduce(function (total, id) {
+		const stock = departureStock(world, id, fraction, filter, side);
+		return { troops: total.troops + stock.troops, ships: total.ships + stock.ships.length, blockedSources: total.blockedSources + Number(stock.blocked) };
+	}, { troops: 0, ships: 0, blockedSources: 0 });
+};
+
 export const dispatch = function (
 	world: Game,
 	sources: readonly number[],
@@ -384,17 +409,14 @@ export const dispatch = function (
 	for (const id of new Set(sources)) {
 		const p = world.getComponent(id, 'planet');
 		if (!p || id === target) continue;
-		if (p.owner === side && !p.carrier && isBlockaded(world, id)) {
+		const stock = departureStock(world, id, fraction, filter, side);
+		if (stock.blocked) {
 			if (side === 'blue')
 				notify(world, `${p.name}: blockade prevents departure`, side);
 			continue;
 		}
-		const available = availableShips(world, id, side);
 		if (filter !== 'troops') {
-			for (const entity of available.slice(
-				0,
-				Math.ceil(available.length * fraction),
-			)) {
+			for (const entity of stock.ships) {
 				const unit = entity.components.unit;
 				departures.push({
 					unitId: entity.id,
@@ -422,7 +444,7 @@ export const dispatch = function (
 			}
 		}
 		if (p.owner !== side || filter === 'ships') continue;
-		let cargo = Math.floor(p.troops * fraction);
+		let cargo = stock.troops;
 		p.troops -= cargo;
 		while (cargo > 0) {
 			const count = Math.min(cargo, CONFIG.dropshipCapacity);

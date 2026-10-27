@@ -4,7 +4,10 @@ import { createCrowdedBaseline } from './performance-scenario';
 import { createPixiRenderer } from './pixi-renderer';
 import { createMapInput } from './map-input';
 import { createOrdersDrawer } from './orders-drawer';
-import { zoomCamera } from './camera';
+import { fitCamera, revealPoint } from './camera';
+import type { ViewportArea } from './camera';
+import { createPresentation } from './presentation';
+import { visibleMapLabels, type LabelBounds, type MapLabel } from './map-labels';
 import type { Camera, Point } from './camera';
 import { CONFIG, COLORS } from './config';
 import { DEFAULT_OPPONENT, opponentLabel } from './opponent';
@@ -20,6 +23,7 @@ import {
 	availableShips,
 	moveCarrier,
 	launchCarrierShips,
+	previewDispatch,
 	dispatch,
 	isBlockaded,
 	planets,
@@ -90,6 +94,7 @@ const filterButtons = [
 interface PlanetView {
 	button: HTMLButtonElement;
 	count: HTMLSpanElement;
+	name: HTMLSpanElement;
 	orbit: HTMLSpanElement;
 	mark: HTMLSpanElement;
 	progress: HTMLElement;
@@ -134,6 +139,7 @@ try {
 		: 'Browser storage could not open. Open the standalone game to use local profiles.';
 }
 let world: Game = await createGame();
+const presentation = await createPresentation();
 let diagnostics: PerformanceDiagnostics | undefined;
 let diagnosticsEnabled = new URLSearchParams(location.search).get('diagnostics') === '1';
 let selected: number[] = [];
@@ -146,8 +152,9 @@ let speed: GamePace = 1;
 let busy = false;
 let disposed = false;
 let raf = 0;
-let noticeUntil = 0;
-let orderMessage = '';
+let choosingDestination = false;
+let productionExpanded = false;
+let sheetCollapsed = false;
 let lastNoticeKey = '';
 let hiddenPause = false;
 const icons: Record<Production, string> = {
@@ -156,8 +163,7 @@ const icons: Record<Production, string> = {
 	guns: '✣',
 };
 const feedback = function (text: string): void {
-	orderMessage = text;
-	noticeUntil = performance.now() + 2600;
+	presentation.notify(text);
 };
 const saveErrorMessage = function (error: unknown): string {
 	const message =
@@ -169,7 +175,9 @@ const saveErrorMessage = function (error: unknown): string {
 		: message;
 };
 const updateSaveStatus = function (message: string): void {
-	saveStatus.textContent = message;
+	saveStatus.textContent = message.startsWith('Saved ') ? '✓ Saved' : message;
+	saveStatus.title = message;
+	saveStatus.dataset.state = message.startsWith('Save failed') ? 'error' : 'normal';
 	menuSaveStatus.textContent = message;
 };
 const savedStatus = function (savedAt: number): string {
@@ -252,6 +260,11 @@ const saveBeforeLeavingGame = async function (): Promise<boolean> {
 		app.inert = false;
 	}
 };
+// Every transition out of command picking also cancels a pending touch hold.
+const cancelMapCommand = function (): void {
+	mapInput.cancel();
+	choosingDestination = false;
+};
 const selectPlanet = function (id: number): void {
 	if (
 		busy ||
@@ -261,6 +274,8 @@ const selectPlanet = function (id: number): void {
 		return;
 	const p = world.getComponent(id, 'planet');
 	if (!p) return;
+	sheetCollapsed = false;
+	productionExpanded = false;
 	const selectable =
 		p.owner === 'blue' || shipsAt(world, id, 'blue').length > 0;
 	if (selected.includes(id)) {
@@ -276,6 +291,7 @@ const selectPlanet = function (id: number): void {
 		inspected = p.owner === 'blue' ? undefined : id;
 	}
 	refresh();
+	updateLayout();
 };
 const sendToPlanet = function (id: number): void {
 	if (
@@ -305,7 +321,10 @@ const sendToPlanet = function (id: number): void {
 				? `${sent} ${sent === 1 ? 'unit' : 'units'} launched → ${p.name}`
 				: 'No units launched. Check stock, filter, or blockade.',
 		);
-		if (sent > 0) queueAutosave();
+		if (sent > 0) {
+			cancelMapCommand();
+			queueAutosave();
+		}
 	}
 	refresh();
 };
@@ -339,11 +358,12 @@ const mountPlanets = function (): void {
 			throw new Error('Planet template incomplete');
 		name.textContent = p.name;
 		planetLayer.append(button);
-		views.set(id, { button, count, orbit, mark, progress });
+		views.set(id, { button, count, name, orbit, mark, progress });
 	}
 };
 const launchCarrierButton = document.createElement('button');
-launchCarrierButton.textContent = 'Launch docked ships';
+launchCarrierButton.id = 'launch-carrier';
+launchCarrierButton.textContent = 'Launch docked ships here';
 launchCarrierButton.hidden = true;
 dispatchControls.append(launchCarrierButton);
 launchCarrierButton.addEventListener('click', function () {
@@ -354,6 +374,30 @@ launchCarrierButton.addEventListener('click', function () {
 	if (count > 0) queueAutosave();
 	refresh();
 });
+const labelBounds = function (element: HTMLElement): LabelBounds {
+	const rect = element.getBoundingClientRect();
+	return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+};
+const arrangeLabels = function (): void {
+	if (app.hidden) return;
+	const labels: MapLabel[] = [];
+	const reserved: LabelBounds[] = [];
+	for (const [id, view] of views) {
+		const owner = world.getComponent(id, 'planet')?.owner;
+		const priority = selected.includes(id) || inspected === id ? 1000 : owner === 'blue' ? 400 : owner === 'red' ? 300 : 100;
+		reserved.push(view.count.getBoundingClientRect());
+		labels.push({ ...labelBounds(view.name), key: `${id}:name`, priority });
+		if (view.orbit.textContent) labels.push({ ...labelBounds(view.orbit), key: `${id}:orbit`, priority: priority - 1 });
+	}
+	for (const panel of document.querySelectorAll<HTMLElement>('.status-cluster, .header-actions, #planet-panel, #orders-drawer, #field-guide, #banner, #destination-prompt, #destination-summary')) {
+		if (!panel.hidden && panel.getClientRects().length > 0) reserved.push(panel.getBoundingClientRect());
+	}
+	const visible = visibleMapLabels(labels, reserved);
+	for (const [id, view] of views) {
+		view.name.style.visibility = visible.has(`${id}:name`) ? 'visible' : 'hidden';
+		view.orbit.style.visibility = visible.has(`${id}:orbit`) ? 'visible' : 'hidden';
+	}
+};
 const refresh = function (): void {
 	if (diagnostics) diagnostics.measure('hud', refreshContent);
 	else refreshContent();
@@ -418,6 +462,11 @@ const refreshContent = function (): void {
 		view.mark.textContent = p.owner === 'neutral' ? '' : icons[p.production];
 		view.progress.style.width = `${(p.progress / CONFIG.cost[p.production]) * 100}%`;
 	}
+	if (choosingDestination && (selected.length === 0 || match.winner)) cancelMapCommand();
+	app.classList.toggle('is-dispatching', choosingDestination);
+	app.classList.toggle('sheet-collapsed', sheetCollapsed);
+	element('destination-prompt', HTMLDivElement).hidden = !choosingDestination;
+	element('destination-summary', HTMLDivElement).hidden = !choosingDestination;
 	planetPanel.hidden = selected.length === 0 && inspected === undefined;
 	dispatchControls.hidden = selected.length === 0;
 	const ownedSelected = selected.flatMap(function (id) {
@@ -429,7 +478,7 @@ const refreshContent = function (): void {
 	dispatchFilterControls.hidden = shipsOnly;
 	dispatchInfo.textContent = shipsOnly
 		? 'orbiting ships only'
-		: 'defense platforms stay behind';
+		: 'Platforms stay';
 	const first = selected[0] ?? inspected;
 	const p =
 		first === undefined ? undefined : world.getComponent(first, 'planet');
@@ -439,29 +488,60 @@ const refreshContent = function (): void {
 			: p
 				? p.name
 				: 'No source selected';
-	selectionInfo.textContent =
-		selected.length === 0 || (selected.length === 1 && p?.owner !== 'blue')
-			? p
-				? `${p.owner === 'blue' ? 'Your' : p.owner === 'red' ? 'Rival' : 'Neutral'} world · ${p.troops} troops · ${first === undefined ? 0 : shipsAt(world, first, 'red').length} rival ships · ${Math.ceil(p.guns)} defense platforms`
-				: 'Tap or left-click a blue planet to select.'
-			: `${ownedSelected.reduce(function (sum, p) {
-					return sum + p.troops;
-				}, 0)} troops · ${selected.reduce(function (sum, id) {
-					return sum + availableShips(world, id, 'blue').length;
-				}, 0)} ships · ${Math.ceil(
-					ownedSelected.reduce(function (sum, p) {
-						return sum + p.guns;
-					}, 0),
-				)} defense platforms${p && p.owner !== 'blue' ? ' · orbit only' : ''}`;
-	orbitalInfo.hidden = !(selected.length === 1 && shipsOnly);
-	orbitalInfo.textContent =
-		first === undefined
-			? ''
-			: `${shipsAt(world, first, 'blue').length} your orbiting ships · hold or right-click a destination to send`;
-	productionInfo.textContent =
-		p && p.owner === 'blue' && selected.length === 1
-			? `${(p.rate * CONFIG.productionRateMultiplier).toFixed(1)} work / sec`
-			: 'on selected worlds';
+	const inspectedOnly = selected.length === 0;
+	const forceSources = selected.length > 0 ? selected : first === undefined ? [] : [first];
+	const forcePlanets = forceSources.flatMap(function (id) {
+		const planet = world.getComponent(id, 'planet');
+		return planet ? [planet] : [];
+	});
+	const carrier = selected.length <= 1 && Boolean(p?.carrier) && (inspectedOnly || p?.owner === 'blue');
+	const surfacePlanets = inspectedOnly ? forcePlanets : forcePlanets.filter(function (planet) { return planet.owner === 'blue'; });
+	const troops = surfacePlanets.reduce(function (sum, planet) { return sum + planet.troops; }, 0);
+	const shipCount = forceSources.reduce(function (sum, id) {
+		return sum + (inspectedOnly ? availableShips(world, id, 'red').length : availableShips(world, id, 'blue').length);
+	}, 0);
+	element('stat-troops', HTMLElement).textContent = String(troops);
+	element('stat-ships', HTMLElement).textContent = String(carrier && first !== undefined ? dockedShips(world, first).length : shipCount);
+	element('stat-platforms', HTMLElement).textContent = String(carrier && first !== undefined
+		? shipsAt(world, first, 'blue').length + shipsAt(world, first, 'red').length
+		: Math.ceil(surfacePlanets.reduce(function (sum, planet) { return sum + planet.guns; }, 0)));
+	element('troops-label', HTMLElement).textContent = carrier ? 'Crew' : 'Troops';
+	element('ships-label', HTMLElement).textContent = carrier ? 'Docked ships' : shipsOnly ? 'Your ships' : 'Ships';
+	element('platforms-label', HTMLElement).textContent = carrier ? 'External ships' : 'Platforms';
+	element('selection-kind', HTMLElement).textContent = selected.length > 1 ? 'YOUR SOURCES' :
+		`${p?.owner === 'blue' ? 'YOUR' : p?.owner === 'red' ? 'RIVAL' : 'NEUTRAL'} ${p?.carrier ? 'CARRIER' : 'WORLD'}`;
+	selectionInfo.textContent = carrier && p?.owner === 'blue' ? 'Click empty space to move this carrier.' : shipsOnly ? `Your ships in orbit · ${p?.carrier ? 'carrier' : 'surface'} belongs to another faction.` : '';
+	selectionInfo.hidden = selectionInfo.textContent === '';
+	orbitalInfo.hidden = true;
+	const names: Record<Production, string> = { troops: 'Troops', ships: 'Ships', guns: 'Platforms' };
+	const progress = p ? Math.floor(p.progress / CONFIG.cost[p.production] * 100) : 0;
+	productionInfo.textContent = p && ownedSelected.length === 1 && selected.length === 1
+		? `${names[p.production]} · ${progress}%` : 'Selected worlds';
+	const progressBar = element('production-progress', HTMLDivElement);
+	progressBar.hidden = selected.length !== 1;
+	progressBar.setAttribute('aria-valuenow', String(progress));
+	const progressFill = progressBar.querySelector('i');
+	if (progressFill instanceof HTMLElement) progressFill.style.width = `${progress}%`;
+	const compact = window.matchMedia('(max-width: 699px) and (min-height: 551px)').matches;
+	element('production-options', HTMLDivElement).hidden = compact && !productionExpanded;
+	element('change-production', HTMLButtonElement).setAttribute('aria-expanded', String(productionExpanded));
+	element('sheet-toggle', HTMLButtonElement).setAttribute('aria-expanded', String(!sheetCollapsed));
+	element('sheet-toggle', HTMLButtonElement).setAttribute('aria-label', sheetCollapsed ? 'Expand world commands' : 'Collapse world commands');
+	element('sheet-toggle', HTMLButtonElement).textContent = sheetCollapsed ? '⌃' : '⌄';
+	const preview = previewDispatch(world, selected, fraction, shipsOnly ? 'ships' : filter);
+	element('dispatch-preview', HTMLParagraphElement).textContent = `Up to ${preview.troops} troops + ${preview.ships} ships`;
+	element('destination-summary', HTMLDivElement).textContent = `From ${selected.length > 1 ? `${selected.length} sources` : p?.name ?? 'selection'} · up to ${preview.troops} troops + ${preview.ships} ships`;
+	element('send-units', HTMLButtonElement).disabled = multi || preview.troops + preview.ships === 0 || Boolean(match.winner);
+	const warning = element('selection-warning', HTMLDivElement);
+	const carrierBlocked = p?.carrier && first !== undefined && shipsAt(world, first, p.owner === 'blue' ? 'red' : 'blue').length > 0;
+	warning.textContent = carrierBlocked ? `Docking blocked by hostile ships.${p?.owner === 'blue' ? ' Launching is still allowed.' : ''}` : preview.blockedSources > 0
+		? `${preview.blockedSources === 1 ? 'A selected world is' : `${preview.blockedSources} selected worlds are`} blockaded. No units can leave ${preview.blockedSources === 1 ? 'it' : 'them'}.`
+		: inspectedOnly && first !== undefined && isBlockaded(world, first) ? 'Surface blockaded by hostile ships.' : '';
+	warning.hidden = warning.textContent === '';
+	element('panel-multi', HTMLButtonElement).hidden = inspectedOnly;
+	element('panel-multi', HTMLButtonElement).textContent = multi ? '✓ Finish selection' : '＋ Multi-select';
+	element('panel-multi', HTMLButtonElement).setAttribute('aria-pressed', String(multi));
+	element('selection-count', HTMLSpanElement).textContent = selected.length > 0 ? `${selected.length} ${selected.length === 1 ? 'source' : 'sources'} selected` : 'Information only';
 	for (const button of productionButtons) {
 		button.disabled = ownedSelected.length === 0 || Boolean(match.winner) || (button.dataset.production === 'guns' && ownedSelected.some(function (p) { return Boolean(p.carrier); }));
 		button.setAttribute(
@@ -476,17 +556,17 @@ const refreshContent = function (): void {
 	}
 	launchCarrierButton.hidden = !p?.carrier || p.owner !== 'blue' || selected.length !== 1;
 	launchCarrierButton.disabled = Boolean(match.winner) || first === undefined || dockedShips(world, first, 'blue').length === 0;
-	if (p?.carrier && selected.length <= 1) {
-		selectionInfo.textContent = `${p.troops} crew · ${first === undefined ? 0 : dockedShips(world, first).length} docked ships · ${first === undefined ? 0 : shipsAt(world, first, 'blue').length + shipsAt(world, first, 'red').length} external ships${first !== undefined && shipsAt(world, first, p.owner === 'blue' ? 'red' : 'blue').length > 0 ? ` · docking blocked${p.owner === 'blue' ? '; launching allowed' : ''}` : ''}`;
-		dispatchInfo.textContent = 'Docked ships launch; platforms unavailable';
-	}
+	if (carrier) dispatchInfo.textContent = 'Docked ships can launch';
 	instruction.textContent = multi
 		? 'Tap or left-click sources · finish selection to send'
 		: selected.length
-			? p?.carrier && p.owner === 'blue' && selected.length === 1 ? 'Click empty space to move · hold or right-click an entity to dispatch' : 'Hold or right-click a destination to send'
+			? p?.carrier && p.owner === 'blue' && selected.length === 1 ? 'Click empty space to move · hold or right-click an entity to dispatch' : 'Use Send units, or hold / right-click a destination'
 			: 'Select a blue planet or orbital ring';
+	multiButton.hidden = selected.length > 0 && !multi;
 	multiButton.setAttribute('aria-pressed', String(multi));
 	multiButton.textContent = multi ? '✓ Finish selection' : '＋ Multi-select';
+	element('score-label', HTMLSpanElement).textContent = activeMap.carriers ? 'HOLDINGS' : 'WORLDS CONTROLLED';
+	element('score-label', HTMLSpanElement).title = activeMap.carriers ? 'Worlds and carriers controlled' : 'Worlds controlled';
 	blueCount.textContent = String(
 		all.filter(function (e) {
 			return e.components.planet.owner === 'blue';
@@ -498,7 +578,14 @@ const refreshContent = function (): void {
 		}).length,
 	);
 	clock.textContent = formatElapsedTime(match.time);
-	pause.textContent = match.paused ? '▷' : 'Ⅱ';
+	pause.replaceChildren();
+	const pauseIcon = document.createElement('span');
+	pauseIcon.setAttribute('aria-hidden', 'true');
+	pauseIcon.textContent = match.paused ? '▷' : 'Ⅱ';
+	const pauseLabel = document.createElement('span');
+	pauseLabel.className = 'pause-label';
+	pauseLabel.textContent = match.paused ? 'Resume' : 'Pause';
+	pause.append(pauseIcon, pauseLabel);
 	pause.setAttribute('aria-label', match.paused ? 'Resume game' : 'Pause game');
 	pause.setAttribute('aria-pressed', String(match.paused));
 	pause.title = match.paused
@@ -511,11 +598,7 @@ const refreshContent = function (): void {
 		: '';
 	bannerMessage.textContent =
 		result ||
-		(performance.now() < noticeUntil
-			? orderMessage
-			: match.paused
-				? 'Paused · commands remain available'
-				: '');
+		presentation.notice() || (match.paused ? 'Paused · commands remain available' : '');
 	banner.style.display = bannerMessage.textContent ? 'block' : 'none';
 	const key = match.notices
 		.map(function (n) {
@@ -539,6 +622,7 @@ const refreshContent = function (): void {
 		world,
 		selected.length > 0 ? selected : inspected === undefined ? [] : [inspected],
 	);
+	arrangeLabels();
 };
 
 const ordersPanel = element('orders-drawer', HTMLElement);
@@ -553,6 +637,10 @@ const drawer = createOrdersDrawer(
 		empty: element('orders-empty', HTMLParagraphElement),
 	},
 	function () {
+		cancelMapCommand();
+		app.classList.remove('is-dispatching');
+		element('destination-prompt', HTMLDivElement).hidden = true;
+		element('destination-summary', HTMLDivElement).hidden = true;
 		fieldGuide.hidden = true;
 		settings.setAttribute('aria-expanded', 'false');
 		settings.setAttribute('aria-label', 'Open game menu');
@@ -564,34 +652,63 @@ const drawer = createOrdersDrawer(
 	},
 );
 
-// The simulation and both render layers share one world-space transform.
-let camera: Camera = { x: 0, y: 0, scale: 1 };
+// One renderer-agnostic ECSpresso camera drives the DOM and Pixi layers.
+let camera: Camera = presentation.camera();
 let fitScale = 1;
+let previousArea: ViewportArea | undefined;
 const applyCamera = function (): void {
+	camera = presentation.camera();
 	mapWorld.style.transform = `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})`;
+	app.style.setProperty('--map-scale', String(camera.scale));
+	arrangeLabels();
 };
-const fitMap = function (): void {
+const playableArea = function (): ViewportArea {
 	const width = board.clientWidth;
 	const height = board.clientHeight;
-	if (width === 0 || height === 0) return;
-	const top = width < 700 ? 200 : 130;
-	const bottom = 85;
-	fitScale = Math.max(
-		0.1,
-		Math.min(
-			(width - 48) / activeMap.width,
-			(height - top - bottom) / activeMap.height,
-		),
-	);
-	camera = {
-		x: (width - activeMap.width * fitScale) / 2,
-		y: top + (height - top - bottom - activeMap.height * fitScale) / 2,
-		scale: fitScale,
-	};
+	const header = element('app', HTMLDivElement).querySelector('header')?.getBoundingClientRect();
+	const top = (header?.bottom ?? 80) + 58;
+	const area = { x: 22, y: top, width: Math.max(80, width - 44), height: Math.max(80, height - top - 26) };
+	for (const panel of [planetPanel, ordersPanel, fieldGuide, element('destination-summary', HTMLDivElement)]) {
+		if (panel.hidden || panel.getClientRects().length === 0) continue;
+		const rect = panel.getBoundingClientRect();
+		if (panel.id === 'destination-summary' || (window.matchMedia('(max-width: 699px) and (min-height: 551px)').matches && (panel === planetPanel || panel === ordersPanel))) area.height = Math.max(80, rect.top - area.y - 16);
+		else area.width = Math.max(80, rect.left - area.x - 22);
+	}
+	return area;
+};
+const fitMap = function (): void {
+	if (board.clientWidth === 0 || board.clientHeight === 0) return;
+	const area = playableArea();
+	const fitted = fitCamera(activeMap, area);
+	previousArea = area;
+	fitScale = fitted.scale;
+	presentation.setCamera(fitted, board.clientWidth, board.clientHeight);
 	applyCamera();
 };
+const revealSelection = function (): void {
+	if (board.clientWidth === 0 || board.clientHeight === 0) return;
+	const id = selected.at(-1) ?? inspected;
+	const planet = id === undefined ? undefined : world.getComponent(id, 'planet');
+	if (!planet) return;
+	presentation.setCamera(revealPoint(camera, planet, playableArea()), board.clientWidth, board.clientHeight);
+	applyCamera();
+};
+const updateLayout = function (): void {
+	if (board.clientWidth === 0 || board.clientHeight === 0) return;
+	if (selected.length === 0 && inspected === undefined) { fitMap(); return; }
+	const area = playableArea();
+	if (previousArea) {
+		presentation.pan({
+			x: area.x + area.width / 2 - previousArea.x - previousArea.width / 2,
+			y: area.y + area.height / 2 - previousArea.y - previousArea.height / 2,
+		});
+		applyCamera();
+	}
+	previousArea = area;
+	revealSelection();
+};
 const zoomAt = function (anchor: Point, factor: number): void {
-	camera = zoomCamera(camera, anchor, factor, fitScale * 0.5, fitScale * 5);
+	presentation.zoom(anchor, factor, fitScale * 0.5, fitScale * 5);
 	applyCamera();
 };
 const mapInput = createMapInput({
@@ -604,17 +721,22 @@ const mapInput = createMapInput({
 			return view.button === button;
 		})?.[0];
 	},
-	selectPlanet,
+	selectPlanet: function (id): void {
+		if (choosingDestination) sendToPlanet(id);
+		else selectPlanet(id);
+	},
 	dispatchPlanet: sendToPlanet,
 	moveTo: function (point): void {
+		if (choosingDestination) { feedback('Choose a world or carrier as the destination.'); refresh(); return; }
 		if (busy || multi || selected.length !== 1 || frontMenu.getCurrentScreen() !== 'playing') return;
 		const id = selected[0];
 		if (id === undefined) return;
-		const destination = { x: Math.max(0, Math.min(activeMap.width, (point.x - camera.x) / camera.scale)), y: Math.max(0, Math.min(activeMap.height, (point.y - camera.y) / camera.scale)) };
+		const worldPoint = presentation.toWorld(point);
+		const destination = { x: Math.max(0, Math.min(activeMap.width, worldPoint.x)), y: Math.max(0, Math.min(activeMap.height, worldPoint.y)) };
 		if (moveCarrier(world, id, destination)) { feedback('Carrier course set'); queueAutosave(); refresh(); }
 	},
 	panBy: function (delta): void {
-		camera = { ...camera, x: camera.x + delta.x, y: camera.y + delta.y };
+		presentation.pan(delta);
 		applyCamera();
 	},
 	zoomAt,
@@ -636,12 +758,17 @@ const renderer = await createPixiRenderer({
 		};
 	},
 });
-const resizeObserver = new ResizeObserver(fitMap);
+const resizeObserver = new ResizeObserver(updateLayout);
 resizeObserver.observe(board);
+resizeObserver.observe(planetPanel);
+resizeObserver.observe(ordersPanel);
 const fieldGuide = element('field-guide', HTMLElement);
+resizeObserver.observe(fieldGuide);
+resizeObserver.observe(element('destination-summary', HTMLDivElement));
 const settings = element('settings', HTMLButtonElement);
 const toggleGuide = function (): void {
 	if (fieldGuide.hidden && !ordersPanel.hidden) drawer.close();
+	cancelMapCommand();
 	fieldGuide.hidden = !fieldGuide.hidden;
 	settings.setAttribute('aria-expanded', String(!fieldGuide.hidden));
 	settings.setAttribute(
@@ -650,6 +777,7 @@ const toggleGuide = function (): void {
 	);
 	if (fieldGuide.hidden) settings.focus();
 	else element('close-guide', HTMLButtonElement).focus();
+	refresh();
 };
 settings.addEventListener('click', toggleGuide);
 element('close-guide', HTMLButtonElement).addEventListener(
@@ -752,7 +880,9 @@ const installGame = async function (
 		inspected = undefined;
 		multi = false;
 		drawer.reset();
-		noticeUntil = 0;
+		cancelMapCommand();
+		sheetCollapsed = false;
+		presentation.clearNotice();
 		lastNoticeKey = '';
 		fitMap();
 		mountPlanets();
@@ -855,6 +985,7 @@ for (const button of amountButtons)
 		fraction = value;
 		for (const item of amountButtons)
 			item.setAttribute('aria-pressed', String(item === button));
+		refresh();
 	});
 for (const button of filterButtons)
 	button.addEventListener('click', function () {
@@ -863,16 +994,47 @@ for (const button of filterButtons)
 		filter = value;
 		for (const item of filterButtons)
 			item.setAttribute('aria-pressed', String(item === button));
+		refresh();
 	});
 multiButton.addEventListener('click', function () {
+	cancelMapCommand();
 	multi = !multi;
 	refresh();
 });
 element('clear', HTMLButtonElement).addEventListener('click', function () {
+	cancelMapCommand();
 	selected = [];
 	inspected = undefined;
 	multi = false;
 	refresh();
+});
+const cancelDispatch = function (): void {
+	cancelMapCommand();
+	refresh();
+	updateLayout();
+	element('send-units', HTMLButtonElement).focus();
+};
+element('send-units', HTMLButtonElement).addEventListener('click', function () {
+	if (busy || multi || selected.length === 0 || world.getResource('match').winner) return;
+	choosingDestination = true;
+	mapInput.cancel();
+	drawer.close();
+	fieldGuide.hidden = true;
+	refresh();
+	updateLayout();
+	board.focus();
+});
+element('cancel-dispatch', HTMLButtonElement).addEventListener('click', cancelDispatch);
+element('panel-multi', HTMLButtonElement).addEventListener('click', function () { multiButton.click(); });
+element('change-production', HTMLButtonElement).addEventListener('click', function () {
+	productionExpanded = !productionExpanded;
+	refresh();
+	updateLayout();
+});
+element('sheet-toggle', HTMLButtonElement).addEventListener('click', function () {
+	sheetCollapsed = !sheetCollapsed;
+	refresh();
+	updateLayout();
 });
 pause.addEventListener('click', function () {
 	const match = world.getResource('match');
@@ -908,6 +1070,7 @@ const frame = function (now: number): void {
 	if (disposed) return;
 	const dt = Math.min(Math.max((now - previous) / 1000, 0), 0.1);
 	previous = now;
+	presentation.update(dt);
 	diagnostics?.frame(now);
 	if (!busy && frontMenu.getCurrentScreen() === 'playing') {
 		// Keep rendering and command input live while simulation time is frozen.
@@ -977,7 +1140,7 @@ const frontMenu = await createFrontMenu({
 		saveGameButton.disabled = true;
 	},
 	onMenu: function () {
-		mapInput.cancel();
+		cancelMapCommand();
 		world.getResource('match').paused = true;
 		hiddenPause = false;
 	},
@@ -1030,6 +1193,7 @@ document.addEventListener('visibilitychange', function () {
 window.addEventListener('keydown', function (event) {
 	if (frontMenu.getCurrentScreen() !== 'playing' || busy) return;
 	if (event.key === 'Escape') {
+		if (choosingDestination) { cancelDispatch(); return; }
 		if (!ordersPanel.hidden) {
 			drawer.close();
 			return;
@@ -1137,6 +1301,7 @@ window.addEventListener('pagehide', function (event) {
 	if (autosaveTimer !== undefined) window.clearInterval(autosaveTimer);
 	if (queuedAutosave !== undefined) window.clearTimeout(queuedAutosave);
 	resizeObserver.disconnect();
+	void presentation.dispose();
 	void world.dispose();
 	void frontMenu.dispose();
 	profileRepository?.close();

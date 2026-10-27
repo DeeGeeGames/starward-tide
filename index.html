@@ -51,6 +51,7 @@
 		<link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
 		<link rel="stylesheet" href="./src/style.css" />
 		<link rel="stylesheet" href="./src/menu.css" />
+		<link rel="stylesheet" href="./src/gameplay-ui.css" />
 	</head>
 	<body>
 		<div id="front-menu">
@@ -280,79 +281,77 @@
 					<div id="planets"></div>
 				</div>
 			</main>
-			<header class="hud">
-				<div class="brand">
-					<h1>Galaxy Conquest</h1>
+			<header class="game-header" aria-label="Game status and actions">
+				<div class="hud status-cluster">
+					<h1 class="game-wordmark">GALAXY<br>CONQUEST</h1>
+					<div class="world-score"><span class="eyebrow" id="score-label">WORLDS CONTROLLED</span><div class="scorebar">
+						<span class="blue"><strong id="blue-count">1</strong> You</span>
+						<span class="red"><strong id="red-count">1</strong> Rival</span>
+					</div></div>
+					<div id="clock" aria-label="Elapsed time">00:00</div>
 				</div>
-				<div class="scorebar">
-					<span class="blue">● <strong id="blue-count">1</strong> YOU</span>
-					<div id="clock">00:00</div>
-					<span class="red">● <strong id="red-count">1</strong> RIVAL</span>
-				</div>
-				<span id="save-status" role="status" aria-live="polite">Not saved</span>
-				<div class="header-actions">
-					<button id="save-game" aria-label="Save conquest" title="Save conquest">Save</button>
-					<button
-						id="orders-toggle"
-						aria-controls="orders-drawer"
-						aria-expanded="false"
-					>
-						Orders · 0
-					</button>
-					<button id="pause" aria-label="Pause game">Ⅱ</button
-					><button
-						id="settings"
-						aria-label="Open game menu"
-						aria-controls="field-guide"
-						title="Game menu & help"
-						aria-expanded="false"
-					>
-						☰
-					</button>
+				<div class="hud header-actions">
+					<button id="orders-toggle" aria-controls="orders-drawer" aria-expanded="false">Orders · 0</button>
+					<button id="pause" aria-label="Pause game">Ⅱ Pause</button>
+					<button id="settings" aria-label="Open game menu" aria-controls="field-guide" title="Game menu & help" aria-expanded="false">☰</button>
 				</div>
 			</header>
 			<div class="map-heading">
-				<span id="instruction">Select a blue planet or orbital ring</span
-				><button id="multi" aria-pressed="false">＋ Multi-select</button>
+				<span id="instruction">Select one of your worlds to manage it.</span>
+				<button id="multi" aria-pressed="false">＋ Multi-select</button>
 			</div>
+			<div id="destination-prompt" class="hud" hidden>
+				<span id="destination-instruction" role="status">Choose a destination on the map</span>
+				<button id="cancel-dispatch" class="text-button">Cancel</button>
+			</div>
+			<div id="destination-summary" class="hud" hidden></div>
 			<div id="banner" role="status"></div>
-			<aside id="planet-panel" aria-label="Planet commands" hidden>
+			<span id="save-status" role="status" aria-live="polite">Not saved</span>
+			<aside id="planet-panel" aria-label="World commands" hidden>
 				<section class="command-panel">
+					<div class="sheet-handle" aria-hidden="true"></div>
 					<div class="panel-title">
-						<h2 id="selection-name">No source selected</h2>
-						<button id="clear" aria-label="Clear selection" title="Clear selection">×</button>
-					</div>
-					<p id="selection-info">Tap or left-click a blue planet to select.</p>
-					<p id="orbital-info" hidden></p>
-					<div id="production-controls">
-						<div class="control-label">
-							Produce <span id="production-info">on selected worlds</span>
-						</div>
-						<div id="production" class="segments">
-							<button data-production="troops">▥ Troops</button
-							><button data-production="ships">◆ Ships</button
-							><button data-production="guns">✣ Defense Platform</button>
+						<div><span id="selection-kind" class="eyebrow">YOUR WORLD</span><h2 id="selection-name">No source selected</h2></div>
+						<div class="selection-actions">
+							<button id="sheet-toggle" aria-label="Collapse world commands" aria-expanded="true" aria-controls="command-details">⌄</button>
+							<button id="clear" aria-label="Clear selection" title="Clear selection">×</button>
 						</div>
 					</div>
-					<div id="dispatch-controls">
-						<div class="control-label">
-							Send amount <span id="dispatch-info">defense platforms stay behind</span>
+					<div id="command-details">
+						<div class="force-stats" aria-label="Forces at selection">
+							<div><strong id="stat-troops">0</strong><span id="troops-label">Troops</span></div>
+							<div><strong id="stat-ships">0</strong><span id="ships-label">Ships</span></div>
+							<div><strong id="stat-platforms">0</strong><span id="platforms-label">Platforms</span></div>
 						</div>
-						<div id="amount" class="segments">
-							<button data-amount="0.25">25%</button
-							><button data-amount="0.5" aria-pressed="true">50%</button
-							><button data-amount="1">100%</button>
-						</div>
-						<div id="dispatch-filter-controls">
-							<div class="control-label">Dispatch</div>
-							<div id="filter" class="segments">
-								<button data-filter="combined" aria-pressed="true">
-									Combined</button
-								><button data-filter="ships">Ships only</button
-								><button data-filter="troops">Troops only</button>
+						<p id="selection-info"></p>
+						<p id="orbital-info" hidden></p>
+						<div id="selection-warning" class="selection-warning" role="status" hidden></div>
+						<div id="production-controls">
+							<div class="control-label"><strong>Production</strong><span id="production-info"></span><button id="change-production" class="text-button" aria-expanded="false" aria-controls="production-options">Change ›</button></div>
+							<div id="production-options">
+								<div id="production" class="segments">
+									<button data-production="troops"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5h12v11H4zM7 5V3h6v2M8 8v5m4-5v5"/></svg>Troops</button>
+									<button data-production="ships"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2l6 14-6-3-6 3zM10 6v7"/></svg>Ships</button>
+									<button data-production="guns" title="Defense platforms stay at this world"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2v4m0 8v4M2 10h4m8 0h4M6 6h8v8H6zM8 8h4v4H8z"/></svg>Platforms</button>
+								</div>
+								<div id="production-progress" role="progressbar" aria-label="Current production" aria-valuemin="0" aria-valuemax="100"><i></i></div>
+								<p class="production-note">Switching production discards unfinished work.</p>
 							</div>
 						</div>
+						<div id="dispatch-controls">
+							<div class="control-label"><strong>Send amount</strong><span id="dispatch-info">Platforms stay</span></div>
+							<div id="amount" class="segments" role="group" aria-label="Send amount">
+								<button data-amount="0.25">25%</button><button data-amount="0.5" aria-pressed="true">50%</button><button data-amount="1">100%</button>
+							</div>
+							<div id="dispatch-filter-controls"><div id="filter" class="segments" role="group" aria-label="Units to send">
+								<button data-filter="combined" aria-pressed="true">Combined</button><button data-filter="ships">Ships only</button><button data-filter="troops">Troops only</button>
+							</div></div>
+							<p id="dispatch-preview"></p>
+							<button id="send-units" class="send-button">Send units <span aria-hidden="true">→</span></button>
+							<p class="dispatch-shortcut">Or hold / right-click a destination</p>
+						</div>
 					</div>
+					<div class="command-footer"><button id="panel-multi" class="text-button" aria-pressed="false">＋ Multi-select</button><span id="selection-count"></span></div>
 				</section>
 			</aside>
 			<aside
@@ -381,6 +380,7 @@
 					><button id="close-guide" aria-label="Close game menu">×</button>
 				</div>
 				<div class="menu-actions">
+					<button id="save-game" aria-label="Save conquest">Save</button>
 					<button id="fullscreen" class="fullscreen-icon-button" aria-label="Enter fullscreen" aria-pressed="false">
 						<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
 							<path d="M5 14h2v3h3v2H5v-5zm2-4H5V5h5v2H7v3zm7 7h3v-3h2v5h-5v-2zm3-7V7h-3V5h5v5h-2z" />
@@ -424,7 +424,7 @@
 				<details class="guide">
 					<summary>How to play</summary>
 					<div id="play-instructions">
-						<p>Drag to explore. Scroll or pinch to zoom. Focus the map and use arrow keys to pan.</p>
+						<p>Drag to explore. Scroll or pinch to zoom. Focus the map and use arrow keys to pan. Select a world, choose Send units, then tap or click a destination. Cancel or Escape leaves the selection unchanged. Hold or right-click a destination to send directly.</p>
 						<p>
 							Tap or left-click a world to select it. Hold a destination on touch,
 							or right-click it with a mouse, to send units. Select the source again
