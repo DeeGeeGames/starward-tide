@@ -42,6 +42,7 @@ export const captureConquestSave = function (
 			time: match.time,
 			paused: match.paused,
 			winner: match.winner,
+			...(match.draw !== undefined ? { draw: match.draw } : {}),
 			ai: match.ai,
 			aiClock: match.aiClock,
 			orders: match.orders,

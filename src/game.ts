@@ -11,6 +11,7 @@ import {
 import { createDiagnosticsPlugin, type DiagnosticsResourceTypes } from 'ecspresso/plugins/debug/diagnostics';
 import { CONFIG } from './config';
 import { runAI } from './ai';
+import { raceDestinations, type Objectives } from './objectives';
 import { DEFAULT_OPPONENT, DIFFICULTIES } from './opponent';
 import type { OpponentSettings } from './opponent';
 import { registerCombat } from './combat';
@@ -91,6 +92,7 @@ export interface Match {
 	time: number;
 	paused: boolean;
 	winner: Side | null;
+	draw?: boolean;
 	ai: boolean;
 	aiClock: number;
 	orders: number;
@@ -101,6 +103,9 @@ export interface Match {
 	notices: Notice[];
 	engagements: Engagement[];
 }
+export const matchEnded = function (match: Pick<Match, 'winner' | 'draw'>): boolean {
+	return Boolean(match.winner || match.draw);
+};
 export interface CaptureEvent {
 	planetId: number;
 	previousOwner: Owner;
@@ -124,7 +129,7 @@ const spatialIndexPlugin = createSpatialIndexPlugin({
 type SpatialIndexConfig = NonNullable<typeof spatialIndexPlugin['_cfg']>;
 type GameConfig = WithResources<
 	WithComponents<SpatialIndexConfig, { planet: Planet; unit: Unit }>,
-	DiagnosticsResourceTypes & { match: Match; orderBook: OrderBook; diagnosticsLifetime: { dispose: () => void }; mapBounds: { width: number; height: number } }
+	DiagnosticsResourceTypes & { objectives: Objectives; match: Match; orderBook: OrderBook; diagnosticsLifetime: { dispose: () => void }; mapBounds: { width: number; height: number } }
 >;
 export type Game = ECSpresso<GameConfig>;
 type PlanetEntity = FilteredEntity<GameConfig['components'], 'planet'>;
@@ -150,6 +155,9 @@ const syncUnitPosition = function (
 	world.addComponent(unitId, 'localTransform', localTransformAt(x, y));
 };
 const makeWorld = function (map: StarMap, opponent: OpponentSettings): Game {
+	const destinations = raceDestinations(map);
+	if (map.mode && map.mode !== 'conquest' && destinations.length !== (map.mode === 'center-race' ? 1 : 2)) throw new Error('This map has no clear carrier destinations');
+	const objectives: Objectives = { mode: map.mode ?? 'conquest', destinations, arrivals: [] };
 	const match: Match = {
 		opponent: { ...opponent },
 		time: 0,
@@ -172,6 +180,7 @@ const makeWorld = function (map: StarMap, opponent: OpponentSettings): Game {
 		.withResource('diagnosticsLifetime', { dispose: function (): void {} })
 		.withComponentTypes<{ planet: Planet; unit: Unit }>()
 		.withResource('match', match)
+		.withResource('objectives', objectives)
 		.withResource('mapBounds', { width: map.width, height: map.height })
 		.withResource('orderBook', orderBook)
 		.withFixedTimestep(CONFIG.step)
@@ -262,7 +271,7 @@ export const availableShips = function (world: Game, host: number, side: Side): 
 // Launch locally to contest a blockade without assigning a new destination.
 export const launchCarrierShips = function (world: Game, id: number, fraction = 1, side: Side = 'blue'): number {
 	const host = world.getComponent(id, 'planet');
-	if (!host?.carrier || host.owner !== side || world.getResource('match').winner || !Number.isFinite(fraction) || fraction <= 0 || fraction > 1) return 0;
+	if (!host?.carrier || host.owner !== side || matchEnded(world.getResource('match')) || !Number.isFinite(fraction) || fraction <= 0 || fraction > 1) return 0;
 	const stored = dockedShips(world, id, side);
 	const launching = stored.slice(0, Math.ceil(stored.length * fraction));
 	for (const entity of launching) {
@@ -276,8 +285,8 @@ export const moveCarrier = function (world: Game, id: number, destination: { x: 
 	const p = world.getComponent(id, 'planet');
 	const bounds = world.getResource('mapBounds');
 	if (destination.x < 0 || destination.y < 0 || destination.x > bounds.width || destination.y > bounds.height) return false;
-	if (!p?.carrier || p.owner !== side || world.getResource('match').winner || !Number.isFinite(destination.x) || !Number.isFinite(destination.y)) return false;
-	p.carrier.destination = { ...destination };
+	if (!p?.carrier || p.owner !== side || matchEnded(world.getResource('match')) || !Number.isFinite(destination.x) || !Number.isFinite(destination.y)) return false;
+	p.carrier.destination = { x: destination.x, y: destination.y };
 	return true;
 };
 export const unitPoint = function (
@@ -355,6 +364,7 @@ export const setProduction = function (
 	production: Production,
 	side: Side = 'blue',
 ): void {
+	if (matchEnded(world.getResource('match'))) return;
 	for (const id of ids) {
 		const p = world.getComponent(id, 'planet');
 		if (!p || p.owner !== side || (p.carrier && production === 'guns') || p.production === production) continue;
@@ -365,7 +375,7 @@ export const setProduction = function (
 const departureStock = function (world: Game, id: number, fraction: number, filter: DispatchFilter, side: Side): { blocked: boolean; ships: UnitEntity[]; troops: number } {
 	const planet = world.getComponent(id, 'planet');
 	const blocked = Boolean(planet && planet.owner === side && !planet.carrier && isBlockaded(world, id));
-	const valid = planet && !blocked && !world.getResource('match').winner && Number.isFinite(fraction) && fraction > 0 && fraction <= 1;
+	const valid = planet && !blocked && !matchEnded(world.getResource('match')) && Number.isFinite(fraction) && fraction > 0 && fraction <= 1;
 	const available = valid && filter !== 'troops' ? availableShips(world, id, side) : [];
 	return {
 		blocked,
@@ -397,7 +407,7 @@ export const dispatch = function (
 ): number {
 	const match = world.getResource('match');
 	if (
-		match.winner ||
+		matchEnded(match) ||
 		!Number.isFinite(fraction) ||
 		fraction <= 0 ||
 		fraction > 1 ||
@@ -544,7 +554,7 @@ export const cancelOrder = function (
 	orderId: number,
 	side: Side = 'blue',
 ): boolean {
-	if (world.getResource('match').winner) return false;
+	if (matchEnded(world.getResource('match'))) return false;
 	const order = activeOrders(world, [], side).find(function (candidate) {
 		return candidate.id === orderId;
 	});
@@ -604,6 +614,7 @@ export const cancelOrder = function (
 };
 
 const aiDependencies = {
+	moveCarrier,
 	dispatch,
 	isBlockaded,
 	planets,
@@ -623,7 +634,7 @@ export const createGame = async function (
 	const world = makeWorld(map, options.opponent ?? DEFAULT_OPPONENT);
 	const active = function (): boolean {
 		const m = world.getResource('match');
-		return !m.paused && !m.winner;
+		return !m.paused && !matchEnded(m);
 	};
 	world
 		.addSystem('production')
@@ -672,16 +683,25 @@ export const createGame = async function (
 		.inPhase('fixedUpdate')
 		.withRef(strategySystem)
 		.after(combatSystem)
-		.withResources(['match'])
-		.setProcess(function ({ ecs, dt, resources: { match } }) {
+		.withResources(['match', 'objectives'])
+		.setProcess(function ({ ecs, dt, resources: { match, objectives } }) {
 			if (!active()) return;
 			pruneOrders(ecs);
 			if (options.evaluateWinner) match.winner = options.evaluateWinner(ecs);
 			else {
+				// Movement records ownership at the crossing. Combat later in this
+				// step cannot revoke a finish that has already happened.
+				const arrivals = [...objectives.arrivals].sort(function (a, b) { return a.fraction - b.fraction; });
+				const first = arrivals[0];
+				if (first) {
+					match.draw = arrivals.some(function (arrival) { return arrival.owner !== first.owner && Math.abs(arrival.fraction - first.fraction) < 1e-9; });
+					if (!match.draw) match.winner = first.owner;
+				}
 				const owners = new Set(planets(ecs).map(function (e) { return e.components.planet.owner; }));
-				if (!owners.has('red')) match.winner = 'blue';
-				else if (!owners.has('blue')) match.winner = 'red';
+				if (!match.winner && !match.draw && !owners.has('red')) match.winner = 'blue';
+				else if (!match.winner && !match.draw && !owners.has('blue')) match.winner = 'red';
 			}
+			if (matchEnded(match)) return;
 			match.aiClock += dt;
 			if (match.ai && match.aiClock >= DIFFICULTIES[(match.opponent ?? DEFAULT_OPPONENT).difficulty].interval) {
 				match.aiClock = 0;

@@ -12,6 +12,7 @@ import type {
 } from './game';
 import type { StarMap, PlanetSeed } from './maps';
 import { carrierSeeds } from './maps';
+import { raceDestinations } from './objectives';
 
 export const SAVE_SCHEMA_VERSION = 1;
 const MAX_SAVED_STOCK = 100_000;
@@ -78,6 +79,7 @@ const mapSchema = z.looseObject({
 	width: z.number().check(z.gt(0), z.lte(10000)),
 	height: z.number().check(z.gt(0), z.lte(10000)),
 	carriers: z.optional(z.boolean()),
+	mode: z.optional(z.enum(['conquest', 'center-race', 'crossing-race'])),
 	planets: savedArray(planetSeedSchema).check(z.minLength(2), z.maxLength(100)),
 }).check(z.refine(function (map) {
 	return map.planets.every(function (seed) {
@@ -125,6 +127,7 @@ const matchSchema = z.looseObject({
 	time: nonnegativeNumber,
 	paused: z.boolean(),
 	winner: z.nullable(sideSchema),
+	draw: z.optional(z.boolean()),
 	ai: z.boolean(),
 	aiClock: nonnegativeNumber,
 	orders: safeInteger,
@@ -177,6 +180,8 @@ const hasUniqueIds = function (
 };
 const hasSnapshotIntegrity = function (value: GameSnapshot): boolean {
 	const carriers = carrierSeeds(value.map);
+	if (value.map.mode && value.map.mode !== 'conquest' && raceDestinations(value.map).length !== (value.map.mode === 'center-race' ? 1 : 2)) return false;
+	if (value.match.draw && (value.match.winner !== null || !value.map.mode || value.map.mode === 'conquest')) return false;
 	if (value.map.carriers === true && carriers.length !== 2) return false;
 	if (value.planets.length !== value.map.planets.length + carriers.length) return false;
 	// filter() skips holes, as the original parser's narrowing pass did.

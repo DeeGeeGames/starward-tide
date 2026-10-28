@@ -4,6 +4,7 @@ import { planPasses } from './combat';
 import type { Game, Planet, Unit } from './game';
 import type { Point } from './camera';
 import { interceptPoint } from './interception';
+import { arrivalFraction, destinationFor } from './objectives';
 
 // Below the slowest ordinary unit (transport = 0.5 travel speed), at every pace.
 export const CARRIER_SPEED = CONFIG.travelSpeed * 0.25;
@@ -43,21 +44,31 @@ export const registerMovement = function (
 ): ScheduledSystem {
 	return systems
 		.addSystem('travel')
+		.withResources(['objectives'])
 		.addQuery('hosts', { with: ['planet'], mutates: ['planet'] })
 		.addQuery('units', { with: ['unit'], mutates: ['unit'] })
-		.setProcess(function ({ queries, dt, ecs }) {
+		.setProcess(function ({ queries, dt, ecs, resources: { objectives } }) {
 			if (!active()) return;
-			for (const { components: { planet: p } } of queries.hosts) {
+			objectives.arrivals = [];
+			for (const { id, components: { planet: p } } of queries.hosts) {
+				const from = { x: p.x, y: p.y };
 				const carrier = p.carrier;
-				if (!carrier?.destination) continue;
-				const dx = carrier.destination.x - p.x, dy = carrier.destination.y - p.y;
-				const distance = Math.hypot(dx, dy);
-				if (distance <= CARRIER_ARRIVAL_TOLERANCE || distance <= CARRIER_SPEED * dt) {
-					p.x = carrier.destination.x; p.y = carrier.destination.y; carrier.destination = null;
-				} else {
-					carrier.heading = Math.atan2(dy, dx);
-					p.x += dx / distance * CARRIER_SPEED * dt; p.y += dy / distance * CARRIER_SPEED * dt;
+				if (!carrier) continue;
+				if (carrier.destination) {
+					const dx = carrier.destination.x - p.x, dy = carrier.destination.y - p.y;
+					const distance = Math.hypot(dx, dy);
+					if (distance <= CARRIER_ARRIVAL_TOLERANCE || distance <= CARRIER_SPEED * dt) {
+						p.x = carrier.destination.x; p.y = carrier.destination.y; carrier.destination = null;
+					} else {
+						carrier.heading = Math.atan2(dy, dx);
+						p.x += dx / distance * CARRIER_SPEED * dt; p.y += dy / distance * CARRIER_SPEED * dt;
+					}
 				}
+				if (p.owner === 'neutral') continue;
+				const destination = destinationFor(objectives, p.owner);
+				const crossing = destination ? arrivalFraction(from, p, destination) : undefined;
+				const fraction = crossing === undefined ? undefined : crossing * Math.min(1, Math.hypot(p.x - from.x, p.y - from.y) / (CARRIER_SPEED * dt));
+				if (fraction !== undefined) objectives.arrivals.push({ carrierId: id, owner: p.owner, fraction });
 			}
 			// Decide from one position snapshot so iteration order cannot release a ship.
 			const fighting = new Set(planPasses(ecs, 0, units).map(function (shot) {

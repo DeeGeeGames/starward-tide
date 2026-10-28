@@ -1,9 +1,10 @@
 import type { Game } from './game';
+import { destinationFor } from './objectives';
 import { DEFAULT_OPPONENT, DIFFICULTIES, STYLES } from './opponent';
 
 type AIDependencies = Pick<
 	typeof import('./game'),
-	'dispatch' | 'isBlockaded' | 'planets' | 'setProduction' | 'shipsAt' | 'units' | 'availableShips' | 'dockedShips'
+	'moveCarrier' | 'dispatch' | 'isBlockaded' | 'planets' | 'setProduction' | 'shipsAt' | 'units' | 'availableShips' | 'dockedShips'
 >;
 type PlanetEntity = ReturnType<AIDependencies['planets']>[number];
 
@@ -52,12 +53,15 @@ const troopFraction = function (
 
 export const runAI = function (
 	world: Game,
-	{ dispatch, isBlockaded, planets, setProduction, shipsAt, units, availableShips, dockedShips }: AIDependencies,
+	{ moveCarrier, dispatch, isBlockaded, planets, setProduction, shipsAt, units, availableShips, dockedShips }: AIDependencies,
 ): void {
 	const opponent = world.getResource('match').opponent ?? DEFAULT_OPPONENT;
 	const difficulty = DIFFICULTIES[opponent.difficulty];
 	const style = STYLES[opponent.style];
 	const all = planets(world);
+	const objectives = world.getResource('objectives');
+	const destination = destinationFor(objectives, 'red');
+	const racing = destination !== undefined;
 	const troopSources = new Set<number>();
 	const redPlanets = all.filter(function (entity) {
 		return entity.components.planet.owner === 'red';
@@ -138,6 +142,7 @@ export const runAI = function (
 					const planet = entity.components.planet;
 					return (
 						distanceBetween(origin, planet) +
+						(racing && planet.carrier && planet.owner === 'blue' ? -2000 : 0) +
 						planet.troops * 5 +
 						(planet.owner === 'blue' ? style.playerTargetPenalty : 0)
 					);
@@ -162,6 +167,11 @@ export const runAI = function (
 	};
 
 	for (const source of redPlanets) {
+		if (racing && source.components.planet.carrier) {
+			moveCarrier(world, source.id, destination, 'red');
+			// Keep carrier crew and escorts aboard unless they need local defense.
+			troopSources.add(source.id);
+		}
 		if (source.components.planet.carrier && blueShips(source.id) > 0) {
 			troopSources.add(source.id);
 			for (const entry of dockedShips(world, source.id, 'red')) entry.components.unit.phase = 'orbit';
@@ -192,7 +202,7 @@ export const runAI = function (
 		const contributors = redPlanets
 			.filter(function (entity) {
 				return (
-					entity.id !== held.id && canLaunch(entity) && availableShips(world, entity.id, 'red').length > 0
+					entity.id !== held.id && !(racing && entity.components.planet.carrier) && canLaunch(entity) && availableShips(world, entity.id, 'red').length > 0
 				);
 			})
 			.sort(byDistance(held));

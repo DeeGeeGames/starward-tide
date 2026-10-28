@@ -1,3 +1,4 @@
+import { GAME_MODES, destinationFor } from './objectives';
 import { createCarrierArtwork } from './carrier-art';
 import { createPerformanceDiagnostics, type PerformanceDiagnostics, type DiagnosticsReport } from './performance-diagnostics';
 import { createCrowdedBaseline } from './performance-scenario';
@@ -19,6 +20,7 @@ import type { DispatchFilter, Production, Scenario } from './config';
 import { captureConquestSave } from './game-save';
 import {
 	createGame,
+	matchEnded,
 	dockedShips,
 	availableShips,
 	moveCarrier,
@@ -186,6 +188,7 @@ const savedStatus = function (savedAt: number): string {
 const sameMap = function (left: StarMap, right: StarMap): boolean {
 	return (
 		Boolean(left.carriers) === Boolean(right.carriers) &&
+		(left.mode ?? 'conquest') === (right.mode ?? 'conquest') &&
 		left.width === right.width &&
 		left.height === right.height &&
 		left.planets.length === right.planets.length &&
@@ -275,7 +278,7 @@ const selectPlanet = function (id: number): void {
 	if (
 		busy ||
 		frontMenu.getCurrentScreen() !== 'playing' ||
-		world.getResource('match').winner
+		matchEnded(world.getResource('match'))
 	)
 		return;
 	const p = world.getComponent(id, 'planet');
@@ -304,7 +307,7 @@ const sendToPlanet = function (id: number): void {
 	if (
 		busy ||
 		frontMenu.getCurrentScreen() !== 'playing' ||
-		world.getResource('match').winner
+		matchEnded(world.getResource('match'))
 	)
 		return;
 	const p = world.getComponent(id, 'planet');
@@ -337,6 +340,22 @@ const sendToPlanet = function (id: number): void {
 };
 const mountPlanets = function (): void {
 	planetLayer.replaceChildren();
+	for (const destination of world.getResource('objectives').destinations) {
+		const marker = document.createElement('div');
+		marker.className = 'race-destination';
+		marker.dataset.owner = destination.owner;
+		marker.style.left = `${destination.x}px`;
+		marker.style.top = `${destination.y}px`;
+		marker.style.width = `${destination.radius * 2}px`;
+		marker.style.height = `${destination.radius * 2}px`;
+		marker.style.setProperty('--destination-color', destination.owner === 'neutral' ? '#f8d787' : COLORS[destination.owner]);
+		marker.setAttribute('role', 'img');
+		marker.setAttribute('aria-label', destination.label);
+		const label = document.createElement('span');
+		label.textContent = destination.label;
+		marker.append(label);
+		planetLayer.append(marker);
+	}
 	views.clear();
 	for (const {
 		id,
@@ -368,6 +387,21 @@ const mountPlanets = function (): void {
 		views.set(id, { button, count, name, orbit, mark, progress });
 	}
 };
+const raceDestinationButton = document.createElement('button');
+raceDestinationButton.id = 'move-to-finish';
+raceDestinationButton.textContent = 'Move to destination';
+raceDestinationButton.hidden = true;
+dispatchControls.append(raceDestinationButton);
+raceDestinationButton.addEventListener('click', function () {
+	const id = selected.length === 1 ? selected[0] : undefined;
+	const destination = destinationFor(world.getResource('objectives'), 'blue');
+	if (id === undefined || !destination || busy) return;
+	if (moveCarrier(world, id, destination)) {
+		feedback(`Carrier en route to ${destination.label.toLowerCase()}`);
+		queueAutosave();
+		refresh();
+	}
+});
 const launchCarrierButton = document.createElement('button');
 launchCarrierButton.id = 'launch-carrier';
 launchCarrierButton.textContent = 'Launch docked ships here';
@@ -399,6 +433,15 @@ const arrangeLabels = function (): void {
 	for (const panel of document.querySelectorAll<HTMLElement>('.status-cluster, .header-actions, #planet-panel, #orders-drawer, #field-guide, #banner, #destination-prompt, #destination-summary')) {
 		if (!panel.hidden && panel.getClientRects().length > 0) reserved.push(panel.getBoundingClientRect());
 	}
+	for (const label of planetLayer.querySelectorAll<HTMLElement>('.race-destination > span')) {
+		label.dataset.placement = 'above';
+		for (const placement of ['above', 'below', 'right', 'left']) {
+			label.dataset.placement = placement;
+			const candidate = { ...labelBounds(label), key: 'destination', priority: 1000 };
+			if (visibleMapLabels([candidate], reserved).has('destination')) break;
+		}
+		reserved.push(labelBounds(label));
+	}
 	const visible = visibleMapLabels(labels, reserved);
 	for (const [id, view] of views) {
 		view.name.style.visibility = visible.has(`${id}:name`) ? 'visible' : 'hidden';
@@ -411,7 +454,7 @@ const refresh = function (): void {
 };
 const refreshContent = function (): void {
 	const match = world.getResource('match');
-	element('opponent-summary', HTMLParagraphElement).textContent = `Opponent: ${opponentLabel(match.opponent ?? DEFAULT_OPPONENT)}`;
+	element('opponent-summary', HTMLParagraphElement).textContent = `${GAME_MODES[world.getResource('objectives').mode].label} · Opponent: ${opponentLabel(match.opponent ?? DEFAULT_OPPONENT)}`;
 	const all = planets(world);
 	const previousSources = selected.join(',');
 	selected = selected.filter(function (id) {
@@ -471,7 +514,7 @@ const refreshContent = function (): void {
 		view.mark.textContent = p.owner === 'neutral' ? '' : icons[p.production];
 		view.progress.style.width = `${(p.progress / CONFIG.cost[p.production]) * 100}%`;
 	}
-	if (choosingDestination && (selected.length === 0 || match.winner)) cancelMapCommand();
+	if (choosingDestination && (selected.length === 0 || matchEnded(match))) cancelMapCommand();
 	app.classList.toggle('is-dispatching', choosingDestination);
 	app.classList.toggle('sheet-collapsed', sheetCollapsed);
 	element('destination-prompt', HTMLDivElement).hidden = !choosingDestination;
@@ -543,7 +586,7 @@ const refreshContent = function (): void {
 	const preview = previewDispatch(world, selected, fraction, shipsOnly ? 'ships' : filter);
 	element('dispatch-preview', HTMLParagraphElement).textContent = `Up to ${preview.troops} troops + ${preview.ships} ships`;
 	element('destination-summary', HTMLDivElement).textContent = `From ${selected.length > 1 ? `${selected.length} sources` : p?.name ?? 'selection'} · up to ${preview.troops} troops + ${preview.ships} ships`;
-	element('send-units', HTMLButtonElement).disabled = multi || preview.troops + preview.ships === 0 || Boolean(match.winner);
+	element('send-units', HTMLButtonElement).disabled = multi || preview.troops + preview.ships === 0 || matchEnded(match);
 	const warning = element('selection-warning', HTMLDivElement);
 	const carrierBlocked = p?.carrier && first !== undefined && shipsAt(world, first, p.owner === 'blue' ? 'red' : 'blue').length > 0;
 	warning.textContent = carrierBlocked ? `Docking blocked by hostile ships.${p?.owner === 'blue' ? ' Launching is still allowed.' : ''}` : preview.blockedSources > 0
@@ -555,7 +598,7 @@ const refreshContent = function (): void {
 	element('panel-multi', HTMLButtonElement).setAttribute('aria-pressed', String(multi));
 	element('selection-count', HTMLSpanElement).textContent = selected.length > 0 ? `${selected.length} ${selected.length === 1 ? 'source' : 'sources'} selected` : 'Information only';
 	for (const button of productionButtons) {
-		button.disabled = ownedSelected.length === 0 || Boolean(match.winner) || (button.dataset.production === 'guns' && ownedSelected.some(function (p) { return Boolean(p.carrier); }));
+		button.disabled = ownedSelected.length === 0 || matchEnded(match) || (button.dataset.production === 'guns' && ownedSelected.some(function (p) { return Boolean(p.carrier); }));
 		button.setAttribute(
 			'aria-pressed',
 			String(
@@ -566,8 +609,10 @@ const refreshContent = function (): void {
 			),
 		);
 	}
+	raceDestinationButton.hidden = !destinationFor(world.getResource('objectives'), 'blue') || selected.length !== 1 || !p?.carrier || p.owner !== 'blue';
+	raceDestinationButton.disabled = matchEnded(match);
 	launchCarrierButton.hidden = !p?.carrier || p.owner !== 'blue' || selected.length !== 1;
-	launchCarrierButton.disabled = Boolean(match.winner) || first === undefined || dockedShips(world, first, 'blue').length === 0;
+	launchCarrierButton.disabled = matchEnded(match) || first === undefined || dockedShips(world, first, 'blue').length === 0;
 	if (carrier) dispatchInfo.textContent = 'Docked ships can launch';
 	instruction.textContent = multi
 		? 'Tap or left-click sources · finish selection to send'
@@ -603,14 +648,17 @@ const refreshContent = function (): void {
 	pause.title = match.paused
 		? 'Resume game'
 		: 'Pause action to issue orders and change production';
-	const result = match.winner
-		? match.winner === 'blue'
-			? 'All rival worlds captured. You win. Restart to play again.'
-			: 'Your last world has fallen. Restart to try again.'
-		: '';
+	const racing = world.getResource('objectives').mode !== 'conquest';
+	const result = match.draw
+		? 'Both carriers arrived together. Draw. Restart to race again.'
+		: match.winner
+			? racing
+				? match.winner === 'blue' ? 'You win the carrier race. Restart to play again.' : 'Your rival wins the carrier race. Restart to try again.'
+				: match.winner === 'blue' ? 'All rival holdings captured. You win. Restart to play again.' : 'Your last holding has fallen. Restart to try again.'
+			: '';
 	bannerMessage.textContent =
 		result ||
-		presentation.notice() || (match.paused ? 'Paused · commands remain available' : '');
+		presentation.notice() || (match.paused ? 'Paused · commands remain available' : racing ? GAME_MODES[world.getResource('objectives').mode].detail : '');
 	banner.style.display = bannerMessage.textContent ? 'block' : 'none';
 	const key = match.notices
 		.map(function (n) {
@@ -1022,7 +1070,7 @@ const cancelDispatch = function (): void {
 	element('send-units', HTMLButtonElement).focus();
 };
 element('send-units', HTMLButtonElement).addEventListener('click', function () {
-	if (busy || multi || selected.length === 0 || world.getResource('match').winner) return;
+	if (busy || multi || selected.length === 0 || matchEnded(world.getResource('match'))) return;
 	choosingDestination = true;
 	mapInput.cancel();
 	drawer.close();

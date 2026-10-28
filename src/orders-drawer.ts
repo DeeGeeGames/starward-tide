@@ -1,4 +1,4 @@
-import { activeOrders, cancelOrder, orderUnits } from './game';
+import { activeOrders, cancelOrder, orderUnits, matchEnded } from './game';
 import type { Game, Order } from './game';
 
 interface OrderRow {
@@ -193,7 +193,7 @@ export const createOrdersDrawer = function (
 			);
 			row.action.disabled =
 				order.state === 'returning' ||
-				Boolean(world.getResource('match').winner);
+				matchEnded(world.getResource('match'));
 		}
 	};
 	return {
