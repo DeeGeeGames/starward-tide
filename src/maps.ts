@@ -1,5 +1,5 @@
-import { MAP } from './config';
-import type { Owner } from './config';
+import { MAP, SIDES, factionLabel } from './config';
+import type { Owner, Side } from './config';
 import type { GameMode } from './objectives';
 
 export type PlanetSeed = readonly [
@@ -19,6 +19,12 @@ export interface StarMap {
 	readonly mode?: GameMode;
 }
 
+export const mapSides = function (map: StarMap): Side[] {
+	return SIDES.filter(function (side) {
+		return map.planets.some(function (planet) { return planet[4] === side; });
+	});
+};
+
 export const CARRIER_CREW = 20;
 export const CARRIER_DOCKED_SHIPS = 3;
 export const CARRIER_PRODUCTION_MULTIPLIER = 0.25;
@@ -36,6 +42,18 @@ const CARRIER_PLACEMENT_DIRECTIONS = Array.from(
 
 export const carrierSeeds = function (map: StarMap): readonly PlanetSeed[] {
 	if (map.carriers !== true && (!map.mode || map.mode === 'conquest')) return [];
+	const homes = SIDES.flatMap(function (side) {
+		const home = map.planets.find(function (planet) { return planet[4] === side; });
+		return home ? [home] : [];
+	});
+	if (homes.length > 2) {
+		return homes.map(function (home): PlanetSeed {
+			const dx = home[1] - map.width / 2;
+			const dy = home[2] - map.height / 2;
+			const distance = Math.hypot(dx, dy);
+			return [`${factionLabel(home[4])} carrier`, home[1] + dx / distance * CARRIER_PLACEMENT_OFFSET, home[2] + dy / distance * CARRIER_PLACEMENT_OFFSET, CARRIER_RADIUS, home[4], CARRIER_CREW, 2.6 * CARRIER_PRODUCTION_MULTIPLIER];
+		});
+	}
 	const blueHome = map.planets.find(function (planet) {
 		return planet[4] === 'blue';
 	});
@@ -184,13 +202,57 @@ const NEUTRAL_NAMES = [
 
 // Start with spaced pairs, then scatter them while preserving clearance and symmetry.
 // A seed reproduces the exact preview; starting a game never rolls another map.
-export const generateMap = function (size: MapSize, seed: number): StarMap {
-	const { width, height, columns, rows, count } = MAP_SIZES[size];
+export const generateMap = function (size: MapSize, seed: number, opponents = 1): StarMap {
+	if (!Number.isInteger(opponents) || opponents < 1 || opponents > 3) throw new Error('Choose one to three opponents');
+	const { width: baseWidth, height: baseHeight, columns, rows, count } = MAP_SIZES[size];
+	const width = baseWidth * (opponents > 1 ? 1.25 : 1);
+	const height = baseHeight * (opponents > 1 ? 1.25 : 1);
 	let state = seed >>> 0;
 	const random = function (): number {
 		state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
 		return state / 4294967296;
 	};
+	if (opponents > 1) {
+		// Equal-radius starts and reserved objectives keep races balanced. Reserve
+		// carrier berths even in conquest so toggling carriers preserves the map.
+		const sides = SIDES.slice(0, opponents + 1);
+		const radius = Math.min(width, height) * 0.32;
+		const rotation = sides.length === 3 ? Math.PI : Math.PI * 0.75;
+		const angleOffset = random() * Math.PI * 2;
+		const polar = function (angle: number, distance: number) {
+			return { x: width / 2 + Math.cos(angle) * distance, y: height / 2 + Math.sin(angle) * distance };
+		};
+		const layout: PlanetSeed[] = sides.map(function (side, index) {
+			const point = polar(angleOffset + index * Math.PI * 2 / sides.length, radius);
+			return [side === 'blue' ? 'Terra' : side === 'red' ? 'Vega' : `${factionLabel(side)} home`, point.x, point.y, 31, side, 44, 2.6];
+		});
+		const reserved = [
+			{ x: width / 2, y: height / 2 },
+			...sides.flatMap(function (_, index) {
+				const angle = angleOffset + index * Math.PI * 2 / sides.length;
+				return [polar(angle, radius + CARRIER_PLACEMENT_OFFSET), polar(angle + rotation, radius + CARRIER_PLACEMENT_OFFSET)];
+			}),
+		];
+		// Best-of-many placement spreads neutral worlds without a retry loop that
+		// can hang on a crowded map. The seed reproduces every candidate.
+		for (let index = 0; index < count - sides.length; index++) {
+			const candidates = Array.from({ length: 512 }, function () {
+				const x = 100 + random() * (width - 200);
+				const y = 100 + random() * (height - 200);
+				const clearance = Math.min(
+					...layout.map(function (planet) { return Math.hypot(x - planet[1], y - planet[2]) - 216; }),
+					...reserved.map(function (point) { return Math.hypot(x - point.x, y - point.y) - 124; }),
+				);
+				return { x, y, clearance };
+			}).sort(function (a, b) { return b.clearance - a.clearance; });
+			const point = candidates[0];
+			const name = NEUTRAL_NAMES[index];
+			if (!point || point.clearance < 0 || !name) throw new Error('Map has no room for another world');
+			const tier = random();
+			layout.push([name, point.x, point.y, tier < 0.55 ? 25 : tier < 0.9 ? 28 : 36, 'neutral', tier < 0.55 ? 8 : tier < 0.9 ? 14 : 24, tier < 0.55 ? 1.7 : tier < 0.9 ? 2.2 : 3.4]);
+		}
+		return { width, height, planets: layout };
+	}
 	const cells = Array.from(
 		{ length: (columns * rows) / 2 },
 		function (_, index) {

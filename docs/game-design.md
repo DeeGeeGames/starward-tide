@@ -6,21 +6,25 @@ This document describes standalone star system combat. It supersedes the initial
 
 Preserve the speed and clarity of a Galcon-like game while adding production choices, vulnerable troop transport, orbital combat, and blockades. Decisions center on what to produce, where to produce it, and where to send it. Battles resolve automatically without manual targeting, formations, activated abilities, or individual-unit selection.
 
-The player is blue; one computer rival is red; neutral planets are unclaimed. Tactical ships and transports are individual entities. A dispatch groups units for order tracking and recall, but does not create a separately managed fleet. Planet surfaces and carrier crews hold troop counts; defense platforms are planet-bound counts.
+The player is blue; one to three computer rivals are red, green, and purple; neutral planets are unclaimed. Tactical ships and transports are individual entities. A dispatch groups units for order tracking and recall, but does not create a separately managed fleet. Planet surfaces and carrier crews hold troop counts; defense platforms are planet-bound counts.
 
 There is no networking, controller support, audio, research, upgrades, diplomacy, construction queue, transport inventory, resource harvesting, account, cloud sync, or save export/import.
 
 ## Skirmish
 
-The core loop is to capture planets, increase production, specialize planets in troops/ships/defense platforms, and dispatch forces to reinforce, blockade, or invade. The optional carrier setting in skirmish setup is off by default. When enabled, each side starts with one carrier that can also be captured by boarding. Carriers are part of standalone star-system combat, with no campaign layer. A skirmish ends when one faction owns no planets or carriers; its surviving ships and transports do not keep it alive. Neutral planets need not all be conquered.
+The core loop is to capture planets, increase production, specialize planets in troops/ships/defense platforms, and dispatch forces to reinforce, blockade, or invade. The optional carrier setting in skirmish setup is off by default. When enabled, each side starts with one carrier that can also be captured by boarding. Carriers are part of standalone star-system combat, with no campaign layer. A skirmish ends when only one faction retains planets or carriers, or when the player loses their last holding; surviving ships and transports do not keep a faction alive. Neutral planets need not all be conquered.
 
-New games preview a seeded, mirrored map and launch that exact layout. Restart replays the layout. Mirrored pairs have equal resources and at least 216 world units between centers.
+New games preview a seeded map and launch that exact layout. Restart replays the layout. With one opponent, mirrored pairs have equal resources. All generated worlds have at least 216 world units between centers.
 
 | Size | Planets | Map width × height |
 | --- | ---: | --- |
 | Small | 12 | 1040 × 1080 |
 | Medium | 18 | 1200 × 1320 |
 | Large | 30 | 1560 × 1716 |
+
+Choose one to three independent AI opponents for a free-for-all. Blue is the player; red, green, and purple are rivals. Difficulty and style settings apply to all AI factions. One opponent remains the default.
+
+Maps with multiple opponents are 25% wider and taller than the dimensions above. Homes lie at equal distances from the center; neutral worlds are scattered with clearance reserved for carriers and destinations.
 
 Each side starts with one planet, 44 troops, three ships, no platforms, troop production, and production rate 2.6. Other planets are neutral, with no ships or platforms, and do not produce until captured. Neutral tiers have 8/14/24 troops and production rates 1.7/2.2/3.4 respectively.
 
@@ -30,11 +34,11 @@ The Prototype lab uses a fixed eighteen-planet 1200 × 1320 map. Its skirmish st
 
 ## Carrier destination modes
 
-Conquest remains the default. **Center race** places one shared destination near the center on the perpendicular bisector of the starting carriers, giving both equal travel distance. **Crossing race** places a separate destination for each team near the opposing start; the two routes have equal straight-line distances. Both modes automatically add carriers. The immutable map mode determines destination placement, so preview, restart, and Continue use the same positions. Existing saves without a mode remain Conquest.
+Conquest remains the default. **Center race** places one shared destination near the center on the perpendicular bisector of the starting carriers, giving both equal travel distance. **Crossing race** places a separate destination for each team near the opposing start; the two routes have equal straight-line distances. With multiple opponents, carrier starts lie on a common circle, the shared finish is at its center, and crossing destinations are rotated by the same angle for every faction. Every faction has equal straight-line travel distance. Both modes automatically add carriers. The immutable map mode determines destination placement, so preview, restart, and Continue use the same positions. Existing saves without a mode remain Conquest.
 
 A carrier center entering the 42-unit destination radius wins for its owner at entry. Shared destinations accept either side; team destinations accept only their assigned side. A captured carrier can finish for its new owner. Ships, transports, and ordinary worlds cannot score. Movement records crossing time within each fixed step, so a later same-step arrival or capture cannot reverse an earlier finish. Exact simultaneous finishes are draws. Win or draw freezes simulation and commands. Eliminating all opposing holdings remains a fallback win.
 
-Blockades retain their normal carrier permissions: movement and arrival remain available, while docking waits. Boarding stops the captured carrier, giving the new owner the next movement command. The race AI directs every owned carrier to its destination, retains their crew and docked escorts except for local defense, and prioritizes attacks against player carriers. Player controls include the existing empty-space movement gesture plus **Move to destination** for an exact course.
+Blockades retain their normal carrier permissions: movement and arrival remain available, while docking waits. Boarding stops the captured carrier, giving the new owner the next movement command. The race AI directs every owned carrier to its destination, retains their crew and docked escorts except for local defense, and prioritizes attacks against rival carriers. Player controls include the existing empty-space movement gesture plus **Move to destination** for an exact course.
 
 ## Tactical rules
 
@@ -127,3 +131,9 @@ The carrier starting force and production multiplier are provisional tuning. The
 - Are blockade-source selection, dispatch filters, multi-source orders, cancellation, and recall discoverable on touchscreens?
 
 Automated simulation, persistence, geometry, and UI-state regressions support correctness. [Bombardment browser checks](bombardment/browser-checks.json) and [touch/enemy-warning checks](bombardment/browser-extra-checks.json) record production-build charge, firing, save/restore, and responsive evidence; screenshots are in the same directory. These checks use controlled fixtures and do not establish balance or physical-device comfort. Recorded renderer/culling evidence uses automated Chromium with SwiftShader, not physical GPU or phone throughput. Physical touch comfort, combat readability, balance, and match duration still require playtesting. The renderer migration has recorded owner acceptance. Performance evidence and its environment limits remain in the technical documents linked from the README.
+
+## Multiple-faction combat
+
+All non-neutral factions are hostile to each other. Each AI controls only its own production and orders, and accounts for all hostile ships and platforms when attacking, relieving blockades, or boarding. At an orbit, each faction splits its firepower equally among the hostile factions present; damage is computed before casualties. Transports land and ships dock only after all hostile orbital resistance is cleared.
+
+Conquest victory requires eliminating every rival holding, including carriers. Losing the player's last holding ends the match in defeat even when multiple AI factions survive. Setup, Restart and Continue retain the map's factions and the selected AI settings. Existing two-faction saves remain supported.

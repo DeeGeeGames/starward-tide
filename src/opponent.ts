@@ -29,13 +29,13 @@ export const DIFFICULTIES = {
 export const STYLES = {
 	expansionist: {
 		label: 'Expansionist',
-		detail: 'Favors neutral worlds before attacking you.',
+		detail: 'Favors neutral worlds before attacking rivals.',
 		playerTargetPenalty: 70,
 		platforms: 0,
 	},
 	aggressive: {
 		label: 'Aggressive',
-		detail: 'Favors your worlds and applies early pressure.',
+		detail: 'Favors rival worlds and applies early pressure.',
 		playerTargetPenalty: -250,
 		platforms: 0,
 	},

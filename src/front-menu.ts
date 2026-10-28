@@ -1,7 +1,7 @@
 import { GAME_MODES, isGameMode, raceDestinations, type GameMode } from './objectives';
 import { createCarrierArtwork } from './carrier-art';
 import ECSpresso from 'ecspresso';
-import { COLORS } from './config';
+import { COLORS, factionLabel } from './config';
 import { DIFFICULTIES, STYLES, isOpponentDifficulty, isOpponentStyleChoice, resolveOpponent } from './opponent';
 import type { OpponentSettings } from './opponent';
 import {
@@ -38,10 +38,11 @@ const freshMap = function (
 	size: MapSize,
 	carriersEnabled = false,
 	mode: GameMode = 'conquest',
+	opponents = 1,
 ): StarMap {
 	const seed = crypto.getRandomValues(new Uint32Array(1))[0];
 	if (seed === undefined) throw new Error('Could not generate a map seed');
-	const map = generateMap(size, seed);
+	const map = generateMap(size, seed, opponents);
 	return { ...map, carriers: carriersEnabled || mode !== 'conquest', mode };
 };
 
@@ -107,6 +108,8 @@ export const createFrontMenu = async function (options: {
 	const profileStatus = element('profile-status', HTMLParagraphElement);
 	const status = element('setup-status', HTMLDivElement);
 	const summary = element('summary', HTMLDivElement);
+	const opponentCount = element('opponent-count', HTMLSelectElement);
+	let opponents = 1;
 	const difficultySelect = element('opponent-difficulty', HTMLSelectElement);
 	const styleSelect = element('opponent-style', HTMLSelectElement);
 	const difficultyDetail = element('difficulty-detail', HTMLParagraphElement);
@@ -163,6 +166,7 @@ export const createFrontMenu = async function (options: {
 		for (const button of sizeButtons) button.disabled = starting;
 		carrierToggle.disabled = starting || mode !== 'conquest';
 		modeSelect.disabled = starting;
+		opponentCount.disabled = starting;
 		difficultySelect.disabled = starting;
 		styleSelect.disabled = starting;
 		element('reroll', HTMLButtonElement).disabled = starting;
@@ -237,7 +241,7 @@ export const createFrontMenu = async function (options: {
 			const radius = planetRadius;
 			const node = svgElement('g', {});
 			const label = svgElement('title', {});
-			label.textContent = `${name} · ${owner === 'blue' ? 'You' : owner === 'red' ? 'Rival' : 'Neutral'}`;
+			label.textContent = `${name} · ${factionLabel(owner)}`;
 			node.append(label);
 			if (owner !== 'neutral')
 				node.append(
@@ -296,11 +300,11 @@ export const createFrontMenu = async function (options: {
 			title.textContent = destination.label;
 			circle.append(title);
 			const label = svgElement('text', { x: destination.x, y: destination.y - destination.radius - 14, fill: color, 'text-anchor': 'middle', 'font-size': 25 });
-			label.textContent = destination.owner === 'neutral' ? 'FINISH' : destination.owner === 'blue' ? 'YOUR FINISH' : 'RIVAL FINISH';
+			label.textContent = destination.owner === 'neutral' ? 'FINISH' : `${factionLabel(destination.owner).toUpperCase()} FINISH`;
 			preview.append(circle, label);
 		}
 		const count = document.createElement('strong');
-		count.textContent = `${map.planets.length} worlds`;
+		count.textContent = `${map.planets.length} worlds · ${opponents} ${opponents === 1 ? 'opponent' : 'opponents'} · Free-for-all`;
 		const hasCarriers = carriers.length > 0;
 		const difficulty = difficultySelect.value;
 		const style = styleSelect.value;
@@ -399,15 +403,23 @@ export const createFrontMenu = async function (options: {
 			)
 				return;
 			size = button.dataset.size;
-			map = freshMap(size, carriersEnabled, mode);
+			map = freshMap(size, carriersEnabled, mode, opponents);
 			renderPreview();
 			status.textContent = `${MAP_SIZES[size].label} map generated: ${map.planets.length} worlds.`;
 		});
 	element('reroll', HTMLButtonElement).addEventListener('click', function () {
 		if (starting) return;
-		map = freshMap(size, carriersEnabled, mode);
+		map = freshMap(size, carriersEnabled, mode, opponents);
 		renderPreview();
 		status.textContent = 'New layout generated.';
+	});
+	opponentCount.addEventListener('change', function () {
+		if (starting) return;
+		const count = Number(opponentCount.value);
+		if (!Number.isInteger(count) || count < 1 || count > 3) throw new Error('Invalid opponent count');
+		opponents = count;
+		map = freshMap(size, carriersEnabled, mode, opponents);
+		renderPreview();
 	});
 	start.addEventListener('click', async function () {
 		const selected = profilePicker.getState().selectedProfile;

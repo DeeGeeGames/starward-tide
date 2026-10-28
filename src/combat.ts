@@ -1,5 +1,5 @@
 import type { SystemRegistrarOf } from 'ecspresso';
-import { CONFIG } from './config';
+import { CONFIG, SIDES, isHostile } from './config';
 import type { Side } from './config';
 import type { Engagement, Game, GameOptions } from './game';
 
@@ -11,7 +11,7 @@ type ScheduledSystem = Pick<
 
 type CombatDependencies = Pick<
 	typeof import('./game'),
-	'notify' | 'orbitalUnits' | 'opponent' | 'shipsAt' | 'units'
+	'notify' | 'orbitalUnits' | 'shipsAt' | 'units'
 >;
 type UnitEntity = ReturnType<CombatDependencies['units']>[number];
 
@@ -135,7 +135,7 @@ export const planPasses = function (
 			if (
 				target.id === shooter.id ||
 				unit.hp <= 0 ||
-				unit.owner === origin.owner
+				!isHostile(unit.owner, origin.owner)
 			)
 				continue;
 			const dist = Math.hypot(from.x - unit.x, from.y - unit.y);
@@ -182,7 +182,7 @@ export const registerCombat = function (
 	dependencies: CombatDependencies,
 	onCapture?: GameOptions['onCapture'],
 ): ScheduledSystem {
-	const { notify, orbitalUnits, opponent, shipsAt, units } = dependencies;
+	const { notify, orbitalUnits, shipsAt, units } = dependencies;
 	return systems
 		.addSystem('combat-and-landing')
 		.addQuery('planets', { with: ['planet'], mutates: ['planet'] })
@@ -195,14 +195,23 @@ export const registerCombat = function (
 				id,
 				components: { planet: p },
 			} of queries.planets) {
-				const blueDamage =
-					shipsAt(ecs, id, 'blue').length * CONFIG.shipDamage +
-					(p.owner === 'blue' ? p.guns * CONFIG.gunDamage : 0);
-				const redDamage =
-					shipsAt(ecs, id, 'red').length * CONFIG.shipDamage +
-					(p.owner === 'red' ? p.guns * CONFIG.gunDamage : 0);
-				damageOrbit(ecs, id, 'blue', redDamage * dt, lost, dependencies);
-				damageOrbit(ecs, id, 'red', blueDamage * dt, lost, dependencies);
+				const orbit = orbitalUnits(ecs, id);
+				const forces = SIDES.map(function (side) {
+					const present = orbit.some(function (entry) {
+						return entry.components.unit.owner === side && entry.components.unit.hp > 0;
+					}) || (p.owner === side && p.guns > 0);
+					const damage = shipsAt(ecs, id, side).length * CONFIG.shipDamage +
+						(p.owner === side ? p.guns * CONFIG.gunDamage : 0);
+					return { side, present, damage };
+				});
+				// Snapshot all firepower before casualties; split it among enemies.
+				for (const force of forces) {
+					const targets = forces.filter(function (target) {
+						return isHostile(force.side, target.side) && target.present;
+					});
+					for (const target of targets)
+						damageOrbit(ecs, id, target.side, force.damage * dt / targets.length, lost, dependencies);
+				}
 			}
 			// The index holds pre-movement positions; include one step of target travel.
 			const volley = planPasses(ecs, dt, units, CONFIG.travelSpeed * dt);
@@ -217,10 +226,10 @@ export const registerCombat = function (
 					components: { unit: u },
 				} of orbitalUnits(ecs, id)) {
 					if (u.kind !== 'transport' || u.hp <= 0) continue;
-					const enemy = opponent(u.owner);
+					const enemies = SIDES.filter(function (side) { return isHostile(u.owner, side); });
 					if (
-						shipsAt(ecs, id, enemy).length > 0 ||
-						(p.owner === enemy && p.guns > 0)
+						enemies.some(function (side) { return shipsAt(ecs, id, side).length > 0; }) ||
+						(isHostile(p.owner, u.owner) && p.guns > 0)
 					)
 						continue;
 					if (p.owner === u.owner) p.troops += u.cargo;
@@ -303,7 +312,7 @@ export const registerCombat = function (
 				}
 			}
 			for (const { id, components: { planet: p } } of queries.planets) {
-				if (!p.carrier || p.owner === 'neutral' || shipsAt(ecs, id, opponent(p.owner)).length > 0) continue;
+				if (!p.carrier || p.owner === 'neutral' || SIDES.some(function (side) { return isHostile(side, p.owner) && shipsAt(ecs, id, side).length > 0; })) continue;
 				for (const entry of shipsAt(ecs, id, p.owner)) {
 					entry.components.unit.phase = 'docked';
 					entry.components.unit.x = p.x;

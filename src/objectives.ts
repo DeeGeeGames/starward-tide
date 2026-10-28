@@ -1,9 +1,9 @@
-import type { Owner, Side } from './config';
+import { factionLabel, type Owner, type Side } from './config';
 import type { Point } from './camera';
 import { carrierSeeds, type StarMap } from './maps';
 
 export const GAME_MODES = {
-	conquest: { label: 'Conquest', detail: 'Leave your rival with no worlds or carriers.' },
+	conquest: { label: 'Conquest', detail: 'Leave all rivals with no worlds or carriers.' },
 	'center-race': { label: 'Center race', detail: 'Reach the shared destination near the middle with a carrier before your rival.' },
 	'crossing-race': { label: 'Crossing race', detail: 'Get a carrier to your destination near the rival start. Stop their carrier from reaching theirs.' },
 } as const;
@@ -46,6 +46,17 @@ export const raceDestinations = function (map: StarMap): readonly Destination[] 
 	const make = function (point: Point, owner: Owner, label: string): Destination {
 		return { ...point, owner, label, radius: DESTINATION_RADIUS };
 	};
+	if (carriers.length > 2) {
+		const center = { x: map.width / 2, y: map.height / 2 };
+		if (map.mode === 'center-race') return clear(center) ? [make(center, 'neutral', 'Shared destination')] : [];
+		const rotation = carriers.length === 3 ? Math.PI : Math.PI * 0.75;
+		const destinations = carriers.map(function (carrier) {
+			const dx = carrier[1] - center.x, dy = carrier[2] - center.y;
+			const point = { x: center.x + dx * Math.cos(rotation) - dy * Math.sin(rotation), y: center.y + dx * Math.sin(rotation) + dy * Math.cos(rotation) };
+			return make(point, carrier[4], `${factionLabel(carrier[4])} destination`);
+		});
+		return destinations.every(clear) ? destinations : [];
+	}
 	const center = { x: (blue[1] + red[1]) / 2, y: (blue[2] + red[2]) / 2 };
 	if (map.mode === 'center-race') {
 		// The perpendicular bisector gives both starting carriers equal distance.
