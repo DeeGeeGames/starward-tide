@@ -95,6 +95,17 @@
 #app.is-dispatching .map-heading { display: none; }
 #app.is-dispatching #board { cursor: crosshair; }
 #app.is-dispatching .planet:hover:after { content: ''; position: absolute; inset: -4px; border: 2px dashed var(--action); border-radius: 50%; }
+#fleet-targets { position: absolute; inset: 0; pointer-events: none; }
+#app .fleet-target {
+	position: absolute; pointer-events: auto;
+	transform: translate(calc(16px / var(--map-scale, 1)), -50%) scale(calc(1 / var(--map-scale, 1)));
+	transform-origin: left center; min-height: 36px; min-width: 44px;
+	padding: 5px 8px; border: 1px solid var(--fleet-color); border-radius: 6px;
+	background: #101b29ed; color: var(--fleet-color); font-size: 12px; white-space: nowrap;
+}
+#app .fleet-target:disabled { opacity: .65; cursor: default; }
+#app .fleet-target.intercepted { border-style: dashed; }
+#app .fleet-target:focus-visible { outline: 2px solid #f2dfad; outline-offset: 3px; }
 #app #orders-drawer,
 #app #field-guide { position: absolute; top: var(--panel-top); right: var(--hud-side); width: 322px; max-width: calc(100% - 2 * var(--hud-side)); max-height: calc(100dvh - var(--panel-top) - 24px - env(safe-area-inset-bottom)); overflow: auto; padding: 20px; }
 #app:has(#orders-drawer:not([hidden])) #planet-panel,

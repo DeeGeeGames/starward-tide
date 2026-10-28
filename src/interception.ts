@@ -17,6 +17,7 @@ export const interceptPoint = function (
 	speed: number,
 	target: Point,
 	velocity: Point,
+	range = 0,
 ): Point {
 	const fallback = fallbackPoint(pursuer, target);
 	if (
@@ -24,7 +25,8 @@ export const interceptPoint = function (
 		!isFinitePoint(target) ||
 		!isFinitePoint(velocity) ||
 		!Number.isFinite(speed) ||
-		speed <= 0
+		speed <= 0 ||
+		!Number.isFinite(range) || range < 0
 	)
 		return fallback;
 
@@ -33,6 +35,7 @@ export const interceptPoint = function (
 	const distanceScale = Math.max(Math.abs(relativeX), Math.abs(relativeY));
 	if (!Number.isFinite(distanceScale)) return fallback;
 	if (distanceScale === 0) return target;
+	if (Math.hypot(relativeX, relativeY) <= range) return target;
 
 	const velocityScale = Math.max(Math.abs(velocity.x), Math.abs(velocity.y), speed);
 	const positionX = relativeX / distanceScale;
@@ -40,15 +43,16 @@ export const interceptPoint = function (
 	const targetVelocityX = velocity.x / velocityScale;
 	const targetVelocityY = velocity.y / velocityScale;
 	const pursuerSpeed = speed / velocityScale;
+	const scaledRange = range / distanceScale;
 	const targetSpeedSquared = targetVelocityX * targetVelocityX + targetVelocityY * targetVelocityY;
 	const pursuerSpeedSquared = pursuerSpeed * pursuerSpeed;
 	const a = targetSpeedSquared - pursuerSpeedSquared;
-	const b = 2 * (positionX * targetVelocityX + positionY * targetVelocityY);
-	const c = positionX * positionX + positionY * positionY;
+	const b = 2 * (positionX * targetVelocityX + positionY * targetVelocityY - pursuerSpeed * scaledRange);
+	const c = positionX * positionX + positionY * positionY - scaledRange * scaledRange;
 	let scaledTime: number;
 
 	if (Math.abs(a) <= INTERCEPT_RELATIVE_TOLERANCE * Math.max(targetSpeedSquared, pursuerSpeedSquared)) {
-		// At equal speeds, the linear equation has a positive solution only while closing.
+		// At equal speeds, the linear equation has a positive solution only if b is negative.
 		if (b >= 0) return fallback;
 		scaledTime = -c / b;
 	} else {

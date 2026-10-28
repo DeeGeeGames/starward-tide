@@ -6,6 +6,9 @@ interface MapInputDependencies {
 	getPlanetId: (target: EventTarget | null) => number | undefined;
 	selectPlanet: (id: number) => void;
 	dispatchPlanet: (id: number) => void;
+	getFleetId?: (target: EventTarget | null) => number | undefined;
+	selectFleet?: (id: number) => void;
+	dispatchFleet?: (id: number) => void;
 	moveTo?: (point: Point) => void;
 	panBy: (delta: Point) => void;
 	zoomAt: (anchor: Point, factor: number) => void;
@@ -34,12 +37,19 @@ export const createMapInput = function (dependencies: MapInputDependencies): {
 	const midpoint = function (a: Point, b: Point): Point {
 		return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 	};
+	const dispatchAction = function (target: EventTarget | null): (() => void) | undefined {
+		const fleetId = dependencies.getFleetId?.(target);
+		if (fleetId !== undefined) return function () { dependencies.dispatchFleet?.(fleetId); };
+		const planetId = dependencies.getPlanetId(target);
+		if (planetId !== undefined) return function () { dependencies.dispatchPlanet(planetId); };
+		return undefined;
+	};
 	board.addEventListener('pointerdown', function (event) {
 		if (event.pointerType === 'mouse' && event.button === 2) {
-			const id = dependencies.getPlanetId(event.target);
-			if (id !== undefined) {
+			const action = dispatchAction(event.target);
+			if (action) {
 				event.preventDefault();
-				dependencies.dispatchPlanet(id);
+				action();
 			}
 			return;
 		}
@@ -54,12 +64,12 @@ export const createMapInput = function (dependencies: MapInputDependencies): {
 			gestureMoved = true;
 			cancelHold();
 		} else if (event.pointerType === 'touch' || event.pointerType === 'pen') {
-			const id = dependencies.getPlanetId(event.target);
-			if (id !== undefined) {
+			const action = dispatchAction(event.target);
+			if (action) {
 				holdTimer = setTimeout(function () {
 					holdTimer = undefined;
 					holdHandled = true;
-					dependencies.dispatchPlanet(id);
+					action();
 				}, 500);
 			}
 		}
@@ -168,6 +178,11 @@ export const createMapInput = function (dependencies: MapInputDependencies): {
 		dependencies.panBy(delta);
 	}, { signal });
 	board.addEventListener('click', function (event) {
+		const fleetId = dependencies.getFleetId?.(event.target);
+		if (fleetId !== undefined) {
+			dependencies.selectFleet?.(fleetId);
+			return;
+		}
 		const id = dependencies.getPlanetId(event.target);
 		if (id !== undefined) dependencies.selectPlanet(id);
 		else {

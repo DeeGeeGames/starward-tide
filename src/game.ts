@@ -69,6 +69,7 @@ export interface Order {
 	id: number;
 	owner: Side;
 	target: number;
+	interceptOrder?: number;
 	state: 'pending' | 'outbound' | 'returning';
 	departures: Departure[];
 }
@@ -336,10 +337,11 @@ export const unitPoint = function (
 	planet: Planet,
 	time: number,
 	id: number,
+	interceptAim?: { x: number; y: number },
 ): UnitPoint {
 	if (unit.phase === 'docked') return { x: planet.x, y: planet.y, angle: planet.carrier?.heading ?? 0 };
 	if (unit.phase !== 'orbit') {
-		const aim = travelAim(unit, planet);
+		const aim = interceptAim ?? travelAim(unit, planet);
 		return {
 			x: unit.x,
 			y: unit.y,
@@ -440,13 +442,14 @@ export const previewDispatch = function (
 	}, { troops: 0, ships: 0, blockedSources: 0 });
 };
 
-export const dispatch = function (
+const dispatchTo = function (
 	world: Game,
 	sources: readonly number[],
 	target: number,
 	fraction: number,
 	filter: DispatchFilter = 'combined',
 	side: Side = 'blue',
+	interceptOrder?: number,
 ): number {
 	const match = world.getResource('match');
 	if (
@@ -461,7 +464,7 @@ export const dispatch = function (
 	const departures: Departure[] = [];
 	for (const id of new Set(sources)) {
 		const p = world.getComponent(id, 'planet');
-		if (!p || id === target) continue;
+		if (!p || (id === target && interceptOrder === undefined)) continue;
 		const stock = departureStock(world, id, fraction, filter, side);
 		if (stock.blocked) {
 			if (side === 'blue')
@@ -536,6 +539,7 @@ export const dispatch = function (
 			id: book.nextId++,
 			owner: side,
 			target,
+			...(interceptOrder === undefined ? {} : { interceptOrder }),
 			state: match.paused ? 'pending' : 'outbound',
 			departures,
 		});
@@ -543,6 +547,32 @@ export const dispatch = function (
 	}
 	pruneOrders(world);
 	return sent;
+};
+
+export const dispatch = function (
+	world: Game,
+	sources: readonly number[],
+	target: number,
+	fraction: number,
+	filter: DispatchFilter = 'combined',
+	side: Side = 'blue',
+): number {
+	return dispatchTo(world, sources, target, fraction, filter, side);
+};
+
+export const dispatchIntercept = function (
+	world: Game,
+	sources: readonly number[],
+	targetOrderId: number,
+	fraction: number,
+	side: Side = 'blue',
+): number {
+	const target = world.getResource('orderBook').active.find(function (order) {
+		return order.id === targetOrderId && isHostile(side, order.owner) &&
+			orderUnits(world, order).some(function (entity) { return entity.components.unit.phase === 'travel'; });
+	});
+	if (!target) return 0;
+	return dispatchTo(world, sources, target.target, fraction, 'ships', side, target.id);
 };
 
 // Completed ships remain part of an escorted order while transports are waiting
@@ -651,7 +681,10 @@ export const cancelOrder = function (
 		book.active = book.active.filter(function (candidate) {
 			return candidate !== order;
 		});
-	} else order.state = 'returning';
+	} else {
+		order.state = 'returning';
+		delete order.interceptOrder;
+	}
 	return true;
 };
 

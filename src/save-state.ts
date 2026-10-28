@@ -156,6 +156,7 @@ const orderSchema = z.looseObject({
 	id: idSchema,
 	owner: sideSchema,
 	target: idSchema,
+	interceptOrder: z.optional(idSchema),
 	state: z.enum(['pending', 'outbound', 'returning']),
 	departures: savedArray(departureSchema).check(z.maxLength(10000)),
 }) satisfies z.ZodMiniType<Order>;
@@ -253,6 +254,7 @@ const hasSnapshotIntegrity = function (value: GameSnapshot): boolean {
 		return false;
 	const orderIds = new Set<number>();
 	const assignedUnits = new Set<number>();
+	const ordersById = new Map(activeOrders.flatMap(function (order) { return [[order.id, order] as const]; }));
 	if (
 		activeOrders.some(function (order) {
 			if (
@@ -262,6 +264,11 @@ const hasSnapshotIntegrity = function (value: GameSnapshot): boolean {
 			)
 				return true;
 			orderIds.add(order.id);
+			if (order.interceptOrder !== undefined) {
+				const targetOrder = ordersById.get(order.interceptOrder);
+				if (order.interceptOrder >= nextOrderId || order.interceptOrder === order.id || order.state === 'returning' ||
+					(targetOrder && targetOrder.owner === order.owner)) return true;
+			}
 			return order.departures.some(function (departure) {
 				if (
 					!planetIds.has(departure.source) ||
@@ -271,6 +278,7 @@ const hasSnapshotIntegrity = function (value: GameSnapshot): boolean {
 				assignedUnits.add(departure.unitId);
 				const unit = unitsById.get(departure.unitId);
 				if (!unit) return true;
+				if (order.interceptOrder !== undefined && (unit.kind !== 'ship' || unit.phase !== 'travel')) return true;
 				// Docked escorts retain recall membership while cargo is underway. Capture invalidates
 				// queued commands from a carrier's former owner, but launched units
 				// retain their order even when their source changes hands.

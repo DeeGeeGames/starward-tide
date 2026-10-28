@@ -4,6 +4,7 @@ import { createPerformanceDiagnostics, type PerformanceDiagnostics, type Diagnos
 import { createCrowdedBaseline } from './performance-scenario';
 import { createPixiRenderer } from './pixi-renderer';
 import { createMapInput } from './map-input';
+import { createFleetTargets } from './fleet-targets';
 import { createOrdersDrawer } from './orders-drawer';
 import { fitCamera, revealPoint } from './camera';
 import type { ViewportArea } from './camera';
@@ -29,6 +30,7 @@ import {
 	launchCarrierShips,
 	previewDispatch,
 	dispatch,
+	dispatchIntercept,
 	isBlockaded,
 	planets,
 	setProduction,
@@ -65,6 +67,10 @@ const dispatchFilterControls = element(
 const dispatchInfo = element('dispatch-info', HTMLSpanElement);
 const canvas = element('space', HTMLCanvasElement);
 const planetLayer = element('planets', HTMLDivElement);
+const fleetLayer = document.createElement('div');
+fleetLayer.id = 'fleet-targets';
+mapWorld.append(fleetLayer);
+const fleetTargets = createFleetTargets(fleetLayer);
 const pause = element('pause', HTMLButtonElement);
 const scenarioSelect = element('scenario', HTMLSelectElement);
 const aiInput = element('ai', HTMLInputElement);
@@ -351,7 +357,25 @@ const sendToPlanet = function (id: number): void {
 	}
 	refresh();
 };
+const sendToFleet = function (id: number): void {
+	if (busy || frontMenu.getCurrentScreen() !== 'playing' || matchEnded(world.getResource('match'))) return;
+	if (choosingDestination === 'bombard') feedback('Choose a planet to bombard.');
+	else if (multi) feedback('Finish source selection before sending ships.');
+	else if (selected.length === 0) feedback('Select a blue planet or orbital ring first.');
+	else if (filter === 'troops' && selected.some(function (source) { return world.getComponent(source, 'planet')?.owner === 'blue'; }))
+		feedback('Choose Combined or Ships to intercept. Transports cannot intercept.');
+	else {
+		const sent = dispatchIntercept(world, selected, id, fraction);
+		feedback(sent > 0 ? `${sent} ${sent === 1 ? 'ship' : 'ships'} launched to intercept · returns after pursuit` : 'No ships launched. Check ship stock or blockade; the group may have arrived.');
+		if (sent > 0) {
+			cancelMapCommand();
+			queueAutosave();
+		}
+	}
+	refresh();
+};
 const mountPlanets = function (): void {
+	fleetTargets.reset();
 	planetLayer.replaceChildren();
 	for (const destination of world.getResource('objectives').destinations) {
 		const marker = document.createElement('div');
@@ -567,12 +591,13 @@ const refreshContent = function (): void {
 		view.progress.style.width = `${(p.progress / CONFIG.cost[p.production]) * 100}%`;
 	}
 	if (choosingDestination && (selected.length === 0 || matchEnded(match))) cancelMapCommand();
+	fleetTargets.update(world, selected.length > 0 && !multi && choosingDestination !== 'bombard' && !matchEnded(match));
 	app.classList.toggle('is-dispatching', Boolean(choosingDestination));
 	app.classList.toggle('sheet-collapsed', sheetCollapsed);
 	element('destination-prompt', HTMLDivElement).hidden = !choosingDestination;
 	element('destination-summary', HTMLDivElement).hidden = !choosingDestination;
 	element('destination-instruction', HTMLSpanElement).textContent = choosingDestination === 'bombard'
-		? 'Choose a planet to bombard' : 'Choose a destination on the map';
+		? 'Choose a planet to bombard' : 'Choose a world or hostile group · groups send ships only';
 	planetPanel.hidden = selected.length === 0 && inspected === undefined;
 	dispatchControls.hidden = selected.length === 0;
 	const ownedSelected = selected.flatMap(function (id) {
@@ -645,7 +670,7 @@ const refreshContent = function (): void {
 	element('sheet-toggle', HTMLButtonElement).textContent = sheetCollapsed ? '⌃' : '⌄';
 	const preview = previewDispatch(world, selected, fraction, shipsOnly ? 'ships' : filter);
 	element('dispatch-preview', HTMLParagraphElement).textContent = `Up to ${preview.troops} troops + ${preview.ships} ships`;
-	element('destination-summary', HTMLDivElement).textContent = choosingDestination === 'bombard' ? `${p?.name ?? 'Carrier'} · ${CONFIG.bombardmentCharge}s charge · neutralizes the surface` : `From ${selected.length > 1 ? `${selected.length} sources` : p?.name ?? 'selection'} · up to ${preview.troops} troops + ${preview.ships} ships`;
+	element('destination-summary', HTMLDivElement).textContent = choosingDestination === 'bombard' ? `${p?.name ?? 'Carrier'} · ${CONFIG.bombardmentCharge}s charge · neutralizes the surface` : `From ${selected.length > 1 ? `${selected.length} sources` : p?.name ?? 'selection'} · up to ${preview.troops} troops + ${preview.ships} ships · groups: ships only`;
 	element('send-units', HTMLButtonElement).disabled = multi || preview.troops + preview.ships === 0 || matchEnded(match);
 	const warning = element('selection-warning', HTMLDivElement);
 	const carrierBlocked = p?.carrier && first !== undefined && SIDES.some(function (side) { return isHostile(side, p.owner) && shipsAt(world, first, side).length > 0; });
@@ -859,8 +884,18 @@ const mapInput = createMapInput({
 		else selectPlanet(id);
 	},
 	dispatchPlanet: sendToPlanet,
+	getFleetId: function (target): number | undefined {
+		const button = target instanceof Element ? target.closest<HTMLButtonElement>('button.fleet-target') : null;
+		const id = Number(button?.dataset.fleet);
+		return Number.isSafeInteger(id) && id > 0 ? id : undefined;
+	},
+	selectFleet: function (id): void {
+		if (choosingDestination === 'dispatch') sendToFleet(id);
+		else feedback('Use Send units, or hold / right-click a hostile group to intercept.');
+	},
+	dispatchFleet: sendToFleet,
 	moveTo: function (point): void {
-		if (choosingDestination) { feedback('Choose a world or carrier as the destination.'); refresh(); return; }
+		if (choosingDestination) { feedback('Choose a world, carrier, or hostile group as the destination.'); refresh(); return; }
 		if (busy || multi || selected.length !== 1 || frontMenu.getCurrentScreen() !== 'playing') return;
 		const id = selected[0];
 		if (id === undefined) return;

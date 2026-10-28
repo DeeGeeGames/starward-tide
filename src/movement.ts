@@ -5,6 +5,7 @@ import type { Game, Planet, Unit } from './game';
 import type { Point } from './camera';
 import { interceptPoint } from './interception';
 import { arrivalFraction, destinationFor } from './objectives';
+import { interceptionAims, returnInterceptors } from './fleet-interception';
 
 // Below the slowest ordinary unit (transport = 0.5 travel speed), at every pace.
 export const CARRIER_SPEED = CONFIG.travelSpeed * 0.25;
@@ -74,6 +75,8 @@ export const registerMovement = function (
 			const fighting = new Set(planPasses(ecs, 0, units).map(function (shot) {
 				return shot.shooterId;
 			}));
+			returnInterceptors(ecs);
+			const intercepts = interceptionAims(ecs, fighting);
 			for (const entity of queries.units) {
 				const u = entity.components.unit;
 				const p = ecs.getComponent(u.target, 'planet');
@@ -87,10 +90,11 @@ export const registerMovement = function (
 					continue;
 				}
 				const speed = CONFIG.travelSpeed * (u.kind === 'transport' ? 0.5 : 1);
-				const aim = travelAim(u, p);
+				const intercept = intercepts.get(entity.id);
+				const aim = intercept ?? travelAim(u, p);
 				const dx = aim.x - u.x, dy = aim.y - u.y;
 				const distance = Math.hypot(dx, dy);
-				if (Math.hypot(p.x - u.x, p.y - u.y) <= p.radius + CONFIG.arrivalClearance) {
+				if (!intercept && Math.hypot(p.x - u.x, p.y - u.y) <= p.radius + CONFIG.arrivalClearance) {
 					u.phase = 'orbit';
 					u.age = 0;
 					continue;
@@ -102,7 +106,7 @@ export const registerMovement = function (
 				u.x += (dx / distance) * travel;
 				u.y += (dy / distance) * travel;
 				syncUnitPosition(ecs, entity.id, u.x, u.y);
-				if (Math.hypot(p.x - u.x, p.y - u.y) <= reach) {
+				if (!intercept && Math.hypot(p.x - u.x, p.y - u.y) <= reach) {
 					u.phase = 'orbit';
 					u.age = 0;
 				}
