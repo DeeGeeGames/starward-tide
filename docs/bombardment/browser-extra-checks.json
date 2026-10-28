@@ -1,0 +1,8 @@
+{
+  "environment": "Headless Chromium, production build, isolated context, emulated touch; enemy ownership/charge supplied through saved fixture",
+  "checks": [
+    "390x844 touch emulation: tap carrier, bombard action, tap target, cancel without dispatching crew",
+    "Enemy charge restored from an isolated saved fixture: persistent boarding warning and15s countdown on portrait and short landscape; banner does not stretch over playfield"
+  ],
+  "errors": []
+}

@@ -230,6 +230,7 @@ export const registerCombat = function (
 						p.owner = u.owner;
 					if (p.carrier) {
 						p.carrier.destination = null;
+						delete p.carrier.bombardment;
 						const transferred = new Set<number>();
 						for (const entry of units(ecs)) {
 							const stored = entry.components.unit;
@@ -260,6 +261,45 @@ export const registerCombat = function (
 					}
 					u.hp = 0;
 					ecs.commands.removeEntity(unitId);
+				}
+			}
+			// Resolve boarding first so a last-tick takeover cancels the shot.
+			// Orbital resistance deliberately does not interrupt bombardment.
+			for (const { components: { planet: p } } of queries.planets) {
+				const carrier = p.carrier;
+				const attack = carrier?.bombardment;
+				if (!carrier || !attack) continue;
+				const target = ecs.getComponent(attack.target, 'planet');
+				if (!target || target.carrier || target.owner === p.owner ||
+					(target.owner === 'neutral' && target.troops === 0)) {
+					delete carrier.bombardment;
+					carrier.destination = null;
+					continue;
+				}
+				if (carrier.destination) continue;
+				const reach = p.radius + target.radius + CONFIG.arrivalClearance;
+				if (Math.abs(Math.hypot(p.x - target.x, p.y - target.y) - reach) > 0.01) {
+					delete carrier.bombardment;
+					continue;
+				}
+				if (attack.elapsed === 0) notify(ecs, `${p.name} charging bombardment of ${target.name}: ${CONFIG.bombardmentCharge}s`, p.owner);
+				attack.elapsed += dt;
+				if (attack.elapsed + 1e-9 < CONFIG.bombardmentCharge) continue;
+				target.troops = 0;
+				target.owner = 'neutral';
+				target.progress = 0;
+				target.production = 'troops';
+				ecs.markChanged(attack.target, 'planet');
+				notify(ecs, `${target.name} bombarded: surface neutralized`, p.owner);
+				delete carrier.bombardment;
+			}
+			// A shot may invalidate another carrier's target in this same step.
+			for (const { components: { planet: p } } of queries.planets) {
+				const attack = p.carrier?.bombardment;
+				const target = attack ? ecs.getComponent(attack.target, 'planet') : undefined;
+				if (p.carrier && attack && target && (target.owner === p.owner || (target.owner === 'neutral' && target.troops === 0))) {
+					delete p.carrier.bombardment;
+					p.carrier.destination = null;
 				}
 			}
 			for (const { id, components: { planet: p } } of queries.planets) {
