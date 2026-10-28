@@ -1,0 +1,31 @@
+{
+	"browser": "Headless Chromium 153.0.8010.12",
+	"entry": "asset-proof/standalone.html",
+	"localFileOrigin": true,
+	"externalNetworkRequests": 0,
+	"browserErrors": [],
+	"assertions": [
+		"PASS: transparent inputs; 48s globe loop; fixed circular silhouette; continuous orbit position and heading at both zoom levels.",
+		"Pause, scrubbing, replay, zoom, transparency ground and 390px containment passed.",
+		"Both PNG download controls reproduce the accepted exports byte for byte.",
+		"All packaged file hashes match the recorded manifest."
+	],
+	"exports": [
+		{
+			"file": "planet-frame.png",
+			"bytes": 126796,
+			"sha256": "d28574b4b362982a266ed5d0e10f50bb989a2d7d196c87995dd886f92bb729f0",
+			"identicalToAcceptedExport": true
+		},
+		{
+			"file": "warship-sprite.png",
+			"bytes": 49484,
+			"sha256": "1ce73cfc184a1fc6bc356a9000e253a22dac029315fb56386bcd6c32c30d5a50",
+			"identicalToAcceptedExport": true
+		}
+	],
+	"limitations": [
+		"Standalone reference verification only; no game integration or crowded-scene performance claim.",
+		"Viewport emulation is not physical-device validation."
+	]
+}
