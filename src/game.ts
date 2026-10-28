@@ -9,7 +9,7 @@ import {
 	spatialIndexSystems,
 } from 'ecspresso/plugins/spatial/spatial-index';
 import { createDiagnosticsPlugin, type DiagnosticsResourceTypes } from 'ecspresso/plugins/debug/diagnostics';
-import { CONFIG } from './config';
+import { CONFIG, SIDES, isHostile } from './config';
 import { runAI } from './ai';
 import { raceDestinations, type Objectives } from './objectives';
 import { DEFAULT_OPPONENT, DIFFICULTIES } from './opponent';
@@ -17,7 +17,7 @@ import type { OpponentSettings } from './opponent';
 import { registerCombat } from './combat';
 import { registerMovement, registerTravelerCleanup, travelAim } from './movement';
 import { initializeLabScenario, seedFreshGame } from './game-scenario';
-import { LAB_MAP } from './maps';
+import { LAB_MAP, mapSides } from './maps';
 import type { StarMap } from './maps';
 import type {
 	DispatchFilter,
@@ -94,6 +94,7 @@ export interface Match {
 	paused: boolean;
 	winner: Side | null;
 	draw?: boolean;
+	defeated?: boolean;
 	ai: boolean;
 	aiClock: number;
 	orders: number;
@@ -104,8 +105,8 @@ export interface Match {
 	notices: Notice[];
 	engagements: Engagement[];
 }
-export const matchEnded = function (match: Pick<Match, 'winner' | 'draw'>): boolean {
-	return Boolean(match.winner || match.draw);
+export const matchEnded = function (match: Pick<Match, 'winner' | 'draw' | 'defeated'>): boolean {
+	return Boolean(match.winner || match.draw || match.defeated);
 };
 export interface CaptureEvent {
 	planetId: number;
@@ -157,7 +158,7 @@ const syncUnitPosition = function (
 };
 const makeWorld = function (map: StarMap, opponent: OpponentSettings): Game {
 	const destinations = raceDestinations(map);
-	if (map.mode && map.mode !== 'conquest' && destinations.length !== (map.mode === 'center-race' ? 1 : 2)) throw new Error('This map has no clear carrier destinations');
+	if (map.mode && map.mode !== 'conquest' && destinations.length !== (map.mode === 'center-race' ? 1 : mapSides(map).length)) throw new Error('This map has no clear carrier destinations');
 	const objectives: Objectives = { mode: map.mode ?? 'conquest', destinations, arrivals: [] };
 	const match: Match = {
 		opponent: { ...opponent },
@@ -354,14 +355,15 @@ export const unitPoint = function (
 		angle: orbitAngle + Math.PI / 2,
 	};
 };
-export const opponent = function (side: Side): Side {
+// Retained for callers of the original two-faction API. Gameplay uses isHostile.
+export const opponent = function (side: 'blue' | 'red'): Side {
 	return side === 'blue' ? 'red' : 'blue';
 };
 export const isBlockaded = function (world: Game, planetId: number): boolean {
 	const planet = world.getComponent(planetId, 'planet');
 	if (!planet || planet.owner === 'neutral') return false;
 	return (
-		shipsAt(world, planetId, opponent(planet.owner)).length > 0 &&
+		SIDES.some(function (side) { return isHostile(side, planet.owner) && shipsAt(world, planetId, side).length > 0; }) &&
 		shipsAt(world, planetId, planet.owner).length === 0 &&
 		planet.guns <= 0
 	);
@@ -583,8 +585,7 @@ export const activeOrders = function (
 const pruneOrders = function (world: Game): void {
 	const book = world.getResource('orderBook');
 	const live = new Set([
-		...activeOrders(world),
-		...activeOrders(world, [], 'red'),
+		...SIDES.flatMap(function (side) { return activeOrders(world, [], side); }),
 	]);
 	book.active = book.active.filter(function (order) {
 		return live.has(order);
@@ -716,7 +717,7 @@ export const createGame = async function (
 		.inPhase('fixedUpdate')
 		.withRef(movementSystem)
 		.after(spatialIndexSystems.rebuild.fixedUpdate);
-	registerCombat(world, active, { notify, orbitalUnits, opponent, shipsAt, units }, options.onCapture)
+	registerCombat(world, active, { notify, orbitalUnits, shipsAt, units }, options.onCapture)
 		.inPhase('fixedUpdate')
 		.withRef(combatSystem)
 		.after(movementSystem);
@@ -740,14 +741,16 @@ export const createGame = async function (
 					if (!match.draw) match.winner = first.owner;
 				}
 				const owners = new Set(planets(ecs).map(function (e) { return e.components.planet.owner; }));
-				if (!match.winner && !match.draw && !owners.has('red')) match.winner = 'blue';
-				else if (!match.winner && !match.draw && !owners.has('blue')) match.winner = 'red';
+				const survivors = SIDES.filter(function (side) { return owners.has(side); });
+				if (!match.winner && !match.draw && survivors.length === 1) match.winner = survivors[0] ?? null;
+				else if (!match.winner && !match.draw && survivors.length === 0) match.draw = true;
+				else if (!match.winner && !match.draw && !owners.has('blue')) match.defeated = true;
 			}
 			if (matchEnded(match)) return;
 			match.aiClock += dt;
 			if (match.ai && match.aiClock >= DIFFICULTIES[(match.opponent ?? DEFAULT_OPPONENT).difficulty].interval) {
 				match.aiClock = 0;
-				runAI(ecs, aiDependencies);
+				for (const side of SIDES) if (side !== 'blue') runAI(ecs, aiDependencies, side);
 			}
 		});
 	registerTravelerCleanup(world)

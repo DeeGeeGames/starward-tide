@@ -1,7 +1,7 @@
 import ECSpresso from 'ecspresso';
 import { createRenderer2DPlugin, createSpriteComponents } from 'ecspresso/plugins/rendering/renderer2D';
 import { Application, Container, Graphics, Sprite, Texture, CanvasSource } from 'pixi.js';
-import { COLORS, CONFIG, type Owner, type Side } from './config';
+import { COLORS, CONFIG, SIDES, isHostile, type Owner, type Side } from './config';
 import type { Camera } from './camera';
 import type { StarMap } from './maps';
 import { isBlockaded, planets, shipsAt, orderUnits, unitPoint } from './game';
@@ -282,10 +282,10 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 				}
 				platformViews.set(id, existingPlatforms);
 			} else platformViews.delete(id);
-			const blue = shipsAt(world, id, 'blue').length;
-			const red = shipsAt(world, id, 'red').length;
-			if ((blue > 0 && p.owner !== 'blue') || (red > 0 && p.owner !== 'red')) {
-				const color = blue > 0 && p.owner !== 'blue' ? COLORS.blue : COLORS.red;
+			const orbiting = SIDES.filter(function (side) { return shipsAt(world, id, side).length > 0; });
+			const hostile = orbiting.find(function (side) { return side !== p.owner; });
+			if (hostile) {
+				const color = COLORS[hostile];
 				const radius = p.radius + 17;
 				if (isBlockaded(world, id)) {
 					// Canvas lineDashOffset = -time*10; dash starts advance clockwise.
@@ -297,7 +297,7 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 					}
 				} else routes.circle(p.x, p.y, radius).stroke({ color, width: 1 });
 			}
-			if ((blue > 0 || (p.owner === 'blue' && p.guns > 0)) && (red > 0 || (p.owner === 'red' && p.guns > 0))) {
+			if (orbiting.some(function (side) { return orbiting.some(function (other) { return isHostile(side, other); }) || (isHostile(side, p.owner) && p.guns > 0); })) {
 				const angle = match.time * 4;
 				routes.moveTo(p.x + Math.cos(angle) * (p.radius + 19), p.y + Math.sin(angle) * (p.radius + 19))
 					.lineTo(p.x - Math.cos(angle) * (p.radius + 19), p.y - Math.sin(angle) * (p.radius + 19))

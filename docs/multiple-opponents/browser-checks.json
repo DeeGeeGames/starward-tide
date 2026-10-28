@@ -1,0 +1,16 @@
+{
+  "checks": [
+    "Setup controls reachable at 1440x900",
+    "Setup controls reachable at 390x844",
+    "Setup controls reachable at 844x390",
+    "Setup controls reachable at 667x320",
+    "conquest: starts and saves four factions with four carriers and colored units",
+    "conquest: Continue restores opponent count",
+    "center-race: starts and saves four factions with four carriers and colored units",
+    "center-race: Continue restores opponent count",
+    "crossing-race: starts and saves four factions with four carriers and colored units",
+    "crossing-race: Continue restores opponent count",
+    "Inspecting a green world with 3 green defenders and 4 red attackers reports 3 faction ships"
+  ],
+  "errors": []
+}

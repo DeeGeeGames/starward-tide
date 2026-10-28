@@ -233,7 +233,7 @@
 							<div class="legend">
 								<span><i class="dot blue"></i>You</span
 								><span><i class="dot"></i>Neutral</span
-								><span><i class="dot red"></i>Rival</span>
+								><span><i class="dot red"></i>Rivals</span>
 							</div>
 						</div>
 						<button class="reroll" id="reroll">
@@ -242,7 +242,9 @@
 					</div>
 				</div>
 				<fieldset class="opponent-options">
-					<legend>OPPONENT</legend>
+					<legend>OPPONENTS</legend>
+					<label for="opponent-count">AI opponents · Free-for-all</label>
+					<select id="opponent-count"><option value="1">1 opponent</option><option value="2">2 opponents</option><option value="3">3 opponents</option></select>
 					<div class="opponent-grid">
 						<div>
 							<label for="opponent-difficulty">Difficulty</label>
@@ -264,7 +266,7 @@
 							<p class="detail" id="style-detail"></p>
 						</div>
 					</div>
-					<p class="detail" id="opponent-fairness">Both sides use the same production, movement, and combat rules. No resource bonuses.</p>
+					<p class="detail" id="opponent-fairness">All factions use the same rules and starting resources. Settings apply to every AI opponent.</p>
 				</fieldset>
 				<div class="setup-footer">
 					<div class="summary" id="summary">
@@ -295,7 +297,7 @@
 					<h1 class="game-wordmark">GALAXY<br>CONQUEST</h1>
 					<div class="world-score"><span class="eyebrow" id="score-label">WORLDS CONTROLLED</span><div class="scorebar">
 						<span class="blue"><strong id="blue-count">1</strong> You</span>
-						<span class="red"><strong id="red-count">1</strong> Rival</span>
+						<span class="red"><strong id="red-count">1</strong> Rival holdings</span>
 					</div></div>
 					<div id="clock" aria-label="Elapsed time">00:00</div>
 				</div>
@@ -420,7 +422,7 @@
 							</select></label
 						>
 						<label class="checkbox"
-							><input id="ai" type="checkbox" checked /> Rival AI active</label
+							><input id="ai" type="checkbox" checked /> Opponent AI active</label
 						>
 						<p>
 							Changing scenario restarts. Production: troops 1, ships 6,

@@ -10,10 +10,10 @@ import type { ViewportArea } from './camera';
 import { createPresentation } from './presentation';
 import { visibleMapLabels, type LabelBounds, type MapLabel } from './map-labels';
 import type { Camera, Point } from './camera';
-import { CONFIG, COLORS } from './config';
+import { CONFIG, COLORS, SIDES, isHostile, factionLabel } from './config';
 import { DEFAULT_OPPONENT, opponentLabel } from './opponent';
 import type { OpponentSettings } from './opponent';
-import { LAB_MAP } from './maps';
+import { LAB_MAP, mapSides } from './maps';
 import type { StarMap } from './maps';
 import { createFrontMenu } from './front-menu';
 import type { DispatchFilter, Production, Scenario } from './config';
@@ -467,7 +467,7 @@ const arrangeLabels = function (): void {
 	const reserved: LabelBounds[] = [];
 	for (const [id, view] of views) {
 		const owner = world.getComponent(id, 'planet')?.owner;
-		const priority = selected.includes(id) || inspected === id ? 1000 : owner === 'blue' ? 400 : owner === 'red' ? 300 : 100;
+		const priority = selected.includes(id) || inspected === id ? 1000 : owner === 'blue' ? 400 : owner !== 'neutral' ? 300 : 100;
 		reserved.push(view.count.getBoundingClientRect());
 		labels.push({ ...labelBounds(view.name), key: `${id}:name`, priority });
 		if (view.orbit.textContent) labels.push({ ...labelBounds(view.orbit), key: `${id}:orbit`, priority: priority - 1 });
@@ -496,7 +496,7 @@ const refresh = function (): void {
 };
 const refreshContent = function (): void {
 	const match = world.getResource('match');
-	element('opponent-summary', HTMLParagraphElement).textContent = `${GAME_MODES[world.getResource('objectives').mode].label} · Opponent: ${opponentLabel(match.opponent ?? DEFAULT_OPPONENT)}`;
+	element('opponent-summary', HTMLParagraphElement).textContent = `${GAME_MODES[world.getResource('objectives').mode].label} · ${mapSides(activeMap).filter(function (side) { return side !== 'blue'; }).length} AI · Free-for-all · ${opponentLabel(match.opponent ?? DEFAULT_OPPONENT)}`;
 	const all = planets(world);
 	const previousSources = selected.join(',');
 	selected = selected.filter(function (id) {
@@ -524,7 +524,7 @@ const refreshContent = function (): void {
 		view.button.style.setProperty('--heading', `${p.carrier?.heading ?? 0}rad`);
 		const docked = dockedShips(world, id).length;
 		const blue = shipsAt(world, id, 'blue').length;
-		const red = shipsAt(world, id, 'red').length;
+		const red = SIDES.filter(function (side) { return side !== 'blue'; }).reduce(function (sum, side) { return sum + shipsAt(world, id, side).length; }, 0);
 		const guns = Math.ceil(p.guns);
 		const blocked = isBlockaded(world, id);
 		const hitSize = Math.max(54, (p.radius + 32) * 2);
@@ -537,7 +537,7 @@ const refreshContent = function (): void {
 		view.button.setAttribute('aria-pressed', String(highlighted));
 		view.button.setAttribute(
 			'aria-label',
-			`${p.name}, ${p.owner === 'blue' ? 'your' : p.owner === 'red' ? 'rival' : 'neutral'} ${p.carrier ? 'carrier' : 'planet'}, ${docked} docked ships, ${p.troops} troops, ${blue} your ships, ${red} rival ships, ${guns} defense platforms${blocked ? ', blockaded' : ''}`,
+			`${p.name}, ${factionLabel(p.owner)} ${p.carrier ? 'carrier' : 'planet'}, ${docked} docked ships, ${p.troops} troops, ${blue} your ships, ${red} rival ships, ${guns} defense platforms${blocked ? ', blockaded' : ''}`,
 		);
 		const attack = p.carrier?.bombardment;
 		const incoming = all.find(function (entry) { return entry.components.planet.carrier?.bombardment?.target === id; });
@@ -553,10 +553,8 @@ const refreshContent = function (): void {
 		if (activeAttack) view.button.setAttribute('aria-label', `${view.button.getAttribute('aria-label')}, ${view.bombardment.textContent}`);
 		view.count.textContent = String(p.troops);
 		view.orbit.replaceChildren();
-		for (const [side, count] of [
-			['blue', blue],
-			['red', red],
-		] as const) {
+		for (const side of SIDES) {
+			const count = shipsAt(world, id, side).length;
 			if (count === 0) continue;
 			const span = document.createElement('span');
 			span.style.color = COLORS[side];
@@ -606,18 +604,19 @@ const refreshContent = function (): void {
 	const surfacePlanets = inspectedOnly ? forcePlanets : forcePlanets.filter(function (planet) { return planet.owner === 'blue'; });
 	const troops = surfacePlanets.reduce(function (sum, planet) { return sum + planet.troops; }, 0);
 	const shipCount = forceSources.reduce(function (sum, id) {
-		return sum + (inspectedOnly ? availableShips(world, id, 'red').length : availableShips(world, id, 'blue').length);
+		const side = inspectedOnly ? p?.owner : 'blue';
+		return sum + (side && side !== 'neutral' ? availableShips(world, id, side).length : 0);
 	}, 0);
 	element('stat-troops', HTMLElement).textContent = String(troops);
 	element('stat-ships', HTMLElement).textContent = String(carrier && first !== undefined ? dockedShips(world, first).length : shipCount);
 	element('stat-platforms', HTMLElement).textContent = String(carrier && first !== undefined
-		? shipsAt(world, first, 'blue').length + shipsAt(world, first, 'red').length
+		? SIDES.reduce(function (sum, side) { return sum + shipsAt(world, first, side).length; }, 0)
 		: Math.ceil(surfacePlanets.reduce(function (sum, planet) { return sum + planet.guns; }, 0)));
 	element('troops-label', HTMLElement).textContent = carrier ? 'Crew' : 'Troops';
 	element('ships-label', HTMLElement).textContent = carrier ? 'Docked ships' : shipsOnly ? 'Your ships' : 'Ships';
 	element('platforms-label', HTMLElement).textContent = carrier ? 'External ships' : 'Platforms';
 	element('selection-kind', HTMLElement).textContent = selected.length > 1 ? 'YOUR SOURCES' :
-		`${p?.owner === 'blue' ? 'YOUR' : p?.owner === 'red' ? 'RIVAL' : 'NEUTRAL'} ${p?.carrier ? 'CARRIER' : 'WORLD'}`;
+		`${p ? factionLabel(p.owner).toUpperCase() : 'NEUTRAL'} ${p?.carrier ? 'CARRIER' : 'WORLD'}`;
 	selectionInfo.textContent = carrier && p?.owner === 'blue' ? 'Click empty space to move this carrier.' : shipsOnly ? `Your ships in orbit · ${p?.carrier ? 'carrier' : 'surface'} belongs to another faction.` : '';
 	if (p?.carrier?.bombardment) {
 		const target = world.getComponent(p.carrier.bombardment.target, 'planet');
@@ -626,7 +625,7 @@ const refreshContent = function (): void {
 	}
 	selectionInfo.hidden = selectionInfo.textContent === '';
 	const friendlyOrbit = first === undefined ? 0 : shipsAt(world, first, 'blue').length;
-	const rivalOrbit = first === undefined ? 0 : shipsAt(world, first, 'red').length;
+	const rivalOrbit = first === undefined ? 0 : SIDES.filter(function (side) { return side !== 'blue'; }).reduce(function (sum, side) { return sum + shipsAt(world, first, side).length; }, 0);
 	orbitalInfo.hidden = selected.length > 1 || (rivalOrbit === 0 && !shipsOnly && !(carrier && friendlyOrbit > 0));
 	orbitalInfo.textContent = `Orbit · ${friendlyOrbit} your ships · ${rivalOrbit} rival ships`;
 	const names: Record<Production, string> = { troops: 'Troops', ships: 'Ships', guns: 'Platforms' };
@@ -649,7 +648,7 @@ const refreshContent = function (): void {
 	element('destination-summary', HTMLDivElement).textContent = choosingDestination === 'bombard' ? `${p?.name ?? 'Carrier'} · ${CONFIG.bombardmentCharge}s charge · neutralizes the surface` : `From ${selected.length > 1 ? `${selected.length} sources` : p?.name ?? 'selection'} · up to ${preview.troops} troops + ${preview.ships} ships`;
 	element('send-units', HTMLButtonElement).disabled = multi || preview.troops + preview.ships === 0 || matchEnded(match);
 	const warning = element('selection-warning', HTMLDivElement);
-	const carrierBlocked = p?.carrier && first !== undefined && shipsAt(world, first, p.owner === 'blue' ? 'red' : 'blue').length > 0;
+	const carrierBlocked = p?.carrier && first !== undefined && SIDES.some(function (side) { return isHostile(side, p.owner) && shipsAt(world, first, side).length > 0; });
 	warning.textContent = carrierBlocked ? `Docking blocked by hostile ships.${p?.owner === 'blue' ? ' Launching is still allowed.' : ''}` : preview.blockedSources > 0
 		? `${preview.blockedSources === 1 ? 'A selected world is' : `${preview.blockedSources} selected worlds are`} blockaded. No units can leave ${preview.blockedSources === 1 ? 'it' : 'them'}.`
 		: inspectedOnly && first !== undefined && isBlockaded(world, first) ? 'Surface blockaded by hostile ships.' : '';
@@ -696,7 +695,7 @@ const refreshContent = function (): void {
 	);
 	redCount.textContent = String(
 		all.filter(function (e) {
-			return e.components.planet.owner === 'red';
+			return isHostile(e.components.planet.owner, 'blue');
 		}).length,
 	);
 	clock.textContent = formatElapsedTime(match.time);
@@ -715,15 +714,15 @@ const refreshContent = function (): void {
 		: 'Pause action to issue orders and change production';
 	const racing = world.getResource('objectives').mode !== 'conquest';
 	const result = match.draw
-		? 'Both carriers arrived together. Draw. Restart to race again.'
-		: match.winner
+		? 'Draw. Restart to play again.'
+		: match.defeated ? 'Your last holding has fallen. Restart to try again.' : match.winner
 			? racing
-				? match.winner === 'blue' ? 'You win the carrier race. Restart to play again.' : 'Your rival wins the carrier race. Restart to try again.'
+				? match.winner === 'blue' ? 'You win the carrier race. Restart to play again.' : `${match.winner ? factionLabel(match.winner) : 'A rival'} wins the carrier race. Restart to try again.`
 				: match.winner === 'blue' ? 'No rival holdings remain. You win. Restart to play again.' : 'Your last holding has fallen. Restart to try again.'
 			: '';
 	const threat = all.find(function (entry) {
 		const attack = entry.components.planet.carrier?.bombardment;
-		return entry.components.planet.owner === 'red' && attack && world.getComponent(attack.target, 'planet')?.owner === 'blue';
+		return isHostile(entry.components.planet.owner, 'blue') && attack && world.getComponent(attack.target, 'planet')?.owner === 'blue';
 	})?.components.planet;
 	const threatTarget = threat?.carrier?.bombardment ? world.getComponent(threat.carrier.bombardment.target, 'planet') : undefined;
 	const threatWarning = threat?.carrier?.bombardment && threatTarget

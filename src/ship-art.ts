@@ -58,10 +58,14 @@ export const createShipPainter = function (ctx: CanvasRenderingContext2D): {
 	const UNIT_SHADE: Record<Side, string> = {
 		blue: '#17485b',
 		red: '#753f42',
+		green: '#285b37',
+		purple: '#51396b',
 	};
 	const UNIT_HIGHLIGHT: Record<Side, string> = {
 		blue: '#dcf7ff',
 		red: '#ffebe5',
+		green: '#e4ffe4',
+		purple: '#f2e6ff',
 	};
 	const drawWarship = function (owner: Side, zoom: number): void {
 		ctx.fillStyle = COLORS[owner];

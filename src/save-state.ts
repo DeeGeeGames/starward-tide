@@ -11,7 +11,7 @@ import type {
 	Unit,
 } from './game';
 import type { StarMap, PlanetSeed } from './maps';
-import { carrierSeeds } from './maps';
+import { carrierSeeds, mapSides } from './maps';
 import { raceDestinations } from './objectives';
 
 export const SAVE_SCHEMA_VERSION = 1;
@@ -67,8 +67,8 @@ const stockSchema = safeInteger.check(z.lte(MAX_SAVED_STOCK));
 const coordinateSchema = z.number().check(z.gte(-MAX_SAVED_COORDINATE), z.lte(MAX_SAVED_COORDINATE));
 const radiusSchema = z.number().check(z.gt(0), z.lte(MAX_SAVED_PLANET_RADIUS));
 const rateSchema = nonnegativeNumber.check(z.lte(MAX_SAVED_PRODUCTION_RATE));
-const sideSchema = z.enum(['blue', 'red']) satisfies z.ZodMiniType<Side>;
-const ownerSchema = z.enum(['blue', 'red', 'neutral']) satisfies z.ZodMiniType<Owner>;
+const sideSchema = z.enum(['blue', 'red', 'green', 'purple']) satisfies z.ZodMiniType<Side>;
+const ownerSchema = z.enum(['blue', 'red', 'green', 'purple', 'neutral']) satisfies z.ZodMiniType<Owner>;
 const productionSchema = z.enum(['troops', 'ships', 'guns']) satisfies z.ZodMiniType<Production>;
 const scenarioSchema = z.enum(['skirmish', 'blockade', 'invasion']) satisfies z.ZodMiniType<Scenario>;
 const planetSeedSchema = z.tuple([
@@ -132,6 +132,7 @@ const matchSchema = z.looseObject({
 	paused: z.boolean(),
 	winner: z.nullable(sideSchema),
 	draw: z.optional(z.boolean()),
+	defeated: z.optional(z.boolean()),
 	ai: z.boolean(),
 	aiClock: nonnegativeNumber,
 	orders: safeInteger,
@@ -184,9 +185,10 @@ const hasUniqueIds = function (
 };
 const hasSnapshotIntegrity = function (value: GameSnapshot): boolean {
 	const carriers = carrierSeeds(value.map);
-	if (value.map.mode && value.map.mode !== 'conquest' && raceDestinations(value.map).length !== (value.map.mode === 'center-race' ? 1 : 2)) return false;
-	if (value.match.draw && (value.match.winner !== null || !value.map.mode || value.map.mode === 'conquest')) return false;
-	if (value.map.carriers === true && carriers.length !== 2) return false;
+	if (value.map.mode && value.map.mode !== 'conquest' && raceDestinations(value.map).length !== (value.map.mode === 'center-race' ? 1 : mapSides(value.map).length)) return false;
+	if (value.match.draw && (value.match.winner !== null || ((!value.map.mode || value.map.mode === 'conquest') && value.planets.some(function (entry) { return entry.planet.owner !== 'neutral'; })))) return false;
+	if (value.match.defeated && (value.match.winner !== null || value.match.draw || value.planets.some(function (entry) { return entry.planet.owner === 'blue'; }))) return false;
+	if (value.map.carriers === true && carriers.length !== mapSides(value.map).length) return false;
 	if (value.planets.length !== value.map.planets.length + carriers.length) return false;
 	// filter() skips holes, as the original parser's narrowing pass did.
 	const planetRows = value.planets.filter(function () { return true; });
