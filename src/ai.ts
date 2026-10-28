@@ -4,13 +4,14 @@ import { DEFAULT_OPPONENT, DIFFICULTIES, STYLES } from './opponent';
 
 type AIDependencies = Pick<
 	typeof import('./game'),
-	'moveCarrier' | 'dispatch' | 'isBlockaded' | 'planets' | 'setProduction' | 'shipsAt' | 'units' | 'availableShips' | 'dockedShips'
+	'moveCarrier' | 'bombardPlanet' | 'dispatch' | 'isBlockaded' | 'planets' | 'setProduction' | 'shipsAt' | 'units' | 'availableShips' | 'dockedShips'
 >;
 type PlanetEntity = ReturnType<AIDependencies['planets']>[number];
 
 // Keep the usual reserve when it already wins. Raise it only when that reserve
 // would arrive short of the garrison or the blockading fleet.
 const SEND_FRACTION = 0.75;
+const CARRIER_CREW_RESERVE = 20;
 
 const distanceBetween = function (
 	a: { x: number; y: number },
@@ -53,7 +54,7 @@ const troopFraction = function (
 
 export const runAI = function (
 	world: Game,
-	{ moveCarrier, dispatch, isBlockaded, planets, setProduction, shipsAt, units, availableShips, dockedShips }: AIDependencies,
+	{ moveCarrier, bombardPlanet, dispatch, isBlockaded, planets, setProduction, shipsAt, units, availableShips, dockedShips }: AIDependencies,
 ): void {
 	const opponent = world.getResource('match').opponent ?? DEFAULT_OPPONENT;
 	const difficulty = DIFFICULTIES[opponent.difficulty];
@@ -63,9 +64,27 @@ export const runAI = function (
 	const destination = destinationFor(objectives, 'red');
 	const racing = destination !== undefined;
 	const troopSources = new Set<number>();
+	const boardingSources = new Set<number>();
+	const bombardmentTargets = new Set<number>();
 	const redPlanets = all.filter(function (entity) {
 		return entity.components.planet.owner === 'red';
 	});
+	const threats = all.filter(function (entity) {
+		const planet = entity.components.planet;
+		const target = planet.carrier?.bombardment?.target;
+		return planet.owner === 'blue' && target !== undefined &&
+			world.getComponent(target, 'planet')?.owner === 'red';
+	}).sort(function (a, b) {
+		return (b.components.planet.carrier?.bombardment?.elapsed ?? 0) -
+			(a.components.planet.carrier?.bombardment?.elapsed ?? 0) || a.id - b.id;
+	});
+	const threatIds = new Set(threats.map(function (entity) { return entity.id; }));
+	for (const source of redPlanets) {
+		const id = source.components.planet.carrier?.bombardment?.target;
+		const target = id === undefined ? undefined : world.getComponent(id, 'planet');
+		if (target && !target.carrier && target.owner !== 'red' && (target.owner !== 'neutral' || target.troops > 0) && id !== undefined)
+			bombardmentTargets.add(id);
+	}
 	const redShips = function (planetId: number): number {
 		return shipsAt(world, planetId, 'red').length;
 	};
@@ -127,6 +146,7 @@ export const runAI = function (
 			.filter(function (entity) {
 				return (
 					entity.components.planet.owner !== 'red' &&
+					!threatIds.has(entity.id) &&
 					!units(world).some(function (candidate) {
 						const unit = candidate.components.unit;
 						return (
@@ -147,7 +167,7 @@ export const runAI = function (
 						(planet.owner === 'blue' ? style.playerTargetPenalty : 0)
 					);
 				};
-				return score(a) - score(b);
+				return Number(bombardmentTargets.has(a.id)) - Number(bombardmentTargets.has(b.id)) || score(a) - score(b);
 			})[0];
 	};
 	const donors = function (
@@ -167,6 +187,8 @@ export const runAI = function (
 	};
 
 	for (const source of redPlanets) {
+		// A carrier's crew is its hull defense, not an invasion reserve.
+		if (source.components.planet.carrier) troopSources.add(source.id);
 		if (racing && source.components.planet.carrier) {
 			moveCarrier(world, source.id, destination, 'red');
 			// Keep carrier crew and escorts aboard unless they need local defense.
@@ -183,9 +205,89 @@ export const runAI = function (
 			continue;
 		}
 		const planet = source.components.planet;
+		if (planet.carrier && !racing) {
+			const current = all.find(function (entity) {
+				return entity.id === planet.carrier?.bombardment?.target;
+			});
+			const useful = function (entity: PlanetEntity): boolean {
+				const target = entity.components.planet;
+				return !target.carrier && target.owner !== 'red' &&
+					(target.owner !== 'neutral' || target.troops > 0);
+			};
+			const target = current && useful(current) ? current : all
+				.filter(function (entity) {
+					return useful(entity) && inboundCargo(entity.id) === 0 && !bombardmentTargets.has(entity.id);
+				})
+				.sort(function (a, b) {
+					const score = function (entity: PlanetEntity): number {
+						const target = entity.components.planet;
+						// Large garrisons make bombardment more valuable, not harder.
+						return distanceBetween(planet, target) - target.troops * 5 +
+							(target.owner === 'blue' ? style.playerTargetPenalty : 0);
+					};
+					return score(a) - score(b) || a.id - b.id;
+				})[0];
+			if (target && (current === target || bombardPlanet(world, source.id, target.id, 'red'))) {
+				bombardmentTargets.add(target.id);
+				const resistance = blueShips(target.id) +
+					(target.components.planet.owner === 'blue' ? target.components.planet.guns : 0);
+				const ships = availableShips(world, source.id, 'red').length;
+				const need = Math.max(1, Math.ceil(resistance * difficulty.fleetMargin) + 1) -
+					redShips(target.id) - inboundShips(target.id);
+				if (resistance > 0 && need > 0 && ships >= need) {
+					const fraction = shipFraction(ships, need);
+					if (fraction !== undefined) dispatch(world, [source.id], target.id, fraction, 'ships', 'red');
+				}
+				setProduction(world, [source.id], resistance > 0 ? 'ships' : 'troops', 'red');
+			}
+		}
 		if (!planet.carrier && planet.guns < style.platforms) {
 			setProduction(world, [source.id], 'guns', 'red');
 			troopSources.add(source.id);
+		}
+	}
+
+	// Boarding is the direct answer to a player carrier approaching or charging
+	// against our worlds. Keep race carriers on their destination route.
+	for (const target of threats) {
+		const minimum = target.components.planet.troops + difficulty.troopMargin - inboundCargo(target.id);
+		const eligible = redPlanets.filter(function (source) {
+			return !source.components.planet.carrier && canLaunch(source) && !boardingSources.has(source.id);
+		}).sort(byDistance(target));
+		const cargo = eligible.reduce(function (sum, source) { return sum + source.components.planet.troops; }, 0);
+		if (cargo < minimum) continue;
+		// Include docked defenders: the player can launch them during the approach.
+		const resistance = availableShips(world, target.id, 'blue').length;
+		const need = Math.max(0, Math.ceil(resistance * difficulty.fleetMargin) + Number(resistance > 0) -
+			redShips(target.id) - inboundShips(target.id));
+		const escorts = redPlanets.filter(function (source) {
+			return !(racing && source.components.planet.carrier) && canLaunch(source);
+		}).sort(byDistance(target));
+		const ships = escorts.reduce(function (sum, source) { return sum + availableShips(world, source.id, 'red').length; }, 0);
+		if (ships < need) {
+			for (const source of eligible) {
+				setProduction(world, [source.id], 'ships', 'red');
+				troopSources.add(source.id);
+			}
+			continue;
+		}
+		let remainingShips = need;
+		for (const source of escorts) {
+			if (remainingShips <= 0) break;
+			const have = availableShips(world, source.id, 'red').length;
+			const fraction = shipFraction(have, Math.min(have, remainingShips));
+			if (fraction !== undefined) remainingShips -= dispatch(world, [source.id], target.id, fraction, 'ships', 'red');
+		}
+		let remainingCargo = minimum;
+		for (const source of eligible) {
+			if (remainingCargo <= 0) break;
+			const troops = source.components.planet.troops;
+			const fraction = troopFraction(troops, Math.min(troops, remainingCargo));
+			if (fraction === undefined) continue;
+			dispatch(world, [source.id], target.id, fraction, 'troops', 'red');
+			remainingCargo -= Math.floor(troops * fraction);
+			troopSources.add(source.id);
+			boardingSources.add(source.id);
 		}
 	}
 
@@ -231,6 +333,8 @@ export const runAI = function (
 		.filter(function (entity) {
 			return (
 				entity.components.planet.owner !== 'red' &&
+				!bombardmentTargets.has(entity.id) &&
+				!threatIds.has(entity.id) &&
 				redShips(entity.id) > 0 &&
 				!landingBlocked(entity)
 			);
@@ -342,6 +446,13 @@ export const runAI = function (
 			troopFraction(planet.troops, minimumTroops) !== undefined;
 		const committedShips = redShips(target.id) + inboundShips(target.id);
 		const requiredShips = Math.max(5, desiredShips);
+		if (bombardmentTargets.has(target.id)) {
+			// Do not bank troops for a garrison that the carrier will erase.
+			setProduction(world, [source.id], resistance > committedShips ? 'ships' : 'troops', 'red');
+			if (resistance > 0 && committedShips < requiredShips && ships + committedShips >= requiredShips)
+				dispatch(world, [source.id], target.id, SEND_FRACTION, 'ships', 'red');
+			continue;
+		}
 		const needsEscort =
 			resistance > 0 && ships + committedShips < requiredShips;
 		// If the garrison grows at least as fast as this source, secure orbit
@@ -371,5 +482,20 @@ export const runAI = function (
 			dispatch(world, [source.id], target.id, fraction, 'combined', 'red');
 		else if (ships >= Math.max(5, desiredShips))
 			dispatch(world, [source.id], target.id, SEND_FRACTION, 'ships', 'red');
+	}
+	// A surviving carrier must be able to rebuild its planetary economy without
+	// sending its defensive crew away. Races keep all crew aboard as before.
+	if (racing || redPlanets.some(function (entity) { return !entity.components.planet.carrier; })) return;
+	for (const source of redPlanets) {
+		const crew = source.components.planet.troops;
+		const surplus = crew - CARRIER_CREW_RESERVE;
+		if (!source.components.planet.carrier || surplus <= 0 || !canLaunch(source)) continue;
+		const target = all.filter(function (entity) {
+			const planet = entity.components.planet;
+			return !planet.carrier && planet.owner === 'neutral' && planet.troops === 0 &&
+				!landingBlocked(entity) && inboundCargo(entity.id) === 0;
+		}).sort(byDistance(source))[0];
+		// Center the fraction in the floor-rounding interval for exactly the surplus.
+		if (target) dispatch(world, [source.id], target.id, (surplus + 0.5) / crew, 'troops', 'red');
 	}
 };

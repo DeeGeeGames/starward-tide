@@ -1,7 +1,7 @@
 import ECSpresso from 'ecspresso';
 import { createRenderer2DPlugin, createSpriteComponents } from 'ecspresso/plugins/rendering/renderer2D';
 import { Application, Container, Graphics, Sprite, Texture, CanvasSource } from 'pixi.js';
-import { COLORS, type Owner, type Side } from './config';
+import { COLORS, CONFIG, type Owner, type Side } from './config';
 import type { Camera } from './camera';
 import type { StarMap } from './maps';
 import { isBlockaded, planets, shipsAt, orderUnits, unitPoint } from './game';
@@ -219,6 +219,16 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 		const match = world.getResource('match');
 		const zoom = camera.scale / fitScale;
 		for (const { id, components: { planet: p } } of planets(world)) {
+			const bombardment = p.carrier?.bombardment;
+			const target = bombardment ? world.getComponent(bombardment.target, 'planet') : undefined;
+			if (bombardment && target) {
+				const charging = !p.carrier?.destination;
+				const progress = bombardment.elapsed / CONFIG.bombardmentCharge;
+				routes.moveTo(p.x, p.y).lineTo(target.x, target.y).stroke({ color: '#ffd083', alpha: charging ? 0.65 : 0.25, width: (charging ? 2 : 1) / camera.scale });
+				routes.circle(target.x, target.y, target.radius + 10 / camera.scale).stroke({ color: '#ffd083', alpha: 0.5, width: 1 / camera.scale });
+				if (progress > 0) routes.moveTo(target.x, target.y - target.radius - 10 / camera.scale)
+					.arc(target.x, target.y, target.radius + 10 / camera.scale, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress).stroke({ color: '#ffd083', width: 4 / camera.scale });
+			}
 			if (p.carrier?.destination) {
 				routes.moveTo(p.x, p.y).lineTo(p.carrier.destination.x, p.carrier.destination.y).stroke({ color: COLORS[p.owner], alpha: 0.6, width: 1.5 / camera.scale });
 				routes.circle(p.carrier.destination.x, p.carrier.destination.y, 5 / camera.scale).stroke({ color: COLORS[p.owner], width: 1 / camera.scale });

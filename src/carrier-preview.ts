@@ -3,7 +3,7 @@ import { CONFIG } from './config';
 import { createGame, dispatch, moveCarrier, planets, spawnShip, type Game } from './game';
 import { LAB_MAP, type StarMap } from './maps';
 
-export type CarrierPreview = 'intercept' | 'blockade' | 'capture';
+export type CarrierPreview = 'intercept' | 'blockade' | 'capture' | 'bombardment';
 export const createCarrierPreview = async function (scenario: CarrierPreview): Promise<{ game: Game; map: StarMap }> {
 	const map = { ...LAB_MAP, carriers: true };
 	const game = await createGame('skirmish', map);
@@ -24,6 +24,14 @@ export const createCarrierPreview = async function (scenario: CarrierPreview): P
 		spawnShip(game, host.id, 'red');
 		game.spawn({ unit: { owner: 'blue', kind: 'transport', x: p.x, y: p.y, target: host.id, phase: 'orbit', hp: CONFIG.transportHealth, cargo: 10, age: 0 } });
 		moveCarrier(game, host.id, { x: 900, y: 620 });
+	} else if (scenario === 'bombardment') {
+		sol.components.planet.owner = 'red';
+		sol.components.planet.troops = 80;
+		sol.components.planet.guns = 3;
+		p.x = sol.components.planet.x + p.radius + sol.components.planet.radius + CONFIG.arrivalClearance;
+		p.y = sol.components.planet.y;
+		spawnShip(game, sol.id, 'red');
+		spawnShip(game, sol.id, 'red');
 	} else {
 		p.troops = 5;
 		dispatch(game, [host.id], sol.id, 1 / 3, 'ships');

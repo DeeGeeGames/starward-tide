@@ -31,6 +31,7 @@ import type { GameSnapshot } from './save-state';
 export interface Carrier {
 	destination: { x: number; y: number } | null;
 	heading: number;
+	bombardment?: { target: number; elapsed: number };
 }
 export interface Planet {
 	carrier?: Carrier;
@@ -194,6 +195,13 @@ const restoreSnapshot = function (world: Game, snapshot: GameSnapshot): void {
 		planetIds.set(saved.id, restored.id);
 		entityIds.set(saved.id, restored.id);
 	}
+	for (const entity of planets(world)) {
+		const bombardment = entity.components.planet.carrier?.bombardment;
+		if (!bombardment) continue;
+		const target = planetIds.get(bombardment.target);
+		if (target === undefined) throw new Error('Saved bombardment target is missing');
+		bombardment.target = target;
+	}
 	for (const saved of snapshot.units) {
 		const target = planetIds.get(saved.unit.target);
 		if (target === undefined) throw new Error('Saved unit target is missing');
@@ -287,6 +295,39 @@ export const moveCarrier = function (world: Game, id: number, destination: { x: 
 	if (destination.x < 0 || destination.y < 0 || destination.x > bounds.width || destination.y > bounds.height) return false;
 	if (!p?.carrier || p.owner !== side || matchEnded(world.getResource('match')) || !Number.isFinite(destination.x) || !Number.isFinite(destination.y)) return false;
 	p.carrier.destination = { x: destination.x, y: destination.y };
+	delete p.carrier.bombardment;
+	return true;
+};
+// Approach the near side of a world, keeping the carrier hull clear of it.
+export const bombardmentOrbit = function (carrier: Planet, target: Planet): { x: number; y: number } {
+	const dx = carrier.x - target.x, dy = carrier.y - target.y;
+	const distance = Math.hypot(dx, dy);
+	const reach = carrier.radius + target.radius + CONFIG.arrivalClearance;
+	return { x: target.x + (distance > 0 ? dx / distance : 1) * reach,
+		y: target.y + (distance > 0 ? dy / distance : 0) * reach };
+};
+export const bombardPlanet = function (world: Game, id: number, targetId: number, side: Side = 'blue'): boolean {
+	const carrier = world.getComponent(id, 'planet');
+	const target = world.getComponent(targetId, 'planet');
+	if (!carrier?.carrier || carrier.owner !== side || !target || target.carrier || target.owner === side ||
+		(target.owner === 'neutral' && target.troops === 0) || matchEnded(world.getResource('match'))) return false;
+	const near = bombardmentOrbit(carrier, target);
+	const reach = carrier.radius + target.radius + CONFIG.arrivalClearance;
+	const bounds = world.getResource('mapBounds');
+	const approach = [near, { x: target.x + reach, y: target.y }, { x: target.x - reach, y: target.y },
+		{ x: target.x, y: target.y + reach }, { x: target.x, y: target.y - reach }]
+		.filter(function (point) { return point.x >= 0 && point.y >= 0 && point.x <= bounds.width && point.y <= bounds.height; })
+		.sort(function (a, b) { return Math.hypot(a.x - carrier.x, a.y - carrier.y) - Math.hypot(b.x - carrier.x, b.y - carrier.y); })[0];
+	if (!approach || !moveCarrier(world, id, approach, side)) return false;
+	carrier.carrier.bombardment = { target: targetId, elapsed: 0 };
+	notify(world, `${carrier.name} approaching ${target.name} to bombard`, side);
+	return true;
+};
+export const cancelBombardment = function (world: Game, id: number, side: Side = 'blue'): boolean {
+	const carrier = world.getComponent(id, 'planet');
+	if (!carrier?.carrier?.bombardment || carrier.owner !== side || matchEnded(world.getResource('match'))) return false;
+	delete carrier.carrier.bombardment;
+	carrier.carrier.destination = null;
 	return true;
 };
 export const unitPoint = function (
@@ -615,6 +656,7 @@ export const cancelOrder = function (
 
 const aiDependencies = {
 	moveCarrier,
+	bombardPlanet,
 	dispatch,
 	isBlockaded,
 	planets,

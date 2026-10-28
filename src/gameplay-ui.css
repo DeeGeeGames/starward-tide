@@ -83,6 +83,9 @@
 #app .text-button { padding: 0 3px; background: transparent; border-color: transparent; color: #b8ced4; font-size: 12px; }
 #app .selection-warning { border: 1px solid #765447; background: #362c28; border-radius: 7px; padding: 12px; color: #f3bba4; font-size: 12px; margin-top: 16px; line-height: 1.5; }
 #app #launch-carrier { width: 100%; margin: 10px 0 0; font-size: 12px; }
+#app #bombard-planet, #app #cancel-bombardment { width: 100%; margin-top: 10px; font-size: 12px; }
+#app .bombardment-label { position: absolute; left: 50%; top: calc(50% + var(--diameter) / 2 + 42px / var(--map-scale, 1)); transform: translateX(-50%); color: #ffd083; background: #161108ed; padding: 3px 5px; border: 1px solid #a4753b; border-radius: 4px; white-space: nowrap; font-size: calc(11px / var(--map-scale, 1)); pointer-events: none; }
+#app .planet.carrier .bombardment-label { top: calc(50% + var(--diameter) * .75 + 68px / var(--map-scale, 1)); }
 #app #save-status { position: absolute; bottom: max(18px, env(safe-area-inset-bottom)); left: var(--hud-side); font-size: 11px; color: #92b0a6; max-width: calc(100% - 370px); pointer-events: none; }
 #app #save-status[data-state='error'] { padding: 10px 14px; background: #382624; color: #ffc1b5; border: 1px solid #8e5952; border-radius: 8px; max-width: min(540px, calc(100% - 32px)); }
 #app #banner { position: absolute; left: 50%; transform: translateX(-50%); bottom: max(20px, env(safe-area-inset-bottom)); max-width: calc(100% - 40px); border: 1px solid #3b625c; background: #102923f5; color: #c7e8df; padding: 12px 18px; border-radius: 8px; font-size: 13px; text-align: center; pointer-events: none; }
@@ -203,7 +206,7 @@
 	#app #planet-panel,
 	#app #orders-drawer,
 	#app #field-guide { width: 280px; max-height: calc(100dvh - var(--panel-top) - 12px); }
-	#app #banner { max-width: calc(100% - 330px); left: 16px; transform: none; bottom: 14px; }
+	#app #banner { max-width: calc(100% - 330px); left: 16px; transform: none; top: auto; bottom: 14px; }
 	#app #save-status { display: none; }
 	#app #save-status[data-state='error'] { display: block; top: calc(var(--hud-top) + 74px); bottom: auto; max-width: calc(100% - 330px); }
 }

@@ -24,6 +24,8 @@ import {
 	dockedShips,
 	availableShips,
 	moveCarrier,
+	bombardPlanet,
+	cancelBombardment,
 	launchCarrierShips,
 	previewDispatch,
 	dispatch,
@@ -100,6 +102,7 @@ interface PlanetView {
 	orbit: HTMLSpanElement;
 	mark: HTMLSpanElement;
 	progress: HTMLElement;
+	bombardment: HTMLSpanElement;
 }
 type GamePace = 0.5 | 1 | 2;
 interface GameInstallation {
@@ -154,7 +157,7 @@ let speed: GamePace = 1;
 let busy = false;
 let disposed = false;
 let raf = 0;
-let choosingDestination = false;
+let choosingDestination: false | 'dispatch' | 'bombard' = false;
 let productionExpanded = false;
 let sheetCollapsed = false;
 let lastNoticeKey = '';
@@ -312,6 +315,16 @@ const sendToPlanet = function (id: number): void {
 		return;
 	const p = world.getComponent(id, 'planet');
 	if (!p) return;
+	if (choosingDestination === 'bombard') {
+		const source = selected.length === 1 ? selected[0] : undefined;
+		if (source !== undefined && bombardPlanet(world, source, id)) {
+			feedback(`Carrier approaching ${p.name} to bombard`);
+			cancelMapCommand();
+			queueAutosave();
+		} else feedback('Choose a hostile or defended neutral planet. Carriers cannot be bombarded.');
+		refresh();
+		return;
+	}
 	if (multi) feedback('Finish source selection before sending units.');
 	else if (selected.length === 0)
 		feedback('Select a blue planet or orbital ring first.');
@@ -367,24 +380,26 @@ const mountPlanets = function (): void {
 		button.style.left = `${p.x}px`;
 		button.style.top = `${p.y}px`;
 		button.innerHTML =
-			'<span class="surface"></span><span class="count"></span><span class="name"></span><span class="orbit-count"></span><span class="production-mark"></span><span class="production-progress"><i></i></span>';
+			'<span class="surface"></span><span class="count"></span><span class="name"></span><span class="orbit-count"></span><span class="production-mark"></span><span class="production-progress"><i></i></span><span class="bombardment-label" hidden></span>';
 		if (p.carrier) button.querySelector('.surface')?.append(createCarrierArtwork());
 		const count = button.querySelector('.count');
 		const name = button.querySelector('.name');
 		const orbit = button.querySelector('.orbit-count');
 		const mark = button.querySelector('.production-mark');
 		const progress = button.querySelector('i');
+		const bombardment = button.querySelector('.bombardment-label');
 		if (
 			!(count instanceof HTMLSpanElement) ||
 			!(name instanceof HTMLSpanElement) ||
 			!(orbit instanceof HTMLSpanElement) ||
 			!(mark instanceof HTMLSpanElement) ||
-			!(progress instanceof HTMLElement)
+			!(progress instanceof HTMLElement) ||
+			!(bombardment instanceof HTMLSpanElement)
 		)
 			throw new Error('Planet template incomplete');
 		name.textContent = p.name;
 		planetLayer.append(button);
-		views.set(id, { button, count, name, orbit, mark, progress });
+		views.set(id, { button, count, name, orbit, mark, progress, bombardment });
 	}
 };
 const raceDestinationButton = document.createElement('button');
@@ -413,6 +428,33 @@ launchCarrierButton.addEventListener('click', function () {
 	const count = launchCarrierShips(world, id, fraction);
 	feedback(`${count} ships launched into local space`);
 	if (count > 0) queueAutosave();
+	refresh();
+});
+const bombardButton = document.createElement('button');
+bombardButton.id = 'bombard-planet';
+bombardButton.textContent = 'Bombard planet';
+bombardButton.hidden = true;
+dispatchControls.append(bombardButton);
+bombardButton.addEventListener('click', function () {
+	if (busy || multi || selected.length !== 1 || matchEnded(world.getResource('match'))) return;
+	choosingDestination = 'bombard';
+	mapInput.cancel();
+	drawer.close();
+	fieldGuide.hidden = true;
+	refresh();
+	updateLayout();
+	board.focus();
+});
+const cancelBombardButton = document.createElement('button');
+cancelBombardButton.id = 'cancel-bombardment';
+cancelBombardButton.textContent = 'Cancel bombardment';
+cancelBombardButton.hidden = true;
+dispatchControls.append(cancelBombardButton);
+cancelBombardButton.addEventListener('click', function () {
+	const id = selected.length === 1 ? selected[0] : undefined;
+	if (id === undefined || busy || !cancelBombardment(world, id)) return;
+	feedback('Bombardment cancelled');
+	queueAutosave();
 	refresh();
 });
 const labelBounds = function (element: HTMLElement): LabelBounds {
@@ -497,6 +539,18 @@ const refreshContent = function (): void {
 			'aria-label',
 			`${p.name}, ${p.owner === 'blue' ? 'your' : p.owner === 'red' ? 'rival' : 'neutral'} ${p.carrier ? 'carrier' : 'planet'}, ${docked} docked ships, ${p.troops} troops, ${blue} your ships, ${red} rival ships, ${guns} defense platforms${blocked ? ', blockaded' : ''}`,
 		);
+		const attack = p.carrier?.bombardment;
+		const incoming = all.find(function (entry) { return entry.components.planet.carrier?.bombardment?.target === id; });
+		const incomingAttack = incoming?.components.planet.carrier?.bombardment;
+		const activeAttack = attack ?? incomingAttack;
+		const attackingCarrier = attack ? p : incoming?.components.planet;
+		const attackTarget = attack ? world.getComponent(attack.target, 'planet') : p;
+		const countdown = activeAttack ? `${Math.ceil(CONFIG.bombardmentCharge - activeAttack.elapsed)}s` : '';
+		view.bombardment.hidden = !activeAttack;
+		view.bombardment.textContent = activeAttack
+			? attackingCarrier?.carrier?.destination ? (attack ? `Approaching ${attackTarget?.name ?? 'target'}` : 'Bombardment approaching')
+				: `${attack ? 'Bombarding' : 'BOMBARDMENT'} · ${countdown}` : '';
+		if (activeAttack) view.button.setAttribute('aria-label', `${view.button.getAttribute('aria-label')}, ${view.bombardment.textContent}`);
 		view.count.textContent = String(p.troops);
 		view.orbit.replaceChildren();
 		for (const [side, count] of [
@@ -515,10 +569,12 @@ const refreshContent = function (): void {
 		view.progress.style.width = `${(p.progress / CONFIG.cost[p.production]) * 100}%`;
 	}
 	if (choosingDestination && (selected.length === 0 || matchEnded(match))) cancelMapCommand();
-	app.classList.toggle('is-dispatching', choosingDestination);
+	app.classList.toggle('is-dispatching', Boolean(choosingDestination));
 	app.classList.toggle('sheet-collapsed', sheetCollapsed);
 	element('destination-prompt', HTMLDivElement).hidden = !choosingDestination;
 	element('destination-summary', HTMLDivElement).hidden = !choosingDestination;
+	element('destination-instruction', HTMLSpanElement).textContent = choosingDestination === 'bombard'
+		? 'Choose a planet to bombard' : 'Choose a destination on the map';
 	planetPanel.hidden = selected.length === 0 && inspected === undefined;
 	dispatchControls.hidden = selected.length === 0;
 	const ownedSelected = selected.flatMap(function (id) {
@@ -563,6 +619,11 @@ const refreshContent = function (): void {
 	element('selection-kind', HTMLElement).textContent = selected.length > 1 ? 'YOUR SOURCES' :
 		`${p?.owner === 'blue' ? 'YOUR' : p?.owner === 'red' ? 'RIVAL' : 'NEUTRAL'} ${p?.carrier ? 'CARRIER' : 'WORLD'}`;
 	selectionInfo.textContent = carrier && p?.owner === 'blue' ? 'Click empty space to move this carrier.' : shipsOnly ? `Your ships in orbit · ${p?.carrier ? 'carrier' : 'surface'} belongs to another faction.` : '';
+	if (p?.carrier?.bombardment) {
+		const target = world.getComponent(p.carrier.bombardment.target, 'planet');
+		selectionInfo.textContent = p.carrier.destination ? `Approaching ${target?.name ?? 'target'} to bombard.`
+			: `Bombarding ${target?.name ?? 'target'} · ${Math.ceil(CONFIG.bombardmentCharge - p.carrier.bombardment.elapsed)}s remaining.${p.owner === 'blue' ? ' Moving cancels the charge.' : ''}`;
+	}
 	selectionInfo.hidden = selectionInfo.textContent === '';
 	const friendlyOrbit = first === undefined ? 0 : shipsAt(world, first, 'blue').length;
 	const rivalOrbit = first === undefined ? 0 : shipsAt(world, first, 'red').length;
@@ -585,7 +646,7 @@ const refreshContent = function (): void {
 	element('sheet-toggle', HTMLButtonElement).textContent = sheetCollapsed ? '⌃' : '⌄';
 	const preview = previewDispatch(world, selected, fraction, shipsOnly ? 'ships' : filter);
 	element('dispatch-preview', HTMLParagraphElement).textContent = `Up to ${preview.troops} troops + ${preview.ships} ships`;
-	element('destination-summary', HTMLDivElement).textContent = `From ${selected.length > 1 ? `${selected.length} sources` : p?.name ?? 'selection'} · up to ${preview.troops} troops + ${preview.ships} ships`;
+	element('destination-summary', HTMLDivElement).textContent = choosingDestination === 'bombard' ? `${p?.name ?? 'Carrier'} · ${CONFIG.bombardmentCharge}s charge · neutralizes the surface` : `From ${selected.length > 1 ? `${selected.length} sources` : p?.name ?? 'selection'} · up to ${preview.troops} troops + ${preview.ships} ships`;
 	element('send-units', HTMLButtonElement).disabled = multi || preview.troops + preview.ships === 0 || matchEnded(match);
 	const warning = element('selection-warning', HTMLDivElement);
 	const carrierBlocked = p?.carrier && first !== undefined && shipsAt(world, first, p.owner === 'blue' ? 'red' : 'blue').length > 0;
@@ -612,6 +673,10 @@ const refreshContent = function (): void {
 	raceDestinationButton.hidden = !destinationFor(world.getResource('objectives'), 'blue') || selected.length !== 1 || !p?.carrier || p.owner !== 'blue';
 	raceDestinationButton.disabled = matchEnded(match);
 	launchCarrierButton.hidden = !p?.carrier || p.owner !== 'blue' || selected.length !== 1;
+	bombardButton.hidden = launchCarrierButton.hidden;
+	bombardButton.disabled = matchEnded(match) || multi;
+	cancelBombardButton.hidden = launchCarrierButton.hidden || !p?.carrier?.bombardment;
+	cancelBombardButton.disabled = matchEnded(match);
 	launchCarrierButton.disabled = matchEnded(match) || first === undefined || dockedShips(world, first, 'blue').length === 0;
 	if (carrier) dispatchInfo.textContent = 'Docked ships can launch';
 	instruction.textContent = multi
@@ -654,11 +719,20 @@ const refreshContent = function (): void {
 		: match.winner
 			? racing
 				? match.winner === 'blue' ? 'You win the carrier race. Restart to play again.' : 'Your rival wins the carrier race. Restart to try again.'
-				: match.winner === 'blue' ? 'All rival holdings captured. You win. Restart to play again.' : 'Your last holding has fallen. Restart to try again.'
+				: match.winner === 'blue' ? 'No rival holdings remain. You win. Restart to play again.' : 'Your last holding has fallen. Restart to try again.'
 			: '';
+	const threat = all.find(function (entry) {
+		const attack = entry.components.planet.carrier?.bombardment;
+		return entry.components.planet.owner === 'red' && attack && world.getComponent(attack.target, 'planet')?.owner === 'blue';
+	})?.components.planet;
+	const threatTarget = threat?.carrier?.bombardment ? world.getComponent(threat.carrier.bombardment.target, 'planet') : undefined;
+	const threatWarning = threat?.carrier?.bombardment && threatTarget
+		? threat.carrier.destination ? `Enemy carrier approaching ${threatTarget.name} to bombard`
+			: `${threatTarget.name} under bombardment · ${Math.ceil(CONFIG.bombardmentCharge - threat.carrier.bombardment.elapsed)}s · Board ${threat.name} to stop it`
+		: '';
 	bannerMessage.textContent =
 		result ||
-		presentation.notice() || (match.paused ? 'Paused · commands remain available' : racing ? GAME_MODES[world.getResource('objectives').mode].detail : '');
+		threatWarning || presentation.notice() || (match.paused ? 'Paused · commands remain available' : racing ? GAME_MODES[world.getResource('objectives').mode].detail : '');
 	banner.style.display = bannerMessage.textContent ? 'block' : 'none';
 	const key = match.notices
 		.map(function (n) {
@@ -1071,7 +1145,7 @@ const cancelDispatch = function (): void {
 };
 element('send-units', HTMLButtonElement).addEventListener('click', function () {
 	if (busy || multi || selected.length === 0 || matchEnded(world.getResource('match'))) return;
-	choosingDestination = true;
+	choosingDestination = 'dispatch';
 	mapInput.cancel();
 	drawer.close();
 	fieldGuide.hidden = true;
@@ -1287,7 +1361,7 @@ if (diagnosticsEnabled) {
 		},
 		report: function (): DiagnosticsReport | undefined { return diagnostics?.report(); },
 		reset: function (): void { diagnostics?.reset(); },
-		carrierPreview: async function (scenario: 'intercept' | 'blockade' | 'capture'): Promise<void> {
+		carrierPreview: async function (scenario: import('./carrier-preview').CarrierPreview): Promise<void> {
 			if (disposed || busy || !profileRepository) throw new Error('Carrier preview requires idle local storage');
 			if (!(await saveBeforeLeavingGame())) throw new Error('Current conquest could not be saved');
 			busy = true;

@@ -1,5 +1,5 @@
 import * as z from 'zod/mini';
-import type { Owner, Production, Scenario, Side } from './config';
+import { CONFIG, type Owner, type Production, type Scenario, type Side } from './config';
 import type {
 	Departure,
 	Carrier,
@@ -89,6 +89,10 @@ const mapSchema = z.looseObject({
 export const carrierSchema = z.strictObject({
 	destination: z.nullable(z.strictObject({ x: nonnegativeNumber, y: nonnegativeNumber })),
 	heading: z.number(),
+	bombardment: z.optional(z.strictObject({
+		target: idSchema,
+		elapsed: nonnegativeNumber.check(z.lt(CONFIG.bombardmentCharge)),
+	})),
 }) satisfies z.ZodMiniType<Carrier>;
 const planetSchema = z.looseObject({
 	name: z.string(),
@@ -218,6 +222,13 @@ const hasSnapshotIntegrity = function (value: GameSnapshot): boolean {
 	const planetsById = new Map(planetRows.map(function (entry) {
 		return [entry.id, entry.planet] as const;
 	}));
+	if (planetRows.some(function ({ planet }) {
+		const bombardment = planet.carrier?.bombardment;
+		if (!bombardment) return false;
+		const target = planetsById.get(bombardment.target);
+		return !target || Boolean(target.carrier) || target.owner === planet.owner ||
+			(target.owner === 'neutral' && target.troops === 0);
+	})) return false;
 	const planetIds = new Set(planetRows.map(function (entry) {
 		return entry.id;
 	}));

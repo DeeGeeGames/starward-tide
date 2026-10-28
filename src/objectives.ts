@@ -3,7 +3,7 @@ import type { Point } from './camera';
 import { carrierSeeds, type StarMap } from './maps';
 
 export const GAME_MODES = {
-	conquest: { label: 'Conquest', detail: 'Capture every rival world and carrier.' },
+	conquest: { label: 'Conquest', detail: 'Leave your rival with no worlds or carriers.' },
 	'center-race': { label: 'Center race', detail: 'Reach the shared destination near the middle with a carrier before your rival.' },
 	'crossing-race': { label: 'Crossing race', detail: 'Get a carrier to your destination near the rival start. Stop their carrier from reaching theirs.' },
 } as const;

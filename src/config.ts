@@ -12,6 +12,7 @@ export const CONFIG = {
 	arrivalClearance: 22,
 	engagementRange: 48,
 	arrivalGrace: 0.75,
+	bombardmentCharge: 20,
 	productionRateMultiplier: 0.125,
 	cost: { troops: 1, ships: 6, guns: 5 },
 	aiInterval: 2.8,

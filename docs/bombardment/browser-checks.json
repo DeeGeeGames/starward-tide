@@ -1,0 +1,12 @@
+{
+  "environment": "Headless Chromium, production build, isolated browser context, service workers blocked; fixture places carrier beside a defended world; commands use normal UI",
+  "checks": [
+    "Desktop: pointer command, keyboard target, visible countdown/progress, platforms/ships do not stop charge",
+    "390x844: charge warning and cancel control reachable, pause freezes countdown",
+    "844x390: charge warning and cancel control reachable, pause freezes countdown",
+    "667x320: charge warning and cancel control reachable, pause freezes countdown",
+    "Manual save/reload/Continue restores partial charge, target and paused countdown",
+    "Full live charge fires through 2 rival ships and 3 platforms: Sol neutral with 0 troops, orbital forces survive"
+  ],
+  "errors": []
+}
