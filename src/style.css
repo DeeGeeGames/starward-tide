@@ -230,3 +230,55 @@ canvas,
 	right: calc(50% - var(--diameter) * 0.75 - 5px);
 	bottom: calc(50% - var(--diameter) * 0.75 + 1px);
 }
+
+.race-destination {
+	position: absolute;
+	transform: translate(-50%, -50%);
+	border: 3px dashed var(--destination-color);
+	border-radius: 50%;
+	background: color-mix(in srgb, var(--destination-color) 14%, transparent);
+	color: var(--destination-color);
+	pointer-events: none;
+}
+.race-destination::after {
+	content: '+';
+	position: absolute;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	font-size: 28px;
+}
+.race-destination > span {
+	transform-origin: bottom center;
+	position: absolute;
+	bottom: calc(100% + 12px);
+	left: 50%;
+	transform: translateX(-50%) scale(calc(1 / var(--map-scale, 1)));
+	white-space: nowrap;
+	padding: 4px 8px;
+	background: #080f19e8;
+	border: 1px solid var(--destination-color);
+	border-radius: 4px;
+	font-size: 14px;
+}
+
+.race-destination > span[data-placement='below'] {
+	top: calc(100% + 12px);
+	bottom: auto;
+	transform-origin: top center;
+}
+.race-destination > span[data-placement='right'] {
+	top: 50%;
+	bottom: auto;
+	left: calc(100% + 12px);
+	transform: translateY(-50%) scale(calc(1 / var(--map-scale, 1)));
+	transform-origin: left center;
+}
+.race-destination > span[data-placement='left'] {
+	top: 50%;
+	bottom: auto;
+	left: auto;
+	right: calc(100% + 12px);
+	transform: translateY(-50%) scale(calc(1 / var(--map-scale, 1)));
+	transform-origin: right center;
+}

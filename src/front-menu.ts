@@ -1,3 +1,4 @@
+import { GAME_MODES, isGameMode, raceDestinations, type GameMode } from './objectives';
 import { createCarrierArtwork } from './carrier-art';
 import ECSpresso from 'ecspresso';
 import { COLORS } from './config';
@@ -36,11 +37,12 @@ const svgElement = function (
 const freshMap = function (
 	size: MapSize,
 	carriersEnabled = false,
+	mode: GameMode = 'conquest',
 ): StarMap {
 	const seed = crypto.getRandomValues(new Uint32Array(1))[0];
 	if (seed === undefined) throw new Error('Could not generate a map seed');
 	const map = generateMap(size, seed);
-	return carriersEnabled ? { ...map, carriers: true } : map;
+	return { ...map, carriers: carriersEnabled || mode !== 'conquest', mode };
 };
 
 const initialState = function (): Record<string, never> {
@@ -113,6 +115,10 @@ export const createFrontMenu = async function (options: {
 	styleSelect.value = 'expansionist';
 	const detail = element('size-detail', HTMLParagraphElement);
 	const carrierToggle = element('carriers-toggle', HTMLInputElement);
+	const modeSelect = element('game-mode', HTMLSelectElement);
+	const modeDetail = element('mode-detail', HTMLParagraphElement);
+	let mode: GameMode = 'conquest';
+	modeSelect.value = mode;
 	const preview = document.getElementById('map-preview');
 	const stars = document.getElementById('stars');
 	if (!(preview instanceof SVGElement) || !(stars instanceof SVGElement))
@@ -155,7 +161,8 @@ export const createFrontMenu = async function (options: {
 			!selected;
 		start.disabled = !profileState.available || !selected || starting;
 		for (const button of sizeButtons) button.disabled = starting;
-		carrierToggle.disabled = starting;
+		carrierToggle.disabled = starting || mode !== 'conquest';
+		modeSelect.disabled = starting;
 		difficultySelect.disabled = starting;
 		styleSelect.disabled = starting;
 		element('reroll', HTMLButtonElement).disabled = starting;
@@ -207,6 +214,9 @@ export const createFrontMenu = async function (options: {
 	};
 	const renderPreview = function (): void {
 		const carriers = carrierSeeds(map);
+		modeDetail.textContent = GAME_MODES[mode].detail;
+		carrierToggle.checked = mode !== 'conquest' || carriersEnabled;
+		carrierToggle.disabled = starting || mode !== 'conquest';
 		preview.setAttribute('viewBox', `0 0 ${map.width} ${map.height}`);
 		preview.setAttribute(
 			'aria-label',
@@ -279,6 +289,16 @@ export const createFrontMenu = async function (options: {
 			node.append(artwork);
 			preview.append(node);
 		}
+		for (const destination of raceDestinations(map)) {
+			const color = destination.owner === 'neutral' ? '#f8d787' : COLORS[destination.owner];
+			const circle = svgElement('circle', { cx: destination.x, cy: destination.y, r: destination.radius, fill: color, 'fill-opacity': 0.15, stroke: color, 'stroke-width': 5, 'stroke-dasharray': '10 6' });
+			const title = svgElement('title', {});
+			title.textContent = destination.label;
+			circle.append(title);
+			const label = svgElement('text', { x: destination.x, y: destination.y - destination.radius - 14, fill: color, 'text-anchor': 'middle', 'font-size': 25 });
+			label.textContent = destination.owner === 'neutral' ? 'FINISH' : destination.owner === 'blue' ? 'YOUR FINISH' : 'RIVAL FINISH';
+			preview.append(circle, label);
+		}
 		const count = document.createElement('strong');
 		count.textContent = `${map.planets.length} worlds`;
 		const hasCarriers = carriers.length > 0;
@@ -290,7 +310,7 @@ export const createFrontMenu = async function (options: {
 		styleDetail.textContent = style === 'random' ? 'Chooses one style when the match starts; keeps it for restarts and saves.' : STYLES[style].detail;
 		summary.replaceChildren(
 			count,
-			' · 1 rival',
+			` · ${GAME_MODES[mode].label}`,
 			document.createElement('br'),
 			hasCarriers ? 'One world and carrier per side' : 'One starting world per side',
 			document.createElement('br'),
@@ -299,8 +319,8 @@ export const createFrontMenu = async function (options: {
 		detail.textContent = MAP_SIZES[size].detail;
 		element('setup-title', HTMLHeadingElement).textContent = 'Choose your star system.';
 		const intro = setup.querySelector('.intro');
-		if (intro) intro.textContent = 'A new star map. The same objective: conquer every rival world.';
-		start.textContent = 'Start conquest →';
+		if (intro) intro.textContent = mode === 'conquest' ? 'Expand your territory and capture the rival holdings.' : 'Escort your carrier. Intercept theirs. First arrival wins.';
+		start.textContent = mode === 'conquest' ? 'Start conquest →' : 'Start race →';
 		for (const button of sizeButtons) {
 			const label = button.querySelector('small');
 			if (label && isMapSize(button.dataset.size)) label.textContent = `${MAP_SIZES[button.dataset.size].count} worlds`;
@@ -353,6 +373,12 @@ export const createFrontMenu = async function (options: {
 		renderPreview();
 		void flow.setScreen('setup', {});
 	});
+	modeSelect.addEventListener('change', function () {
+		if (starting || !isGameMode(modeSelect.value)) return;
+		mode = modeSelect.value;
+		map = { ...map, mode, carriers: carriersEnabled || mode !== 'conquest' };
+		renderPreview();
+	});
 	difficultySelect.addEventListener('change', renderPreview);
 	styleSelect.addEventListener('change', renderPreview);
 	carrierToggle.addEventListener('change', function () {
@@ -373,13 +399,13 @@ export const createFrontMenu = async function (options: {
 			)
 				return;
 			size = button.dataset.size;
-			map = freshMap(size, carriersEnabled);
+			map = freshMap(size, carriersEnabled, mode);
 			renderPreview();
 			status.textContent = `${MAP_SIZES[size].label} map generated: ${map.planets.length} worlds.`;
 		});
 	element('reroll', HTMLButtonElement).addEventListener('click', function () {
 		if (starting) return;
-		map = freshMap(size, carriersEnabled);
+		map = freshMap(size, carriersEnabled, mode);
 		renderPreview();
 		status.textContent = 'New layout generated.';
 	});

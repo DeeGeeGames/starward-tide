@@ -1,5 +1,6 @@
 import { MAP } from './config';
 import type { Owner } from './config';
+import type { GameMode } from './objectives';
 
 export type PlanetSeed = readonly [
 	name: string,
@@ -15,6 +16,7 @@ export interface StarMap {
 	readonly height: number;
 	readonly planets: readonly PlanetSeed[];
 	readonly carriers?: boolean;
+	readonly mode?: GameMode;
 }
 
 export const CARRIER_CREW = 20;
@@ -33,7 +35,7 @@ const CARRIER_PLACEMENT_DIRECTIONS = Array.from(
 );
 
 export const carrierSeeds = function (map: StarMap): readonly PlanetSeed[] {
-	if (map.carriers !== true) return [];
+	if (map.carriers !== true && (!map.mode || map.mode === 'conquest')) return [];
 	const blueHome = map.planets.find(function (planet) {
 		return planet[4] === 'blue';
 	});

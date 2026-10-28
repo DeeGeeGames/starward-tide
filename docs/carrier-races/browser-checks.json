@@ -1,0 +1,23 @@
+{
+  "browser": "Production build in local headless Chromium via Playwright",
+  "checks": [
+    "center-race: setup, reroll, automatic carriers, exact destination command, persisted route",
+    "center-race: reload/Continue restores paused map and destinations",
+    "center-race: near-finish seeded save resumes and real movement renders victory",
+    "crossing-race: setup, reroll, automatic carriers, exact destination command, persisted route",
+    "crossing-race: reload/Continue restores paused map and destinations",
+    "crossing-race: near-finish seeded save resumes and real movement renders victory",
+    "Conquest restores optional carrier toggle",
+    "390x844: setup/start/carrier destination action reachable",
+    "844x390: setup/start/carrier destination action reachable",
+    "667x320: setup/start/carrier destination action reachable",
+    "Emulated touch: setup, carrier selection and destination command work by tap",
+    "Enemy carrier with friendly orbital ships: destination action stays hidden"
+  ],
+  "errors": [],
+  "limits": [
+    "T3 preview snapshots timed out twice",
+    "Finish screenshots use a validated saved state seeded near the destination",
+    "No physical mobile device or owner game-feel acceptance"
+  ]
+}

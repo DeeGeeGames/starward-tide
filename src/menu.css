@@ -985,3 +985,24 @@
 	flex: 0 0 260px;
 	height: 260px;
 }
+
+#front-menu .mode-option {
+	margin: 8px 0 18px;
+}
+#front-menu .mode-option label {
+	display: block;
+	font-size: 11px;
+	letter-spacing: 1px;
+	margin-bottom: 8px;
+}
+#front-menu .mode-option select {
+	width: 100%;
+	min-height: 44px;
+	padding: 8px;
+	font: inherit;
+	color: var(--menu-text);
+	background: var(--menu-panel);
+	border: 1px solid var(--menu-line);
+	border-radius: 6px;
+}
+#front-menu .mode-option .detail { margin-bottom: 0; }
