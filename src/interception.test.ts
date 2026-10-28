@@ -45,6 +45,15 @@ test('handles stationary and coincident targets', function () {
 	expect(interceptPoint(coincident, 4, coincident, { x: 1, y: 2 })).toEqual(coincident);
 });
 
+test('leads an equal-speed crossing target to combat range before contact is possible', function () {
+	const target = { x: 300, y: 0 };
+	const projected = interceptPoint({ x: 0, y: 0 }, 5, target, { x: 0, y: 5 }, 48);
+	const time = projected.y / 5;
+	expect(time).toBeGreaterThan(0);
+	expect(Math.hypot(projected.x, projected.y) - 5 * time).toBeCloseTo(48);
+	expect(interceptPoint({ x: 290, y: 0 }, 5, target, { x: 0, y: 5 }, 48)).toEqual(target);
+});
+
 test('returns the present target when it is unreachable and solves equal-speed closing motion', function () {
 	const pursuer = { x: 0, y: 0 };
 	const target = { x: 10, y: 0 };

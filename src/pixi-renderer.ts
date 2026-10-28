@@ -7,6 +7,7 @@ import type { StarMap } from './maps';
 import { isBlockaded, planets, shipsAt, orderUnits, unitPoint } from './game';
 import type { Game, Order } from './game';
 import { travelAim } from './movement';
+import { interceptionAims } from './fleet-interception';
 import { createRenderCandidates, type RenderSelection } from './render-candidates';
 import { createShipPainter } from './ship-art';
 import { canvasViewport, visibleMapViewport, mapClipInsets, dashedLine, shipDetailZoom, planetPlatformOrbitRadius } from './render-geometry';
@@ -217,6 +218,7 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 		}
 		routes.clear(); effects.clear();
 		const match = world.getResource('match');
+		const intercepts = interceptionAims(world);
 		const zoom = camera.scale / fitScale;
 		for (const { id, components: { planet: p } } of planets(world)) {
 			const bombardment = p.carrier?.bombardment;
@@ -309,8 +311,8 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 				const u = entity.components.unit;
 				const target = world.getComponent(u.target, 'planet');
 				if (!target) continue;
-				const point = unitPoint(u, target, match.time, entity.id);
-				const aim = u.phase === 'travel' ? travelAim(u, target) : target;
+				const point = unitPoint(u, target, match.time, entity.id, intercepts.get(entity.id));
+				const aim = u.phase === 'travel' ? intercepts.get(entity.id) ?? travelAim(u, target) : target;
 				const segments = highlighted.state === 'pending'
 					? dashedLine(point, aim, 8 / camera.scale, 5 / camera.scale)
 					: [[point, aim]] as const;
@@ -328,7 +330,7 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			const target = world.getComponent(u.target, 'planet');
 			if (!target) continue;
 			traveling.add(id);
-			const point = unitPoint(u, target, match.time, id);
+			const point = unitPoint(u, target, match.time, id, intercepts.get(id));
 			let route = routeViews.get(id);
 			if (!route) {
 				route = new Sprite(travelTexture());
@@ -337,7 +339,7 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 				travelLines.addChild(route);
 				routeViews.set(id, route);
 			}
-			const aim = travelAim(u, target);
+			const aim = intercepts.get(id) ?? travelAim(u, target);
 			const dx = aim.x - point.x;
 			const dy = aim.y - point.y;
 			route.position.set(point.x, point.y);
@@ -355,7 +357,7 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			const target = world.getComponent(u.target, 'planet');
 			if (!target) continue;
 			live.add(id);
-			const point = unitPoint(u, target, match.time, id);
+			const point = unitPoint(u, target, match.time, id, intercepts.get(id));
 			let view = fleet.get(id);
 			if (!view) {
 				const hull = new Sprite(); hull.anchor.set(0.5);

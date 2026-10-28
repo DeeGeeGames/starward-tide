@@ -155,6 +155,8 @@ export const createOrdersDrawer = function (
 			row.route.textContent =
 				order.state === 'returning'
 					? `${target} ↶ ${sources}`
+					: order.interceptOrder !== undefined
+						? `${sources} → intercept group ${order.interceptOrder}`
 					: `${sources} → ${target}`;
 			const ships = members.filter(function (entity) {
 				return entity.components.unit.kind === 'ship';
@@ -171,7 +173,7 @@ export const createOrdersDrawer = function (
 						: members.some(function (entity) {
 									return entity.components.unit.phase === 'travel';
 							  })
-							? 'En route'
+							? order.interceptOrder !== undefined ? 'Intercepting · returns after pursuit' : 'En route'
 							: 'Awaiting landing';
 			row.select.setAttribute(
 				'aria-pressed',
