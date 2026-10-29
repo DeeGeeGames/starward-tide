@@ -1,3 +1,4 @@
+import { turnToward, CARRIER_TURN_RATE } from './turning';
 import type { SystemRegistrarOf } from 'ecspresso';
 import { CONFIG } from './config';
 import { planPasses } from './combat';
@@ -61,7 +62,7 @@ export const registerMovement = function (
 					if (distance <= CARRIER_ARRIVAL_TOLERANCE || distance <= CARRIER_SPEED * dt) {
 						p.x = carrier.destination.x; p.y = carrier.destination.y; carrier.destination = null;
 					} else {
-						carrier.heading = Math.atan2(dy, dx);
+						carrier.heading = turnToward(carrier.heading, Math.atan2(dy, dx), CARRIER_TURN_RATE, dt);
 						p.x += dx / distance * CARRIER_SPEED * dt; p.y += dy / distance * CARRIER_SPEED * dt;
 					}
 				}
