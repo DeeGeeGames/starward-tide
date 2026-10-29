@@ -34,3 +34,5 @@ Milliseconds, baseline → final pilot (31s per capture):
 | crowded | 7.90 → 8.20 | 20.00 → 13.80 | 83.40 → 116.60 | 4.00 → 5.00 |
 
 Normal draw cost increases; crowded draw tails improve in this sample. RAF cadence regresses on SwiftShader. These mixed results do not establish a hardware performance envelope: owner agreement on the remaining cadence/detail tradeoff is required before pilot acceptance. The first 256px candidate measured normal draw p50/p95 3.1/7.0ms and crowded 9.7/15.1ms; reducing the shared globe to128px lowered that cost. No claim of hardware acceleration or mobile performance is made.
+
+The standalone production-bundled projection fixture passed in Chromium (`projection.json`). A combined projection/offline automation attempt timed out before reaching its offline exercise; offline reload and deployed-subpath runtime remain unverified. Build-time precache inclusion passed. CI check jobs passed for the pilot head at handback.
