@@ -1,0 +1,11 @@
+{
+  "checks": [
+    "ordinary-click selection",
+    "direct right-click dispatch",
+    "D then Enter dispatch",
+    "empty-source guard",
+    "bombardment mode and focus",
+    "direct touch-hold dispatch"
+  ],
+  "errors": []
+}

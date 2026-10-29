@@ -679,7 +679,6 @@ const refreshContent = function (): void {
 	const preview = previewDispatch(world, selected, fraction, shipsOnly ? 'ships' : filter);
 	element('dispatch-preview', HTMLParagraphElement).textContent = `Up to ${preview.troops} troops + ${preview.ships} ships`;
 	element('destination-summary', HTMLDivElement).textContent = choosingDestination === 'bombard' ? `${p?.name ?? 'Carrier'} · ${CONFIG.bombardmentCharge}s charge · neutralizes the surface` : `From ${selected.length > 1 ? `${selected.length} sources` : p?.name ?? 'selection'} · up to ${preview.troops} troops + ${preview.ships} ships · groups: ships only`;
-	element('send-units', HTMLButtonElement).disabled = multi || preview.troops + preview.ships === 0 || matchEnded(match);
 	const warning = element('selection-warning', HTMLDivElement);
 	const carrierBlocked = p?.carrier && first !== undefined && SIDES.some(function (side) { return isHostile(side, p.owner) && shipsAt(world, first, side).length > 0; });
 	warning.textContent = carrierBlocked ? `Docking blocked by hostile ships.${p?.owner === 'blue' ? ' Launching is still allowed.' : ''}` : preview.blockedSources > 0
@@ -714,7 +713,7 @@ const refreshContent = function (): void {
 	instruction.textContent = multi
 		? 'Select sources · then finish selection'
 		: selected.length
-			? p?.carrier && p.owner === 'blue' && selected.length === 1 ? 'Click empty space to move carrier' : 'Send units · hold / right-click to send directly'
+			? p?.carrier && p.owner === 'blue' && selected.length === 1 ? 'Click empty space to move carrier' : 'Hold / right-click a destination · D to choose'
 			: 'Select your world or orbital ships';
 	multiButton.hidden = selected.length > 0 && !multi;
 	multiButton.setAttribute('aria-pressed', String(multi));
@@ -897,7 +896,7 @@ const mapInput = createMapInput({
 	},
 	selectFleet: function (id): void {
 		if (choosingDestination === 'dispatch') sendToFleet(id);
-		else feedback('Use Send units, or hold / right-click a hostile group to intercept.');
+		else feedback('Hold / right-click a hostile group, or press D to choose an interception target.');
 	},
 	dispatchFleet: sendToFleet,
 	moveTo: function (point): void {
@@ -1197,20 +1196,23 @@ const cancelDispatch = function (): void {
 	cancelMapCommand();
 	refresh();
 	updateLayout();
-	const button = element(command === 'bombard' ? 'bombard-planet' : 'send-units', HTMLButtonElement);
-	if (button.disabled || sheetCollapsed) board.focus({ preventScroll: true });
-	else button.focus({ preventScroll: true });
+	const button = element('bombard-planet', HTMLButtonElement);
+	if (command === 'bombard' && !button.hidden && !button.disabled && !sheetCollapsed) button.focus({ preventScroll: true });
+	else board.focus({ preventScroll: true });
 };
-element('send-units', HTMLButtonElement).addEventListener('click', function () {
-	if (busy || multi || selected.length === 0 || matchEnded(world.getResource('match'))) return;
+const beginDispatch = function (): void {
+	if (busy || multi || selected.length === 0 || choosingDestination || matchEnded(world.getResource('match'))) return;
+	const shipsOnly = selected.every(function (id) { return world.getComponent(id, 'planet')?.owner !== 'blue'; });
+	const preview = previewDispatch(world, selected, fraction, shipsOnly ? 'ships' : filter);
+	if (preview.troops + preview.ships === 0) return;
 	choosingDestination = 'dispatch';
 	mapInput.cancel();
 	drawer.close();
 	fieldGuide.hidden = true;
 	refresh();
 	updateLayout();
-	board.focus();
-});
+	board.focus({ preventScroll: true });
+};
 element('cancel-dispatch', HTMLButtonElement).addEventListener('click', cancelDispatch);
 element('panel-multi', HTMLButtonElement).addEventListener('click', function () { multiButton.click(); });
 element('change-production', HTMLButtonElement).addEventListener('click', function () {
@@ -1394,6 +1396,12 @@ window.addEventListener('keydown', function (event) {
 	}
 	if (event.altKey || event.ctrlKey || event.metaKey) return;
 	const mapFocused = event.target === document.body || event.target === board;
+	const gameplayFocused = mapFocused || event.target instanceof Node && app.contains(event.target);
+	const editing = event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
+	if (event.key.toLowerCase() === 'd' && gameplayFocused && !editing && fieldGuide.hidden && ordersPanel.hidden) {
+		event.preventDefault();
+		beginDispatch();
+	}
 	if (event.key === 'Home' && (mapFocused || event.target instanceof Node && board.contains(event.target))) {
 		event.preventDefault();
 		fitMap();

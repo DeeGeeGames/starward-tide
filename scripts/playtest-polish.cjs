@@ -45,6 +45,9 @@ const run = async function () {
 		};
 
 		await fixture();
+		assert.equal(await page.locator('#send-units').count(), 0);
+		await page.keyboard.press('d');
+		assert.equal(await page.locator('#destination-prompt').isVisible(), false);
 		await page.locator('[data-planet="Sol"]').click();
 		assert.equal(await page.locator('#production-options').isVisible(), false);
 		await page.locator('#change-production').click();
@@ -69,12 +72,29 @@ const run = async function () {
 		assert.equal(await page.locator('#field-guide').isVisible(), false);
 		check('Escape closes one layer and ignores key repeats');
 
-		await page.locator('#send-units').click();
+		await page.keyboard.press('d');
+		assert.equal(await page.locator('#destination-prompt').isVisible(), true);
 		const empty = await emptyPoint();
 		await page.mouse.click(empty.x, empty.y, { button: 'right' });
 		assert.equal(await page.locator('#destination-prompt').isVisible(), false);
 		assert.equal(await selected(), 1);
+		assert.equal(await page.evaluate(function () { return document.activeElement.id; }), 'board');
 		check('right-click empty map cancels destination and retains sources');
+		await page.locator('#panel-multi').click();
+		await page.keyboard.press('d');
+		assert.equal(await page.locator('#destination-prompt').isVisible(), false);
+		await page.locator('#panel-multi').click();
+		await page.locator('#settings').click();
+		await page.locator('.lab summary').click();
+		await page.locator('#speed').focus();
+		await page.keyboard.press('d');
+		assert.equal(await page.locator('#destination-prompt').isVisible(), false);
+		await page.keyboard.press('Escape');
+		await page.locator('#orders-toggle').click();
+		await page.keyboard.press('d');
+		assert.equal(await page.locator('#destination-prompt').isVisible(), false);
+		await page.keyboard.press('Escape');
+		check('D enters destination mode from gameplay controls and respects multi-select and menus');
 
 		await page.mouse.move(empty.x, empty.y);
 		await page.mouse.wheel(0, -250);
@@ -131,7 +151,8 @@ const run = async function () {
 		await fixture();
 		await page.locator('[data-planet="Sol"]').click();
 		const cdp = await page.context().newCDPSession(page);
-		await page.locator('#send-units').click();
+		await page.locator('#board').focus();
+		await page.keyboard.press('d');
 		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [await center('Rhea')] });
 		await page.waitForTimeout(150);
 		assert.equal(await page.locator('.holding').count(), 1);
@@ -141,7 +162,8 @@ const run = async function () {
 		assert.equal(await page.locator('.holding').count(), 0);
 		assert.equal(await selected(), 1);
 		assert.equal(await page.locator('[data-planet="Sol"] .count').textContent(), '20');
-		await page.locator('#send-units').click();
+		await page.locator('#board').focus();
+		await page.keyboard.press('d');
 		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [await center('Rhea')] });
 		await page.waitForTimeout(600);
 		await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
@@ -157,7 +179,8 @@ const run = async function () {
 			await page.setViewportSize({ width, height });
 			await fixture();
 			await page.locator('[data-planet="Sol"]').click();
-			await page.locator('#send-units').scrollIntoViewIfNeeded();
+			assert.equal(await page.locator('#send-units').count(), 0);
+			await page.locator('.dispatch-shortcut').scrollIntoViewIfNeeded();
 			await page.screenshot({ path: path.join(output, `${name}.png`) });
 			const layout = await page.evaluate(function () {
 				const panel = document.querySelector('#planet-panel').getBoundingClientRect();
@@ -171,7 +194,8 @@ const run = async function () {
 			assert.ok(layout.panel.x >= 0 && layout.panel.y >= layout.headerBottom - 1);
 			assert.ok(layout.panel.x + layout.panel.width <= width && layout.panel.y + layout.panel.height <= height);
 			results.viewports.push({ name, ...layout });
-			await page.locator('#send-units').click();
+			await page.locator('#board').focus();
+			await page.keyboard.press('d');
 			assert.equal(await page.locator('#planet-panel').isVisible(), false);
 			await page.keyboard.press('Escape');
 			await page.locator('#orders-toggle').click();
