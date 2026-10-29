@@ -1,0 +1,15 @@
+{
+  "checks": [
+    "profile rename/create/delete use styled dialogs and cancellation preserves data",
+    "setup steps retain exact preview and races retain carrier constraints",
+    "desktop title/setup/opposition navigation and no horizontal overflow",
+    "tv title/setup/opposition navigation and no horizontal overflow",
+    "tablet title/setup/opposition navigation and no horizontal overflow",
+    "mobile title/setup/opposition navigation and no horizontal overflow",
+    "small-mobile title/setup/opposition navigation and no horizontal overflow",
+    "landscape title/setup/opposition navigation and no horizontal overflow",
+    "short-landscape title/setup/opposition navigation and no horizontal overflow",
+    "Continue reopens the saved match paused without changing save format"
+  ],
+  "errors": []
+}

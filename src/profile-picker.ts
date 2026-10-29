@@ -1,3 +1,4 @@
+import { confirmAction, promptAction } from './ui-dialog';
 import { MAX_PROFILES } from './profile-storage';
 import type { ProfileRepository, ProfileSummary } from './profile-storage';
 
@@ -129,7 +130,7 @@ export const createProfilePicker = function (
 				'click',
 				async function () {
 					if (!options.profiles || options.isStarting() || profileBusy) return;
-					const name = window.prompt('Rename local profile', profile.name);
+					const name = await promptAction('Rename local profile', profile.name);
 					if (name === null) return;
 					await runProfileOperation('Renaming profile…', async function () {
 						if (!options.profiles) return;
@@ -152,7 +153,7 @@ export const createProfilePicker = function (
 				async function () {
 					if (!options.profiles || options.isStarting() || profileBusy) return;
 					if (
-						!window.confirm(
+						!await confirmAction(
 							'Delete ' +
 								profile.name +
 								' and all its saved games? This cannot be undone.',

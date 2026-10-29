@@ -45,15 +45,15 @@ const run = async function () {
 		};
 
 		await fixture();
-		assert.equal(await page.locator('#send-units').count(), 0);
+		assert.equal(await page.locator('#send-units').isVisible(), false);
 		await page.keyboard.press('d');
 		assert.equal(await page.locator('#destination-prompt').isVisible(), false);
 		await page.locator('[data-planet="Sol"]').click();
 		assert.equal(await page.locator('#production-options').isVisible(), false);
-		await page.locator('#change-production').click();
+		await page.locator('#open-production').click();
 		await page.locator('[data-production="ships"]').click();
 		assert.equal(await page.locator('[data-production="ships"]').getAttribute('aria-pressed'), 'true');
-		await page.locator('#change-production').click();
+		await page.locator('#command-back').click();
 		check('production remains available behind compact disclosure');
 
 		await page.locator('[data-planet="Terra"]').click({ modifiers: ['Shift'] });
@@ -179,7 +179,8 @@ const run = async function () {
 			await page.setViewportSize({ width, height });
 			await fixture();
 			await page.locator('[data-planet="Sol"]').click();
-			assert.equal(await page.locator('#send-units').count(), 0);
+			assert.equal(await page.locator('#send-units').isVisible(), false);
+			await page.locator('#open-dispatch').click();
 			await page.locator('.dispatch-shortcut').scrollIntoViewIfNeeded();
 			await page.screenshot({ path: path.join(output, `${name}.png`) });
 			const layout = await page.evaluate(function () {

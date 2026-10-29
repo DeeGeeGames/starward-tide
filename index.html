@@ -51,86 +51,28 @@
 		<link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
 		<link rel="stylesheet" href="./src/style.css" />
 		<link rel="stylesheet" href="./src/menu.css" />
+		<link rel="stylesheet" href="./src/ui-theme.css" />
 		<link rel="stylesheet" href="./src/gameplay-ui.css" />
 	</head>
 	<body>
 		<div id="front-menu">
-			<section
-				class="screen title"
-				id="title-screen"
-				aria-labelledby="game-title"
-			>
-				<svg
-					class="title-art"
-					id="title-art"
-					viewBox="0 0 720 420"
-					preserveAspectRatio="xMidYMid slice"
-					aria-hidden="true"
-				>
-					<defs>
-						<radialGradient id="planet">
-							<stop stop-color="#417082" />
-							<stop offset=".7" stop-color="#1c3d53" />
-							<stop offset="1" stop-color="#112436" />
-						</radialGradient>
-					</defs>
-					<g id="stars"></g>
-					<g transform="translate(562 207)">
-						<circle r="112" fill="none" stroke="#60d9ff" stroke-opacity=".08" />
-						<circle
-							r="146"
-							fill="none"
-							stroke="#60d9ff"
-							stroke-opacity=".13"
-							stroke-dasharray="2 9"
-						/>
-						<ellipse
-							rx="170"
-							ry="57"
-							transform="rotate(-32)"
-							fill="none"
-							stroke="#60d9ff"
-							stroke-opacity=".25"
-						/>
-						<circle r="77" fill="url(#planet)" stroke="#466b80" />
-						<path
-							d="M-45 -60 Q-20 -30 -46 0 T-15 63 M-25 -71 Q12 -30 -9 -4 T16 71"
-							fill="none"
-							stroke="#64929b"
-							stroke-opacity=".17"
-							stroke-width="8"
-						/>
-						<circle cx="-124" cy="73" r="7" fill="#60d9ff" />
-						<circle cx="119" cy="-83" r="5" fill="#ff867e" />
-						<path d="M-136 70l-6 6 10-2z M-146 78l-6 6 10-2z" fill="#60d9ff" />
-					</g>
-				</svg>
-				<button type="button" id="profile-badge" class="profile-badge" disabled aria-label="Loading local profiles" aria-haspopup="dialog" aria-controls="profile-dialog">
-					<span id="profile-badge-orb" class="profile-badge-orb" aria-hidden="true">…</span>
-					<span class="profile-badge-copy"><strong id="profile-badge-name">Loading profiles…</strong><small>Profiles</small></span>
-					<span aria-hidden="true">☰</span>
-				</button>
-				<div class="brand">
-					<span class="brand-mark">✧</span
-					><span class="eyebrow">A GALAXY. YOUR COMMAND.</span>
-				</div>
-				<div class="hero">
-					<h1 id="game-title">GALAXY<span>CONQUEST</span></h1>
-					<p>Claim worlds. Build your fleet.<br />Take control of the stars.</p>
-					<p id="menu-profile-status" class="status" role="status" aria-live="polite"></p>
-					<button class="primary" id="new-game" disabled>
-						New game <span aria-hidden="true">→</span>
-					</button>
-					<div class="title-actions">
-						<button id="title-fullscreen" class="fullscreen-icon-button" aria-label="Enter fullscreen" aria-pressed="false">
-							<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
-								<path d="M5 14h2v3h3v2H5v-5zm2-4H5V5h5v2H7v3zm7 7h3v-3h2v5h-5v-2zm3-7V7h-3V5h5v5h-2z" />
-							</svg>
-						</button>
-						<button id="how-to-play" aria-haspopup="dialog" aria-controls="help-dialog">How to Play</button>
-					</div>
-					<p id="title-fullscreen-status" class="status" role="status" aria-live="polite"></p>
-				</div>
+			<div class="menu-world" aria-hidden="true">
+				<svg id="title-art" class="title-art" viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice"><g id="stars"></g><g class="chart-orbits" transform="translate(1000 380) rotate(-28)"><ellipse rx="449" ry="227"/><ellipse rx="410" ry="187" stroke-dasharray="2 10"/><circle r="323" stroke-dasharray="2 8"/><path d="M-460 0H460M0-370V370"/></g></svg>
+				<img class="hero-planet" src="./docs/visual-directions/asset-proof/planet-frame.png" alt="" />
+				<div class="hero-fleet"><img src="./docs/visual-directions/asset-proof/warship-sprite.png" alt=""/><img src="./docs/visual-directions/asset-proof/warship-sprite.png" alt=""/><img src="./docs/visual-directions/asset-proof/warship-sprite.png" alt=""/></div>
+			</div>
+			<section class="screen title" id="title-screen" aria-labelledby="game-title">
+				<div class="title-wordmark"><h1 id="game-title">GALAXY<span>CONQUEST</span></h1><div class="brand-rule"></div></div>
+				<div class="profile-heading"><span id="profile-badge-orb" aria-hidden="true">P</span><span><strong id="profile-badge-name">Loading profiles…</strong><small>Local profile</small></span></div>
+				<nav class="main-menu" aria-label="Main menu" data-focus-group>
+					<button id="continue-conquest" class="menu-choice" disabled hidden>Continue <span aria-hidden="true">›</span></button>
+					<button id="new-game" class="menu-choice" disabled>New conquest <span aria-hidden="true">›</span></button>
+					<button id="how-to-play" class="menu-choice" aria-haspopup="dialog" aria-controls="help-dialog">How to play <span aria-hidden="true">›</span></button>
+					<button id="profile-badge" class="menu-choice" disabled aria-label="Loading local profiles" aria-haspopup="dialog" aria-controls="profile-dialog">Profiles <span aria-hidden="true">›</span></button>
+				</nav>
+				<p id="menu-profile-status" class="status" role="status" aria-live="polite"></p>
+				<div class="menu-footer"><div class="input-hints"><span data-key-hint><kbd>↵</kbd> Select</span><span data-key-hint><kbd>↑↓</kbd> Navigate</span><span data-pad-hint><kbd>A</kbd> Select</span><span data-pad-hint><kbd>Y</kbd> Profile</span><span data-touch-hint>Tap a choice</span><button id="title-fullscreen" class="fullscreen-icon-button" aria-label="Enter fullscreen" aria-pressed="false">⛶</button></div><span id="profile-save-time"></span></div>
+				<p id="title-fullscreen-status" class="status" role="status" aria-live="polite"></p>
 				<dialog id="help-dialog" class="profile-panel help-panel" aria-labelledby="help-dialog-title">
 					<div class="profile-panel-heading">
 						<h2 id="help-dialog-title">How to Play</h2>
@@ -158,131 +100,36 @@
 						Some embedded browsers block storage; open the standalone game if saving is unavailable.
 					</p>
 				</dialog>
-				<div class="profile-continue-row">
-					<button id="continue-conquest" class="primary" disabled>Continue</button>
-					<span id="profile-save-time" class="mono"></span>
-				</div>
-				<div class="footer">
-					<span>SINGLE PLAYER · REAL-TIME STRATEGY</span><span>v0.1</span>
-				</div>
 			</section>
-			<section
-				class="screen"
-				id="setup"
-				hidden
-				aria-labelledby="setup-title"
-				tabindex="-1"
-			>
-				<div class="topline">
-					<button class="back" id="back">← Title screen</button
-					><span class="step mono">NEW GAME / SETUP</span>
-				</div>
-				<div class="eyebrow">UNCHARTED SPACE</div>
-				<h2 id="setup-title">Choose your star system.</h2>
-				<p class="intro">
-					A new star map. The same objective: conquer every rival world.
-				</p>
-				<div class="mode-option">
-					<label for="game-mode">GAME MODE</label>
-					<select id="game-mode" aria-describedby="mode-detail">
-						<option value="conquest">Conquest</option>
-						<option value="center-race">Center race</option>
-						<option value="crossing-race">Crossing race</option>
-					</select>
-					<p class="detail" id="mode-detail">Leave your rival with no worlds or carriers.</p>
-				</div>
-				<div class="setup-grid">
-					<div>
-						<span class="label">MAP SIZE</span>
-						<div class="sizes" role="group" aria-label="Map size">
-							<button class="size" data-size="small" aria-pressed="false">
-								<span>Small<small>12 worlds</small></span
-								><span class="radio" aria-hidden="true"></span>
-							</button>
-							<button class="size" data-size="medium" aria-pressed="true">
-								<span>Medium<small>18 worlds</small></span
-								><span class="radio" aria-hidden="true"></span>
-							</button>
-							<button class="size" data-size="large" aria-pressed="false">
-								<span>Large<small>30 worlds</small></span
-								><span class="radio" aria-hidden="true"></span>
-							</button>
-						</div>
-						<p class="detail" id="size-detail">
-							Room to expand. Space to maneuver.
-						</p>
-						<div class="carrier-option">
-							<label for="carriers-toggle">
-								<input id="carriers-toggle" type="checkbox" />
-								<span>
-									<strong>Start with carriers</strong>
-									<small>One per side, with 20 crew and 3 docked ships.</small>
-								</span>
-							</label>
-						</div>
+			<section class="screen setup-screen" id="setup" hidden aria-labelledby="setup-title" tabindex="-1">
+				<div class="setup-top"><h2 id="setup-title">Prepare your conquest</h2><nav class="setup-steps" aria-label="Setup steps"><button id="setup-galaxy-tab" aria-current="step">01 Galaxy</button><span aria-hidden="true">—</span><button id="setup-opposition-tab">02 Opposition</button></nav></div>
+				<p class="setup-instruction">Choose a setting. Move left or right to change it.</p>
+				<div class="setup-layout"><div class="setup-controls" data-focus-group>
+					<div id="galaxy-settings" class="settings-list">
+						<button class="setting-row" data-setting="game-mode"><span>Game mode</span><span class="setting-value">Conquest</span></button>
+						<button class="setting-row" data-setting="map-size"><span>Map size</span><span class="setting-value">Medium</span></button>
+						<button class="setting-row" data-setting="carriers-toggle"><span>Carriers</span><span class="setting-value">Off</span></button>
+						<button id="setup-next" class="launch-choice">Choose opposition <span aria-hidden="true">→</span></button>
 					</div>
-					<div>
-						<div class="map-box">
-							<span class="map-tag">MAP PREVIEW</span
-							><svg
-								id="map-preview"
-								viewBox="0 0 290 238"
-								role="img"
-								aria-label="Generated map with 18 worlds"
-							></svg>
-							<div class="legend">
-								<span><i class="dot blue"></i>You</span
-								><span><i class="dot"></i>Neutral</span
-								><span><i class="dot red"></i>Rivals</span>
-							</div>
-						</div>
-						<button class="reroll" id="reroll">
-							↻ &nbsp; Generate another map
-						</button>
-					</div>
-				</div>
-				<fieldset class="opponent-options">
-					<legend>OPPONENTS</legend>
-					<label for="opponent-count">AI opponents · Free-for-all</label>
+					<fieldset id="opponent-settings" class="settings-list" hidden><legend class="sr-only">Opposition</legend>
+						<button class="setting-row" data-setting="opponent-count"><span>AI opponents</span><span class="setting-value">1 opponent</span></button>
+						<button class="setting-row" data-setting="opponent-difficulty"><span>Difficulty</span><span class="setting-value">Standard</span></button>
+						<button class="setting-row" data-setting="opponent-style"><span>Style</span><span class="setting-value">Expansionist</span></button>
+						<button id="start-conquest" class="launch-choice" disabled>Begin conquest <span aria-hidden="true">→</span></button>
+					</fieldset>
+					<p class="setting-description" id="focused-setting-detail"></p>
+				</div><div class="setup-chart"><div class="map-box"><span class="map-tag">Generated map · exact starting layout</span><svg id="map-preview" viewBox="0 0 1200 1320" role="img" aria-label="Generated map"></svg></div><div id="summary" class="summary"></div><button id="reroll">↻ Generate another map</button><p id="opponent-fairness">Same rules and starting resources for every faction.</p></div></div>
+				<div class="setup-footer"><button id="back" class="back-choice">← Back</button><div class="input-hints"><span data-key-hint><kbd>← →</kbd> Change</span><span data-pad-hint><kbd>A</kbd> Choose / change</span><span data-pad-hint><kbd>B</kbd> Back</span><span data-touch-hint>Tap a setting to change it</span></div><span class="setup-step-copy">01 Galaxy</span></div>
+				<div id="setup-status" class="status" role="status" aria-live="polite"></div>
+				<div hidden>
+					<select id="game-mode"><option value="conquest">Conquest</option><option value="center-race">Center race</option><option value="crossing-race">Crossing race</option></select>
+					<select id="map-size"><option value="small">Small</option><option value="medium" selected>Medium</option><option value="large">Large</option></select>
+					<input id="carriers-toggle" type="checkbox" />
 					<select id="opponent-count"><option value="1">1 opponent</option><option value="2">2 opponents</option><option value="3">3 opponents</option></select>
-					<div class="opponent-grid">
-						<div>
-							<label for="opponent-difficulty">Difficulty</label>
-							<select id="opponent-difficulty" aria-describedby="difficulty-detail opponent-fairness">
-								<option value="relaxed">Relaxed</option>
-								<option value="standard" selected>Standard</option>
-								<option value="hard">Hard</option>
-							</select>
-							<p class="detail" id="difficulty-detail"></p>
-						</div>
-						<div>
-							<label for="opponent-style">Style</label>
-							<select id="opponent-style" aria-describedby="style-detail">
-								<option value="expansionist" selected>Expansionist</option>
-								<option value="aggressive">Aggressive</option>
-								<option value="defensive">Defensive</option>
-								<option value="random">Random</option>
-							</select>
-							<p class="detail" id="style-detail"></p>
-						</div>
-					</div>
-					<p class="detail" id="opponent-fairness">All factions use the same rules and starting resources. Settings apply to every AI opponent.</p>
-				</fieldset>
-				<div class="setup-footer">
-					<div class="summary" id="summary">
-						<strong>18 worlds</strong> · 1 rival<br />One starting world per
-						side
-					</div>
-					<button class="primary" id="start-conquest">
-						Start conquest <span aria-hidden="true">→</span>
-					</button>
+					<select id="opponent-difficulty"><option value="relaxed">Relaxed</option><option value="standard" selected>Standard</option><option value="hard">Hard</option></select>
+					<select id="opponent-style"><option value="expansionist">Expansionist</option><option value="aggressive">Aggressive</option><option value="defensive">Defensive</option><option value="random">Random</option></select>
+					<p id="mode-detail"></p><p id="size-detail"></p><p id="difficulty-detail"></p><p id="style-detail"></p>
 				</div>
-				<div
-					class="status"
-					id="setup-status"
-					role="status"
-					aria-live="polite"
-				></div>
 			</section>
 		</div>
 		<div id="app" hidden>
@@ -324,7 +171,7 @@
 					<div class="sheet-handle" aria-hidden="true"></div>
 					<div class="panel-title">
 						<div><span id="selection-kind" class="eyebrow">YOUR WORLD</span><h2 id="selection-name">No source selected</h2></div>
-						<div class="selection-actions">
+						<div class="selection-actions"><button id="command-back" aria-label="Back to world commands" hidden>← Back</button>
 							<button id="sheet-toggle" aria-label="Collapse world commands" aria-expanded="true" aria-controls="command-details">⌄</button>
 							<button id="clear" aria-label="Clear selection" title="Clear selection">×</button>
 						</div>
@@ -338,6 +185,7 @@
 						<p id="selection-info"></p>
 						<p id="orbital-info" hidden></p>
 						<div id="selection-warning" class="selection-warning" role="status" hidden></div>
+						<div id="command-actions"><button id="open-dispatch">Dispatch <span aria-hidden="true">›</span></button><button id="open-production">Production <span aria-hidden="true">›</span></button><button id="selection-orders">Orders <span aria-hidden="true">›</span></button></div>
 						<div id="production-controls">
 							<div class="control-label"><strong>Production</strong><span id="production-info"></span><button id="change-production" class="text-button" aria-expanded="false" aria-controls="production-options">Change ›</button></div>
 							<div id="production-options">
@@ -350,7 +198,7 @@
 								<p class="production-note">Switching production discards unfinished work.</p>
 							</div>
 						</div>
-						<div id="dispatch-controls">
+						<div id="dispatch-details"><div id="dispatch-controls">
 							<div class="control-label"><strong>Send amount</strong><span id="dispatch-info">Platforms stay</span></div>
 							<div id="amount" class="segments" role="group" aria-label="Send amount">
 								<button data-amount="0.25">25%</button><button data-amount="0.5" aria-pressed="true">50%</button><button data-amount="1">100%</button>
@@ -358,11 +206,11 @@
 							<div id="dispatch-filter-controls"><div id="filter" class="segments" role="group" aria-label="Units to send">
 								<button data-filter="combined" aria-pressed="true">Combined</button><button data-filter="ships">Ships only</button><button data-filter="troops">Troops only</button>
 							</div></div>
-							<p id="dispatch-preview"></p>
+							<p id="dispatch-preview"></p><button id="send-units">Choose destination <span aria-hidden="true">→</span></button>
 							<p class="dispatch-shortcut">Hold / right-click a destination<br />Keyboard: D, then choose a destination</p>
 						</div>
 					</div>
-					<div class="command-footer"><button id="panel-multi" class="text-button" aria-pressed="false">＋ Multi-select</button><span id="selection-count"></span></div>
+					</div><div class="command-footer"><button id="panel-multi" class="text-button" aria-pressed="false">＋ Multi-select</button><span id="selection-count"></span></div>
 				</section>
 			</aside>
 			<aside
@@ -404,7 +252,7 @@
 				<p id="opponent-summary"></p>
 				<p id="save-status-menu" role="status" aria-live="polite">Not saved</p>
 				<details class="lab">
-					<summary>Prototype lab <span>scenarios & tuning</span></summary>
+					<summary>Skirmish settings <span>scenarios & pace</span></summary>
 					<div class="lab-content">
 						<label
 							>Scenario<select id="scenario">
@@ -434,7 +282,7 @@
 				</details>
 				<details class="guide">
 					<summary>How to play</summary>
-					<div id="play-instructions">
+					<div id="play-instructions"><p>Controller: press A or Start, then release to activate. Use the left stick for the cursor, right stick to pan, LT/RT to zoom, and LB/RB to cycle worlds and hostile groups. A selects or confirms; X opens dispatch; Y toggles multi-select; B returns to the previous command layer or map; Start pauses; Back/View opens the game menu. Use the right stick to scroll long menus. On disconnect or focus loss, the match pauses and requires deliberate resume.</p>
 						<p>Drag to explore. Scroll or pinch to zoom. Focus the map and use arrow keys to pan, Space to pause, or Home to fit the map. Shift-click to add or remove a source. Click empty space to clear selection; with one carrier selected, it sets its course instead. Hold or right-click a destination to send units. For keyboard dispatch, select a source and press D, then tap, click, or focus a destination and press Enter. Cancel, Escape, or right-clicking empty space cancels destination choice and keeps the sources.</p>
 						<p>To intercept, select a planet or orbital ring, then hold or right-click a hostile group’s ⌖ marker. You can also press D to enter destination mode and select its marker. Interception sends warships only, even with Combined selected. Troops and transports stay behind. Ships follow the group and use normal combat rules in range, then return to their launch points when the group is destroyed or reaches orbit.</p>
 						<p>
@@ -477,6 +325,8 @@
 				<div id="events" aria-live="polite"></div>
 			</section>
 		</div>
+		<dialog id="confirm-dialog" class="action-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-message"><form method="dialog"><h2 id="confirm-title">Confirm action</h2><p id="confirm-message"></p><label id="confirm-input-label" hidden>Profile name<input id="confirm-input" maxlength="32" autocomplete="off" /></label><div class="dialog-actions"><button id="confirm-cancel" value="cancel" autofocus>Cancel</button><button id="confirm-accept" value="confirm">Continue</button></div></form></dialog>
+		<div id="gamepad-cursor" aria-hidden="true" hidden><i></i></div><div id="controller-status" role="status" aria-live="polite" hidden></div>
 		<script type="module" src="./src/main.ts"></script>
 	</body>
 </html>

@@ -1,3 +1,5 @@
+import { adjustControl, moveFocus, visibleControls } from './ui-navigation';
+import { confirmAction } from './ui-dialog';
 import { GAME_MODES, isGameMode, raceDestinations, type GameMode } from './objectives';
 import { createCarrierArtwork } from './carrier-art';
 import ECSpresso from 'ecspresso';
@@ -53,6 +55,7 @@ const flowBuilder = ECSpresso.create().withScreens(function (screens) {
 	return screens
 		.add('title', { initialState })
 		.add('setup', { initialState })
+		.add('setup-opposition', { initialState })
 		.add('playing', { initialState });
 });
 type FrontMenu = ReturnType<typeof flowBuilder.build>;
@@ -126,15 +129,35 @@ export const createFrontMenu = async function (options: {
 	const stars = document.getElementById('stars');
 	if (!(preview instanceof SVGElement) || !(stars instanceof SVGElement))
 		throw new Error('Missing menu artwork');
-	const sizeButtons = [
-		...root.querySelectorAll<HTMLButtonElement>('[data-size]'),
-	];
+	const sizeSelect = element('map-size', HTMLSelectElement);
+	const settingButtons = [...root.querySelectorAll<HTMLButtonElement>('[data-setting]')];
 	let size: MapSize = 'medium';
 	let carriersEnabled = false;
 	carrierToggle.checked = carriersEnabled;
 	let map = freshMap(size);
 	let starting = false;
 	let disposed = false;
+	const showSettingDetail = function (setting: string): void {
+		const descriptions: Readonly<Record<string, string>> = {
+			'game-mode': modeDetail.textContent ?? '',
+			'map-size': detail.textContent ?? '',
+			'carriers-toggle': mode === 'conquest' ? `One carrier per side, with ${CARRIER_CREW} crew and ${CARRIER_DOCKED_SHIPS} docked ships.` : 'Carriers are required for race modes.',
+			'opponent-difficulty': difficultyDetail.textContent ?? '',
+			'opponent-style': styleDetail.textContent ?? '',
+		};
+		element('focused-setting-detail', HTMLParagraphElement).textContent = descriptions[setting] ?? 'Free-for-all. Each opponent controls a separate faction.';
+	};
+	const syncSettingButtons = function (): void {
+		for (const button of settingButtons) {
+			const source = document.getElementById(button.dataset.setting ?? '');
+			const value = button.querySelector('.setting-value');
+			if (!(source instanceof HTMLSelectElement || source instanceof HTMLInputElement) || !value) continue;
+			value.textContent = source instanceof HTMLSelectElement ? source.selectedOptions[0]?.textContent ?? '' : source.checked ? 'On' : 'Off';
+			button.disabled = source.disabled;
+			const label = button.firstElementChild?.textContent ?? 'Setting';
+			button.setAttribute('aria-label', `${label}: ${value.textContent}. Activate or use left and right to change.`);
+		}
+	};
 	const flow = flowBuilder.build();
 	const focusProfileBadge = function (): void {
 		if (!restoreBadgeFocus || disposed || profileBadge.disabled) return;
@@ -163,7 +186,11 @@ export const createFrontMenu = async function (options: {
 			starting ||
 			!selected;
 		start.disabled = !profileState.available || !selected || starting;
-		for (const button of sizeButtons) button.disabled = starting;
+		sizeSelect.disabled = starting;
+		continueButton.hidden = !selected?.hasSave;
+		element('setup-next', HTMLButtonElement).disabled = starting;
+		element('setup-galaxy-tab', HTMLButtonElement).disabled = starting;
+		element('setup-opposition-tab', HTMLButtonElement).disabled = starting;
 		carrierToggle.disabled = starting || mode !== 'conquest';
 		modeSelect.disabled = starting;
 		opponentCount.disabled = starting;
@@ -171,6 +198,7 @@ export const createFrontMenu = async function (options: {
 		styleSelect.disabled = starting;
 		element('reroll', HTMLButtonElement).disabled = starting;
 		element('back', HTMLButtonElement).disabled = starting;
+		syncSettingButtons();
 	};
 	const profilePicker = createProfilePicker({
 		elements: {
@@ -321,42 +349,44 @@ export const createFrontMenu = async function (options: {
 			`${DIFFICULTIES[difficulty].label} · ${style === 'random' ? 'Random style' : STYLES[style].label}`,
 		);
 		detail.textContent = MAP_SIZES[size].detail;
-		element('setup-title', HTMLHeadingElement).textContent = 'Choose your star system.';
+		element('setup-title', HTMLHeadingElement).textContent = 'Prepare your conquest';
 		const intro = setup.querySelector('.intro');
 		if (intro) intro.textContent = mode === 'conquest' ? 'Expand your territory and capture the rival holdings.' : 'Escort your carrier. Intercept theirs. First arrival wins.';
-		start.textContent = mode === 'conquest' ? 'Start conquest →' : 'Start race →';
-		for (const button of sizeButtons) {
-			const label = button.querySelector('small');
-			if (label && isMapSize(button.dataset.size)) label.textContent = `${MAP_SIZES[button.dataset.size].count} worlds`;
-		}
-		for (const button of sizeButtons)
-			button.setAttribute('aria-pressed', String(button.dataset.size === size));
+		start.textContent = mode === 'conquest' ? 'Begin conquest →' : 'Begin race →';
+		sizeSelect.value = size;
+		syncSettingButtons();
+		const active = document.activeElement;
+		if (active instanceof HTMLElement && active.dataset.setting) showSettingDetail(active.dataset.setting);
 	};
 	for (let i = 0; i < 110; i++)
 		stars.append(
 			svgElement('circle', {
-				cx: (i * 137.57) % 720,
-				cy: (i * 83.37) % 420,
+				cx: (i * 173.53) % 1280,
+				cy: (i * 93.17) % 720,
 				r: i % 9 === 0 ? 1.3 : 0.65,
 				fill: '#9eb6cc',
 				opacity: 0.15 + (i % 4) * 0.1,
 			}),
 		);
-	const showMenu = function (screen: 'title' | 'setup'): void {
+	const showMenu = function (screen: 'title' | 'setup' | 'setup-opposition'): void {
 		closeProfileDialog();
 		options.onMenu();
 		app.hidden = true;
 		root.hidden = false;
 		title.hidden = screen !== 'title';
-		setup.hidden = screen !== 'setup';
+		setup.hidden = screen === 'title';
+		const opposition = screen === 'setup-opposition';
+		root.dataset.screen = screen;
+		element('galaxy-settings', HTMLDivElement).hidden = opposition;
+		element('opponent-settings', HTMLFieldSetElement).hidden = !opposition;
+		element(opposition ? 'setup-opposition-tab' : 'setup-galaxy-tab', HTMLButtonElement).setAttribute('aria-current', 'step');
+		element(opposition ? 'setup-galaxy-tab' : 'setup-opposition-tab', HTMLButtonElement).removeAttribute('aria-current');
+		const stepCopy = root.querySelector('.setup-step-copy');
+		if (stepCopy) stepCopy.textContent = opposition ? '02 Opposition' : '01 Galaxy';
+		syncSettingButtons();
 		root.scrollTop = 0;
-		if (screen === 'title') newGame.focus();
-		else
-			sizeButtons
-				.find(function (button) {
-					return button.dataset.size === size;
-				})
-				?.focus();
+		if (screen === 'title') (continueButton.hidden || continueButton.disabled ? newGame : continueButton).focus();
+		else visibleControls(element(opposition ? 'opponent-settings' : 'galaxy-settings', HTMLElement))[0]?.focus();
 	};
 	flow.onScreenEnter('title', function () {
 		showMenu('title');
@@ -365,6 +395,7 @@ export const createFrontMenu = async function (options: {
 	flow.onScreenEnter('setup', function () {
 		showMenu('setup');
 	});
+	flow.onScreenEnter('setup-opposition', function () { showMenu('setup-opposition'); });
 	flow.onScreenEnter('playing', function () {
 		closeProfileDialog();
 		root.hidden = true;
@@ -392,21 +423,38 @@ export const createFrontMenu = async function (options: {
 		renderPreview();
 	});
 	element('back', HTMLButtonElement).addEventListener('click', function () {
-		if (!starting) void flow.setScreen('title', {});
+		if (!starting) void flow.setScreen(flow.getCurrentScreen() === 'setup-opposition' ? 'setup' : 'title', {});
 	});
-	for (const button of sizeButtons)
-		button.addEventListener('click', function () {
-			if (
-				starting ||
-				!isMapSize(button.dataset.size) ||
-				button.dataset.size === size
-			)
-				return;
-			size = button.dataset.size;
-			map = freshMap(size, carriersEnabled, mode, opponents);
-			renderPreview();
-			status.textContent = `${MAP_SIZES[size].label} map generated: ${map.planets.length} worlds.`;
-		});
+	sizeSelect.addEventListener('change', function () {
+		if (starting || !isMapSize(sizeSelect.value)) return;
+		size = sizeSelect.value;
+		map = freshMap(size, carriersEnabled, mode, opponents);
+		renderPreview();
+		status.textContent = `${MAP_SIZES[size].label} map generated: ${map.planets.length} worlds.`;
+	});
+	for (const button of settingButtons) button.addEventListener('click', function () { adjustControl(button, 1); }, { signal: profileDialogListeners.signal });
+	element('setup-next', HTMLButtonElement).addEventListener('click', function () { if (!starting) void flow.setScreen('setup-opposition', {}); });
+	element('setup-opposition-tab', HTMLButtonElement).addEventListener('click', function () { if (!starting) void flow.setScreen('setup-opposition', {}); });
+	element('setup-galaxy-tab', HTMLButtonElement).addEventListener('click', function () { if (!starting) void flow.setScreen('setup', {}); });
+	root.addEventListener('keydown', function (event) {
+		if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+		const target = event.target;
+		if (target instanceof HTMLInputElement && target.type === 'text') return;
+		if (event.key === 'Escape' && !root.querySelector('dialog[open]') && flow.getCurrentScreen() !== 'title') {
+			event.preventDefault();
+			element('back', HTMLButtonElement).click();
+			return;
+		}
+		if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown' && event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+		event.preventDefault();
+		const dialog = root.querySelector('dialog[open]');
+		const group = target instanceof Element ? target.closest('[data-focus-group]') : null;
+		moveFocus(dialog ?? group ?? (title.hidden ? setup : title), event.key === 'ArrowUp' ? 'up' : event.key === 'ArrowDown' ? 'down' : event.key === 'ArrowLeft' ? 'left' : 'right');
+	}, { signal: profileDialogListeners.signal });
+	root.addEventListener('focusin', function (event) {
+		const target = event.target;
+		if (target instanceof HTMLElement && target.dataset.setting) showSettingDetail(target.dataset.setting);
+	}, { signal: profileDialogListeners.signal });
 	element('reroll', HTMLButtonElement).addEventListener('click', function () {
 		if (starting) return;
 		map = freshMap(size, carriersEnabled, mode, opponents);
@@ -434,7 +482,7 @@ export const createFrontMenu = async function (options: {
 				throw new Error('The selected profile is no longer available.');
 			if (
 				currentProfile.hasSave &&
-				!window.confirm(
+				!await confirmAction(
 					`Starting a new conquest will replace ${currentProfile.name}'s saved conquest. Continue?`,
 				)
 			) {
