@@ -282,3 +282,18 @@ canvas,
 	transform: translateY(-50%) scale(calc(1 / var(--map-scale, 1)));
 	transform-origin: right center;
 }
+
+/* Pilot battlefield only; carriers and menu surfaces retain their artwork. */
+#board { background: #eee5cf; }
+.planet:not(.carrier) .surface { background: transparent; box-shadow: none; }
+.planet:not(.carrier) .count { text-shadow: 0 1px 2px #071e27, 1px 0 2px #071e27, -1px 0 2px #071e27; }
+.planet:not(.carrier) .name { color: #153e46; font-weight: 600; }
+.planet:not(.carrier) .orbit-count { background: #10202bee; border-radius: 3px; padding: 1px 3px; }
+.planet:not(.carrier) .surface { border-width: 2.5px; box-shadow: 0 0 0 1px #153e46; }
+.planet:not(.carrier) .count { background: #10202be8; border-radius: 3px; padding: 1px 3px; }
+.planet.carrier .name { color: #153e46; font-weight: 600; }
+/* Pressed buttons keep their live outline without covering Pixi artwork. */
+#app .planet:not(.carrier)[aria-pressed='true'] { background: transparent; }
+.planet.carrier .orbit-count { background: #10202bee; border-radius: 3px; padding: 1px 3px; }
+
+#app .planet:hover .name, #app .planet:focus-visible .name { color: #eee5cf; }

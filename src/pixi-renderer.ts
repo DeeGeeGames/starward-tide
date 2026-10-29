@@ -1,4 +1,5 @@
 import ECSpresso from 'ecspresso';
+import { loadAtlasAssets } from './atlas-assets';
 import { createRenderer2DPlugin, createSpriteComponents } from 'ecspresso/plugins/rendering/renderer2D';
 import { Application, Container, Graphics, Sprite, Texture, CanvasSource } from 'pixi.js';
 import { COLORS, CONFIG, SIDES, isHostile, type Owner, type Side } from './config';
@@ -54,11 +55,15 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 	inspect: () => RendererInspection;
 	dispose: () => Promise<void>;
 }> {
+	const atlas = await loadAtlasAssets();
+
+	const globeViews = new Map<number, Sprite>();
 	const app = new Application();
 	await app.init({ canvas: dependencies.canvas, width: 1, height: 1,
 		preference: 'webgl', backgroundAlpha: 0, antialias: false,
 		autoStart: false, sharedTicker: false, autoDensity: false, eventMode: 'none',
 		eventFeatures: { move: false, click: false, wheel: false, globalMove: false } });
+	const globeTexture = new Texture({ source: new CanvasSource({ resource: atlas.globe }) });
 	const root = new Container();
 	root.eventMode = 'none';
 	app.stage.addChild(root);
@@ -94,6 +99,7 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			for (const graphics of [background, routes, effects]) graphics.destroy();
 			travelLines.destroy({ children: true });
 			app.destroy(false, { children: true });
+			globeTexture.destroy(true);
 		});
 		throw error;
 	}
@@ -103,7 +109,14 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 		if (cached) return cached;
 		const created = makeTexture(32, 4, function (context) {
 			const painter = createShipPainter(context);
-			if (kind === 'ship') painter.warship(owner, detail === 3 ? 2.5 : detail === 2 ? 1.75 : 1);
+			if (kind === 'ship') {
+				context.drawImage(atlas.warship, -16, -16, 32, 32);
+				context.fillStyle = COLORS[owner];
+				context.strokeStyle = '#0c2a31';
+				context.lineWidth = 0.8;
+				context.beginPath(); context.arc(-6, 0, 2.8, 0, Math.PI * 2);
+				context.fill(); context.stroke();
+			}
 			else painter.transport(owner, detail === 3 ? 2.5 : detail === 2 ? 1.75 : 1);
 		});
 		textures.set(key, created);
@@ -172,6 +185,8 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			display.destroy({ children: true });
 		}
 		fleet.clear();
+		for (const sprite of globeViews.values()) sprite.destroy();
+		globeViews.clear();
 		for (const route of routeViews.values()) route.destroy();
 		routeViews.clear();
 		candidates.reset();
@@ -210,17 +225,29 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 		root.scale.set(camera.scale);
 		if (map !== currentMap) {
 			background.clear();
+			background.rect(0, 0, map.width, map.height).fill('#eee5cf');
 			for (let i = 0; i < 460; i++) {
 				background.rect((i * 137.57) % map.width, (i * 83.37) % map.height, i % 5 === 0 ? 1.8 : 1, i % 5 === 0 ? 1.8 : 1)
-					.fill(i % 4 === 0 ? '#738ea45c' : '#42627b55');
+					.fill(i % 4 === 0 ? '#153e4630' : '#153e4618');
 			}
 			currentMap = map;
 		}
 		routes.clear(); effects.clear();
 		const match = world.getResource('match');
+		if (atlas.update(match.time)) globeTexture.source.update();
+		const ids = new Set(planets(world).map(function (entity) { return entity.id; }));
+		for (const [id, sprite] of globeViews) if (!ids.has(id)) { sprite.destroy(); globeViews.delete(id); }
 		const intercepts = interceptionAims(world);
 		const zoom = camera.scale / fitScale;
 		for (const { id, components: { planet: p } } of planets(world)) {
+			if (!p.carrier) {
+				let globe = globeViews.get(id);
+				if (!globe) {
+					globe = new Sprite(globeTexture); globe.anchor.set(0.5);
+					background.addChild(globe); globeViews.set(id, globe);
+				}
+				globe.position.set(p.x, p.y); globe.width = p.radius * 2; globe.height = p.radius * 2;
+			}
 			const bombardment = p.carrier?.bombardment;
 			const target = bombardment ? world.getComponent(bombardment.target, 'planet') : undefined;
 			if (bombardment && target) {
@@ -425,12 +452,13 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			app.destroy(false, { children: true });
 			for (const shared of textures.values()) shared.destroy(true);
 			textures.clear();
+			globeTexture.destroy(true);
 		});
 		return disposal;
 	};
 	const inspect = function (): RendererInspection {
 		return { ships: fleet.size, ...counts, platforms: [...platformViews.values()].reduce(function (count, views) { return count + views.length; }, 0),
-			travelLines: travelLines.children.length, textures: textures.size + cargoTextures.size, entities: presentation.entityCount,
+			travelLines: travelLines.children.length, textures: textures.size + cargoTextures.size + 1, entities: presentation.entityCount,
 			tickerStarted: app.ticker.started, width: app.screen.width, height: app.screen.height, resolution: app.renderer.resolution };
 	};
 	return { draw, reset, inspect, dispose };
