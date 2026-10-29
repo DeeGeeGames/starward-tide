@@ -45,8 +45,8 @@ export const createRenderCandidates = async function (): Promise<RenderCandidate
 	const select = function (world: Game, camera: Camera, width: number, height: number, showCargo: boolean, map?: { width: number; height: number }): RenderSelection {
 		const all = units(world).filter(function (entity) { return entity.components.unit.phase !== 'docked'; });
 		const viewport = worldViewport(camera, width, height);
-		// At fit the canvas already clips to the complete map. Indexing cannot
-		// remove visible work there; avoid paying its maintenance cost.
+		// At fit the viewport contains the complete map and its units. Avoid
+		// paying index maintenance when it cannot remove visible work.
 		if (map && viewport.left <= 0 && viewport.top <= 0 && viewport.right >= map.width && viewport.bottom >= map.height) {
 			reset();
 			return { all, visible: all.filter(function (entity) {

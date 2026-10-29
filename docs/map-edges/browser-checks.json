@@ -1,0 +1,16 @@
+{
+  "checks": [
+    "desktop fit covers viewport without clipping",
+    "desktop pan completely beyond map keeps full viewport",
+    "zoom beyond map keeps full viewport",
+    "portrait resize keeps full viewport",
+    "portrait pan keeps full viewport",
+    "landscape resize keeps full viewport",
+    "Actual renderer fixture retains a ship, its trail, route, and weapon effect at negative world coordinates outside the map",
+    "Actual renderer fixture retains 800x600 backing dimensions across distant pans and zoom",
+    "Actual renderer fixture disposes renderer and world without page errors"
+  ],
+  "errors": [],
+  "environment": "Local Chromium, SwiftShader, DPR 2; 1280x800, 390x844 and 844x390 viewports. Actual renderer fixture: 800x600.",
+  "limits": "Physical mobile input and hardware GPU performance were not measured. Full-viewport backing increases pixel work compared with the former cropped canvas. Owner visual acceptance is separate."
+}
