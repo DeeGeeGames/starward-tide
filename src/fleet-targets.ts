@@ -9,6 +9,7 @@ export const createFleetTargets = function (layer: HTMLElement): {
 	const buttons = new Map<number, HTMLButtonElement>();
 	return {
 		update: function (world, enabled): void {
+			layer.hidden = !enabled;
 			const groups = travelingGroups(world).filter(function (group) { return isHostile(group.order.owner, 'blue'); });
 			const live = new Set(groups.map(function (group) { return group.order.id; }));
 			for (const [id, button] of buttons) {

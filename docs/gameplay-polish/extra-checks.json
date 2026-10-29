@@ -1,0 +1,11 @@
+[
+  "real touch tap selects a world",
+  "menu cancels pending touch hold",
+  "wheel navigation cancels pending touch hold",
+  "window blur cancels pending touch hold",
+  "bombardment cancellation restores the correct command focus",
+  "bombardment dispatch and cancellation remain usable",
+  "hostile group controls stay hidden without selected sources",
+  "collapse control remains reachable after scrolling a short panel",
+  "reduced-motion touch feedback remains static"
+]
