@@ -41,3 +41,26 @@ for (const kind of ['ship', 'transport'] as const) {
 		} finally { await world.dispose(); }
 	});
 }
+
+test('carrier hull turns slowly while movement starts immediately and pauses with gameplay', async function () {
+	const world = await createGame('skirmish', { ...LAB_MAP, carriers: true });
+	try {
+		world.getResource('match').ai = false;
+		const host = planets(world).find(function (entry) { return entry.components.planet.name === 'Blue carrier'; });
+		if (!host?.components.planet.carrier) throw new Error('Missing carrier');
+		const p = host.components.planet;
+		const carrier = host.components.planet.carrier;
+		carrier.heading = 0;
+		p.x = 600; p.y = 600;
+		const startY = p.y;
+		moveCarrier(world, host.id, { x: p.x, y: p.y + 100 });
+		world.update(CONFIG.step);
+		expect(carrier.heading).toBeGreaterThan(0);
+		expect(carrier.heading).toBeLessThan(0.01);
+		expect(p.y).toBeGreaterThan(startY);
+		const heading = carrier.heading;
+		world.getResource('match').paused = true;
+		world.update(CONFIG.step);
+		expect(carrier.heading).toBe(heading);
+	} finally { await world.dispose(); }
+});

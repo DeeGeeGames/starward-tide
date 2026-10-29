@@ -1,4 +1,5 @@
 import ECSpresso from 'ecspresso';
+import { turnToward, SHIP_TURN_RATE } from './turning';
 import { loadAtlasAssets } from './atlas-assets';
 import { createRenderer2DPlugin, createSpriteComponents } from 'ecspresso/plugins/rendering/renderer2D';
 import { Application, Container, Graphics, Sprite, Texture, CanvasSource } from 'pixi.js';
@@ -77,7 +78,7 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 	const effects = new Graphics();
 	const travelLines = new Container();
 	const textures = new Map<string, Texture>();
-	const fleet = new Map<number, { entityId: number; display: Container; hull: Sprite; badge: Sprite | undefined }>();
+	const fleet = new Map<number, { entityId: number; display: Container; hull: Sprite; badge: Sprite | undefined; heading: number; time: number }>();
 	const routeViews = new Map<number, Sprite>();
 	const destroyStage = function (): void {
 		for (const graphics of [background, routes, effects]) graphics.destroy();
@@ -394,9 +395,11 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			if (!view) {
 				const hull = new Sprite(); hull.anchor.set(0.5);
 				const entity = presentation.spawn({ ...createSpriteComponents(hull), renderLayer: 'ships' });
-				view = { entityId: entity.id, display: hull, hull, badge: undefined };
+				view = { entityId: entity.id, display: hull, hull, badge: undefined, heading: point.angle, time: match.time };
 				fleet.set(id, view);
 			}
+			view.heading = turnToward(view.heading, point.angle, SHIP_TURN_RATE, Math.max(0, match.time - view.time));
+			view.time = match.time;
 			view.hull.texture = texture(u.owner, u.kind, shipDetailZoom(zoom));
 			const showCargo = u.kind === 'transport' && zoom >= 3.5;
 			if (showCargo && !view.badge) {
@@ -423,12 +426,12 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			if (view.badge) view.badge.visible = showCargo;
 			if (showCargo && view.badge) {
 				view.badge.texture = cargoTexture(u.owner, u.cargo);
-				view.badge.rotation = -point.angle;
+				view.badge.rotation = -view.heading;
 				view.badge.scale.set(1 / camera.scale);
 			}
 			const transform = presentation.getComponent(view.entityId, 'localTransform');
 			if (transform) {
-				transform.x = point.x; transform.y = point.y; transform.rotation = point.angle;
+				transform.x = point.x; transform.y = point.y; transform.rotation = view.heading;
 				presentation.markChanged(view.entityId, 'localTransform');
 			}
 		}
