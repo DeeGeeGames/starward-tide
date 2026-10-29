@@ -13,7 +13,7 @@ const exhaustive = function (world: Game, camera: Camera, width: number, height:
 		const point = unitPoint(unit, target, world.getResource('match').time, id);
 		const screenX = point.x * camera.scale + camera.x;
 		const screenY = point.y * camera.scale + camera.y;
-		const radius = Math.max(23 * camera.scale, unit.kind === 'transport' ? Math.max(20, String(unit.cargo).length * 7 + 2) / 2 : 0);
+		const radius = Math.max(45 * camera.scale, unit.kind === 'transport' ? Math.max(20, String(unit.cargo).length * 7 + 2) / 2 : 0);
 		return screenX + radius >= 0 && screenX - radius <= width && screenY + radius >= 0 && screenY - radius <= height;
 	}).map(function (entity) { return entity.id; });
 };
@@ -91,9 +91,9 @@ test('screen-space cargo and silhouette margins retain ships at all four viewpor
 		for (const entity of units(world)) world.removeEntity(entity.id);
 		const home = planets(world)[0];
 		if (!home) throw new Error('Missing planet');
-		for (const [x, y] of [[-26, 50], [126, 50], [50, -26], [50, 126]]) {
+		for (const [x, y] of [[-50, 50], [150, 50], [50, -50], [50, 150]]) {
 			if (x === undefined || y === undefined) throw new Error('Missing position');
-			world.spawn({ unit: { x, y, target: home.id, phase: 'travel', kind: 'transport', cargo: 123456789, hp: 10, owner: 'blue', age: 0 } });
+			world.spawn({ unit: { x, y, target: home.id, phase: 'travel', kind: 'transport', cargo: 123456789012345, hp: 10, owner: 'blue', age: 0 } });
 		}
 		expect(index.select(world, { x: 0, y: 0, scale: 1 }, 100, 100, true).visible).toHaveLength(4);
 		expect(index.select(world, { x: 0, y: 0, scale: 1 }, 100, 100, false).visible).toHaveLength(0);

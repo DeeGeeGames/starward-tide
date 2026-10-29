@@ -1,0 +1,3 @@
+Browser evidence captured in Chromium with SwiftShader, at 1440×900 desktop and 390×844 emulated mobile. `trails-desktop.png` shows the diagnostics capture scenario at close zoom; `action-desktop.png` follows resume/pause, and `trails-mobile.png` shows fit view after resize. `weapon-impact.png` uses the real Pixi adapter with two traveling ships and one controlled engagement, captured 0.08 simulation seconds after firing at 3× camera scale.
+
+`browser-checks.json` records identical output on paused redraw and identical expired/reset output, with no page errors. This is rendering evidence, not a measurement of hardware GPU performance, physical-device play, or owner acceptance of feel.

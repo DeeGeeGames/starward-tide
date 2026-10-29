@@ -15,10 +15,10 @@ export const pointInViewport = function (point: Point, viewport: WorldViewport, 
 	return point.x + margin >= viewport.left && point.x - margin <= viewport.right &&
 		point.y + margin >= viewport.top && point.y - margin <= viewport.bottom;
 };
-// A rotated 32-world-unit texture fits inside this radius. Cargo badges remain
+// A hull and its rear engine trail fit inside this radius. Cargo badges remain
 // screen-sized, including labels from saves with more than the normal cargo.
 export const unitRenderMargin = function (cargo: number, scale: number, showCargo: boolean): number {
-	return Math.max(23, showCargo ? Math.max(20, String(cargo).length * 7 + 2) / 2 / scale : 0);
+	return Math.max(45, showCargo ? Math.max(20, String(cargo).length * 7 + 2) / 2 / scale : 0);
 };
 
 export interface RenderSelection {
@@ -54,7 +54,7 @@ export const createRenderCandidates = async function (): Promise<RenderCandidate
 			}), candidates: all.length, entries: 0 };
 		}
 		for (const group of groups.values()) group.members.length = 0;
-		let margin = 23;
+		let margin = 45;
 		for (const entity of all) {
 			const unit = entity.components.unit;
 			const target = world.getComponent(unit.target, 'planet');

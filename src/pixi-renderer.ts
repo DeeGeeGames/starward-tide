@@ -1,4 +1,5 @@
 import ECSpresso from 'ecspresso';
+import { createWeaponEffects } from './visual-effects';
 import { turnToward, SHIP_TURN_RATE } from './turning';
 import { loadAtlasAssets } from './atlas-assets';
 import { createRenderer2DPlugin, createSpriteComponents } from 'ecspresso/plugins/rendering/renderer2D';
@@ -10,7 +11,7 @@ import { isBlockaded, planets, shipsAt, orderUnits, unitPoint } from './game';
 import type { Game, Order } from './game';
 import { travelAim } from './movement';
 import { interceptionAims } from './fleet-interception';
-import { createRenderCandidates, type RenderSelection } from './render-candidates';
+import { createRenderCandidates, worldViewport, type RenderSelection } from './render-candidates';
 import { canvasViewport, visibleMapViewport, mapClipInsets, dashedLine, shipDetailZoom, planetPlatformOrbitRadius } from './render-geometry';
 
 interface RendererState {
@@ -71,18 +72,21 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 	app.stage.addChild(root);
 	const presentation = ECSpresso.create()
 		.withPlugin(createRenderer2DPlugin({ app, rootContainer: root, startLoop: false,
-			renderLayers: ['background', 'routes', 'ships', 'effects'] }))
+			renderLayers: ['background', 'routes', 'trails', 'ships', 'effects'] }))
 		.build();
 	const background = new Graphics();
 	const routes = new Graphics();
 	const effects = new Graphics();
 	const travelLines = new Container();
+	const trails = new Container();
+	const weaponEffects = createWeaponEffects();
 	const textures = new Map<string, Texture>();
-	const fleet = new Map<number, { entityId: number; display: Container; hull: Sprite; badge: Sprite | undefined; heading: number; time: number }>();
+	const fleet = new Map<number, { entityId: number; display: Container; hull: Sprite; badge: Sprite | undefined; trail: Sprite; heading: number; time: number }>();
 	const routeViews = new Map<number, Sprite>();
 	const destroyStage = function (): void {
 		for (const graphics of [background, routes, effects]) graphics.destroy();
 		travelLines.destroy({ children: true });
+		trails.destroy({ children: true });
 		app.destroy(false, { children: true });
 		for (const texture of globeTextures) texture.destroy(true);
 	};
@@ -104,6 +108,7 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			presentation.spawn({ graphics, renderLayer });
 		}
 		presentation.spawn({ container: travelLines, renderLayer: 'routes' });
+		presentation.spawn({ container: trails, renderLayer: 'trails' });
 	} catch (error) {
 		await candidates.dispose();
 		await presentation.dispose().finally(destroyStage);
@@ -122,6 +127,23 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			context.fill(); context.stroke();
 		});
 		textures.set(key, created);
+		return created;
+	};
+	// One shared, tapered exhaust texture; no particle entities or per-frame textures.
+	const exhaustTexture = function (): Texture {
+		const cached = textures.get('exhaust');
+		if (cached) return cached;
+		const created = makeTexture(64, 2, function (context) {
+			const gradient = context.createLinearGradient(-32, 0, 32, 0);
+			gradient.addColorStop(0, '#ffffff00');
+			gradient.addColorStop(0.65, '#ffffff55');
+			gradient.addColorStop(1, '#ffffffff');
+			context.fillStyle = gradient;
+			context.beginPath();
+			context.moveTo(-32, 0); context.lineTo(32, -12);
+			context.lineTo(32, 12); context.closePath(); context.fill();
+		});
+		textures.set('exhaust', created);
 		return created;
 	};
 	const platformTextureKey = function (owner: Owner, detail: 1 | 2 | 3): string {
@@ -184,9 +206,11 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 		return created;
 	};
 	const clearFleet = function (): void {
-		for (const { entityId, display } of fleet.values()) {
+		weaponEffects.reset();
+		for (const { entityId, display, trail } of fleet.values()) {
 			presentation.removeEntity(entityId);
 			display.destroy({ children: true });
+			trail.destroy();
 		}
 		fleet.clear();
 		for (const sprite of globeViews.values()) sprite.destroy();
@@ -337,6 +361,11 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 				routes.moveTo(p.x + Math.cos(angle) * (p.radius + 19), p.y + Math.sin(angle) * (p.radius + 19))
 					.lineTo(p.x - Math.cos(angle) * (p.radius + 19), p.y - Math.sin(angle) * (p.radius + 19))
 					.stroke({ color: '#ffe3a9', width: 1.7 });
+				const pulse = (match.time * 5 + id * 0.37) % 1;
+				const impactX = p.x - Math.cos(angle) * (p.radius + 19);
+				const impactY = p.y - Math.sin(angle) * (p.radius + 19);
+				effects.circle(impactX, impactY, 2 + pulse * 9).stroke({ color: '#ffe3a9', alpha: (1 - pulse) * 0.8, width: 1.5 });
+				effects.circle(impactX, impactY, 2).fill({ color: '#fff4d8', alpha: 1 - pulse });
 			}
 		}
 		if (highlighted) {
@@ -395,11 +424,21 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			if (!view) {
 				const hull = new Sprite(); hull.anchor.set(0.5);
 				const entity = presentation.spawn({ ...createSpriteComponents(hull), renderLayer: 'ships' });
-				view = { entityId: entity.id, display: hull, hull, badge: undefined, heading: point.angle, time: match.time };
+				const trail = new Sprite(exhaustTexture());
+				trail.anchor.set(1, 0.5);
+				trails.addChild(trail);
+				view = { entityId: entity.id, display: hull, hull, badge: undefined, trail, heading: point.angle, time: match.time };
 				fleet.set(id, view);
 			}
 			view.heading = turnToward(view.heading, point.angle, SHIP_TURN_RATE, Math.max(0, match.time - view.time));
 			view.time = match.time;
+			const thrust = 0.9 + 0.1 * Math.sin(match.time * 19 + id * 2.4);
+			view.trail.position.set(point.x - Math.cos(view.heading) * 10, point.y - Math.sin(view.heading) * 10);
+			view.trail.rotation = view.heading;
+			view.trail.width = (u.phase === 'travel' ? 28 : 12) * thrust;
+			view.trail.height = u.kind === 'transport' ? 6 : 8;
+			view.trail.tint = COLORS[u.owner];
+			view.trail.alpha = u.phase === 'travel' ? 0.75 : 0.4;
 			view.hull.texture = texture(u.owner, u.kind, shipDetailZoom(zoom));
 			const showCargo = u.kind === 'transport' && zoom >= 3.5;
 			if (showCargo && !view.badge) {
@@ -439,11 +478,34 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			if (live.has(id)) continue;
 			presentation.removeEntity(view.entityId);
 			view.display.destroy({ children: true });
+			view.trail.destroy();
 			fleet.delete(id);
 		}
-		for (const shot of match.engagements) {
-			effects.moveTo(shot.x1, shot.y1).lineTo(shot.x2, shot.y2).stroke({ color: COLORS[shot.owner], alpha: 0.35, width: 6, cap: 'round' });
-			effects.moveTo(shot.x1, shot.y1).lineTo(shot.x2, shot.y2).stroke({ color: COLORS[shot.owner], alpha: 0.95, width: 2, cap: 'round' });
+		const bounds = worldViewport(camera, viewport.width, viewport.height);
+		for (const shot of weaponEffects.update(match.time, match.engagements, function (shot) {
+			return Math.max(shot.x1, shot.x2) + 20 >= bounds.left && Math.min(shot.x1, shot.x2) - 20 <= bounds.right &&
+				Math.max(shot.y1, shot.y2) + 20 >= bounds.top && Math.min(shot.y1, shot.y2) - 20 <= bounds.bottom;
+		})) {
+			const age = match.time - shot.started;
+			const fade = Math.max(0, 1 - age / 0.24);
+			const color = COLORS[shot.owner];
+			const dx = shot.x2 - shot.x1;
+			const dy = shot.y2 - shot.y1;
+			const distance = Math.hypot(dx, dy);
+			const inset = distance > 0 ? Math.min(12, distance / 4) / distance : 0;
+			const impactX = shot.x2 - dx * inset;
+			const impactY = shot.y2 - dy * inset;
+			effects.moveTo(shot.x1, shot.y1).lineTo(impactX, impactY).stroke({ color, alpha: fade * 0.22, width: 7, cap: 'round' });
+			effects.moveTo(shot.x1, shot.y1).lineTo(impactX, impactY).stroke({ color, alpha: fade, width: 2, cap: 'round' });
+			effects.circle(shot.x1, shot.y1, 2.5 * fade).fill({ color: '#effbff', alpha: fade });
+			effects.circle(impactX, impactY, 4 + age * 32).stroke({ color, alpha: fade * 0.7, width: 1 });
+			for (let spark = 0; spark < 4; spark++) {
+				const angle = spark * Math.PI / 2 + shot.started * 7;
+				const distance = 4 + age * 35;
+				effects.moveTo(impactX + Math.cos(angle) * distance, impactY + Math.sin(angle) * distance)
+					.lineTo(impactX + Math.cos(angle) * (distance + 5), impactY + Math.sin(angle) * (distance + 5))
+					.stroke({ color: '#ffe5aa', alpha: fade, width: 1 });
+			}
 		}
 		// Transform propagation and scene wiring run even while gameplay is paused.
 		presentation.update(0);
@@ -457,6 +519,7 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			// The plugin detaches display components; the adapter owns destruction.
 			for (const graphics of [background, routes, effects]) graphics.destroy();
 			travelLines.destroy({ children: true });
+			trails.destroy({ children: true });
 			app.destroy(false, { children: true });
 			for (const shared of textures.values()) shared.destroy(true);
 			textures.clear();
