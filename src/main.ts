@@ -1,5 +1,5 @@
 import { GAME_MODES, destinationFor } from './objectives';
-import { createCarrierArtwork } from './carrier-art';
+import carrierSpriteUrl from '../assets/stellar-atlas/carrier.png';
 import { createPerformanceDiagnostics, type PerformanceDiagnostics, type DiagnosticsReport } from './performance-diagnostics';
 import { createCrowdedBaseline } from './performance-scenario';
 import { createPixiRenderer } from './pixi-renderer';
@@ -405,7 +405,13 @@ const mountPlanets = function (): void {
 		button.style.top = `${p.y}px`;
 		button.innerHTML =
 			'<span class="surface"></span><span class="count"></span><span class="name"></span><span class="orbit-count"></span><span class="production-mark"></span><span class="production-progress"><i></i></span><span class="bombardment-label" hidden></span>';
-		if (p.carrier) button.querySelector('.surface')?.append(createCarrierArtwork());
+		if (p.carrier) {
+			const image = document.createElement('img');
+			image.src = carrierSpriteUrl;
+			image.alt = '';
+			image.draggable = false;
+			button.querySelector('.surface')?.append(image);
+		}
 		const count = button.querySelector('.count');
 		const name = button.querySelector('.name');
 		const orbit = button.querySelector('.orbit-count');

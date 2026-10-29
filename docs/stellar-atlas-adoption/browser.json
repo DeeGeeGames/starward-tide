@@ -1,0 +1,61 @@
+{
+  "errors": [],
+  "viewports": [
+    {
+      "viewport": [
+        1440,
+        900
+      ],
+      "page": [
+        1440,
+        900
+      ]
+    },
+    {
+      "viewport": [
+        390,
+        844
+      ],
+      "page": [
+        390,
+        844
+      ]
+    },
+    {
+      "viewport": [
+        667,
+        320
+      ],
+      "page": [
+        667,
+        320
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "name": "desktop paused production",
+      "selected": "true"
+    },
+    {
+      "name": "portrait paused production",
+      "selected": "true"
+    },
+    {
+      "name": "landscape paused production",
+      "selected": "true"
+    },
+    {
+      "name": "bombardment cancellation",
+      "visible": true
+    },
+    {
+      "name": "paused canvas stable",
+      "pass": true
+    },
+    {
+      "name": "resume changes canvas",
+      "pass": true
+    }
+  ]
+}

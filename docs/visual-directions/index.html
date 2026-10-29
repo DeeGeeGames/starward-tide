@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Galaxy Conquest — three visual directions</title>
+<style>
+:root {
+ color-scheme:dark;
+ --background:#101318;--foreground:#e9edf1;--muted:#9da7b2;--card:#191f27;--border:#36404c;--primary:#a4e0d5;--primary-foreground:#0d2825;--radius:12px;
+ --font-sans:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+ --font-mono:"SFMono-Regular",Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{color:var(--foreground);font-family:var(--font-sans);font-size:14px;line-height:1.5}
+main{padding:0}
+.intro{margin:0 0 12px;color:var(--muted);font-size:13px;max-width:65ch}
+nav{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 18px}
+button{font:inherit;cursor:pointer;min-height:38px;padding:7px 12px;border:1px solid var(--border);border-radius:7px;background:var(--card);color:var(--foreground)}
+button[aria-pressed="true"]{background:var(--primary);color:var(--primary-foreground);border-color:var(--primary)}
+button:focus-visible,summary:focus-visible{outline:2px solid var(--primary);outline-offset:3px}
+.direction{margin:0 0 16px}
+.direction[hidden]{display:none}
+.direction-heading{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.number{font:18px var(--font-mono);color:var(--muted);border-right:1px solid var(--border);padding-right:12px}
+.eyebrow{font-size:10px;letter-spacing:1.2px;text-transform:uppercase;margin:0 0 2px;color:var(--muted)}
+h2{font-size:21px;font-weight:550;line-height:1.2;letter-spacing:-.5px;margin:0}
+img{display:block;width:100%;height:auto;border-radius:var(--radius)}
+.description{margin:12px 0 9px;max-width:80ch;font-size:13px}
+.assessment{display:grid;grid-template-columns:1fr 1fr;gap:18px;font-size:12px;color:var(--muted)}
+.assessment p{margin:0}
+.assessment strong{color:var(--foreground);font-weight:550;display:block;margin-bottom:2px}
+details{font-size:12px;color:var(--muted);margin-top:10px}
+summary{cursor:pointer;width:fit-content;min-height:24px}
+details p{margin:6px 0;max-width:80ch}
+footer{border-top:1px solid var(--border);padding-top:12px;font-size:12px;color:var(--muted)}
+footer p{margin:0 0 6px}
+@media(max-width:460px){
+button{padding:7px 9px;font-size:12px}
+h2{font-size:19px}
+.assessment{gap:12px}
+}
+</style>
+</head><body><main>
+<p class="intro">Same battle and controls, three visual directions. Select one to focus, or compare all three.</p>
+<nav aria-label="Choose visual direction">
+<button type="button" data-filter="all" aria-pressed="true">All three</button>
+<button type="button" data-filter="01" aria-pressed="false">01 · Orbital</button>
+<button type="button" data-filter="02" aria-pressed="false">02 · Deep Space</button>
+<button type="button" data-filter="03" aria-pressed="false">03 · Atlas</button>
+</nav>
+<section class="direction" data-direction="01" aria-labelledby="heading-01">
+<div class="direction-heading"><span class="number">01</span><div><p class="eyebrow">Refine the current look</p><h2 id="heading-01">Orbital Command</h2></div></div>
+<img src="01-orbital-command.png" width="1586" height="992" alt="Orbital Command concept: Quiet navy space, graphic planets, precise orbit rings, and distinct ship silhouettes. The current cyan/coral language becomes more deliberate." loading="eager">
+<p class="description">Quiet navy space, graphic planets, precise orbit rings, and distinct ship silhouettes. The current cyan/coral language becomes more deliberate.</p>
+<details><summary>Fit, tradeoff &amp; direction notes</summary><p><strong>Fit:</strong> Best for continuity and fast tactical reading. <strong>Tradeoff:</strong> More restrained; less spectacle than the other directions.</p><p>Keep planet surfaces abstract and unit roles readable by silhouette. Concentrate motion in production, dispatch, and combat feedback. This is the most direct evolution of the current rendering approach.</p></details>
+</section>
+<section class="direction" data-direction="02" aria-labelledby="heading-02">
+<div class="direction-heading"><span class="number">02</span><div><p class="eyebrow">Higher detail planets & ships</p><h2 id="heading-02">Deep Space</h2></div></div>
+<img src="02-deep-space.png" width="1586" height="992" alt="Deep Space concept: Clouds, cratered moons, planetary night sides, hull panels, and mechanical platforms. Fine faction rings and count badges sit above the richer art." loading="eager">
+<p class="description">Clouds, cratered moons, planetary night sides, hull panels, and mechanical platforms. Fine faction rings and count badges sit above the richer art.</p>
+<details><summary>Fit, tradeoff &amp; direction notes</summary><p><strong>Fit:</strong> Best for a tangible science-fiction setting. <strong>Tradeoff:</strong> More asset work; background detail needs restraint in crowded battles.</p><p>Use natural planetary colors with independent faction markers. Warships and transports need distinct silhouettes before adding hull detail. Detailed textures should simplify as the camera zooms out. The decorative asteroid fields in the concept are visual dressing only.</p></details>
+</section>
+<section class="direction" data-direction="03" aria-labelledby="heading-03">
+<div class="direction-heading"><span class="number">03</span><div><p class="eyebrow">A fresh direction</p><h2 id="heading-03">Stellar Atlas</h2></div></div>
+<img src="03-stellar-atlas.png" width="1586" height="992" alt="Stellar Atlas concept: Warm ivory, petrol ink, teal and vermilion. Illustrated worlds, inked spacecraft, and editorial type turn the battle into an interactive astronomical chart." loading="eager">
+<p class="description">Warm ivory, petrol ink, teal and vermilion. Illustrated worlds, inked spacecraft, and editorial type turn the battle into an interactive astronomical chart.</p>
+<details><summary>Fit, tradeoff &amp; direction notes</summary><p><strong>Fit:</strong> Best for a distinctive visual identity. <strong>Tradeoff:</strong> The largest change in tone; needs a consistent illustration style.</p><p>Pair a serif world title with simple controls and tabular numbers. Keep chart marks faint and reserve strong ink for worlds, units, and active routes. Carry the printed-atlas material into menus and the existing mobile command sheet.</p></details>
+</section>
+<footer><p>Static art-direction mockups generated with the built-in image tool; gameplay code is unchanged. The closer six-world view makes artwork comparable. Mobile would retain the current contextual bottom sheet.</p></footer>
+</main>
+<script>
+document.querySelectorAll("button[data-filter]").forEach(function(button){
+ button.addEventListener("click",function(){
+  const selected=button.dataset.filter;
+  document.querySelectorAll("button[data-filter]").forEach(function(control){control.setAttribute("aria-pressed",String(control===button));});
+  document.querySelectorAll("[data-direction]").forEach(function(section){section.hidden=selected!=="all"&&section.dataset.direction!==selected;});
+ });
+});
+</script>
+</body></html>

@@ -48,6 +48,8 @@ await writeFile('dist/index.html', html.replace('</head>', `
 
 const { warnings } = await generateSW({
 	globDirectory: 'dist',
+	// Accepted opaque atlas master; included for offline gameplay.
+	maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
 	globPatterns: ['**/*.{html,js,css,svg,png,webmanifest}'],
 	swDest: 'dist/sw.js',
 	inlineWorkboxRuntime: true,

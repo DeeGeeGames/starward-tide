@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stellar Atlas — animated asset proof</title>
+<style>
+:root{color-scheme:dark;--background:#101318;--foreground:#e9edf1;--muted:#a5afb8;--card:#192128;--border:#35454c;--primary:#96d3c9;--primary-foreground:#11342f;--radius:12px;--font-sans:system-ui,-apple-system,"Segoe UI",sans-serif;--font-mono:Consolas,monospace}
+*{box-sizing:border-box}html,body{margin:0;padding:0}body{font:13px/1.5 var(--font-sans);color:var(--foreground)}
+p{margin:0 0 12px}.intro{color:var(--muted)}
+.toolbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 12px}
+button,select{min-height:38px;border:1px solid var(--border);border-radius:7px;padding:6px 11px;font:inherit;background:var(--card);color:var(--foreground);cursor:pointer}
+button[aria-pressed=true]{background:var(--primary);color:var(--primary-foreground);border-color:var(--primary)}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--primary);outline-offset:3px}
+label{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:12px}
+canvas{display:block;width:100%;height:auto;border-radius:var(--radius)}
+.scrub{display:flex;gap:12px;align-items:center;margin:10px 0 18px}.scrub input{flex:1;min-width:0;accent-color:var(--primary)}output{font:11px var(--font-mono);color:var(--muted);min-width:49px;text-align:right}
+.caption{font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);margin:18px 0 8px}
+.notes{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:12px 0 0;color:var(--muted);font-size:12px}
+.notes strong{display:block;color:var(--foreground);font-weight:550;margin-bottom:3px}
+details{margin-top:14px;color:var(--muted);font-size:12px}summary{cursor:pointer;min-height:28px}details p{margin:6px 0}
+#status{font-size:11px;color:var(--muted);margin-top:12px}#error{color:#ffbca7}
+.sources{display:none}
+@media(max-width:430px){.notes{grid-template-columns:1fr;gap:2px}button,select{font-size:12px;padding:6px 9px}.toolbar label{width:100%}}
+</style>
+</head>
+<body>
+<main>
+<p class="intro">One illustrated planet and one capital warship. Inspect the artwork, then judge the same assets at game scale. No effects.</p>
+<div class="toolbar">
+<button id="play" type="button" aria-pressed="true">Pause</button>
+<button id="replay" type="button">Replay approach</button>
+<label>View <select id="zoom"><option value="3">Inspection · 3×</option><option value="1">Game scale · 1×</option></select></label>
+<label>Ground <select id="ground"><option value="paper">Atlas paper</option><option value="check">Transparency grid</option><option value="ink">Ink</option></select></label>
+</div>
+<canvas id="scene" width="1456" height="840" aria-label="Animated planet rotating under fixed lighting, with a warship approaching and entering orbit"></canvas>
+<div class="scrub"><label for="time">Time</label><input id="time" type="range" min="0" max="60" step="0.1" value="0" aria-label="Scrub animation time"><output id="clock" for="time">00.0 s</output></div>
+<p class="caption">Actual game size · 68 px planet / 26 px warship at full-width view</p>
+<canvas id="bench" width="1456" height="300" aria-label="Animated planet and warship at actual game size, with a second ship enlarged to inspect transparency"></canvas>
+<div class="notes">
+<p><strong>Planet</strong>The generated surface wraps around a sphere in a 2D canvas. Surface features rotate; the lighting, outline, and labels stay fixed. One revolution takes 48 seconds.</p>
+<p><strong>Warship</strong>One rigid sprite cruises, turns, and enters orbit. Its shape stays identical throughout. Arrival follows an 8-second curve; each orbit takes 18 seconds.</p>
+</div>
+<details><summary>What this proof establishes</summary><p>Generated source art can be isolated and animated together in the atlas style. The lower strip exposes readability at normal scale; the checkerboard exposes unwanted halos. This is a standalone asset preview. It does not establish crowded-battle readability, game-renderer integration, or mobile performance.</p><p>Motion is procedural: no independently generated animation frames, no 3D engine, and no animated engine or combat effects. Both input PNGs remain unchanged. Planet projection and ship framing are handled by the preview.</p></details>
+<p id="status" aria-live="polite">Loading source art…</p><p id="error" role="alert" hidden></p>
+<div class="sources"><img id="texture" src="planet-surface.png" alt=""><img id="hull" src="atlas-warship.png" alt=""></div>
+</main>
+<script>
+(async function () {
+	"use strict";
+	const getElement = function (id, constructor) {
+		const element = document.getElementById(id);
+		if (!(element instanceof constructor)) throw new Error("Missing element: " + id);
+		return element;
+	};
+	const getContext = function (canvas, options) {
+		const context = canvas.getContext("2d", options);
+		if (!context) throw new Error("2D canvas unavailable");
+		return context;
+	};
+	const scene = getElement("scene", HTMLCanvasElement);
+	const bench = getElement("bench", HTMLCanvasElement);
+	const texture = getElement("texture", HTMLImageElement);
+	const hull = getElement("hull", HTMLImageElement);
+	const status = getElement("status", HTMLParagraphElement);
+	const playButton = getElement("play", HTMLButtonElement);
+	const replayButton = getElement("replay", HTMLButtonElement);
+	const zoom = getElement("zoom", HTMLSelectElement);
+	const ground = getElement("ground", HTMLSelectElement);
+	const timeSlider = getElement("time", HTMLInputElement);
+	const clock = getElement("clock", HTMLOutputElement);
+	const context = getContext(scene);
+	const benchContext = getContext(bench);
+	await Promise.all([texture.decode(), hull.decode()]);
+	const source = document.createElement("canvas");
+	source.width = 1024;
+	source.height = 512;
+	const sourceContext = getContext(source, {willReadFrequently: true});
+	sourceContext.drawImage(texture, 0, 0, source.width, source.height);
+	const surface = sourceContext.getImageData(0, 0, source.width, source.height).data;
+
+	// Find one shared, centered hull frame from the meaningful alpha silhouette.
+	const hullCanvas = document.createElement("canvas");
+	hullCanvas.width = hull.naturalWidth;
+	hullCanvas.height = hull.naturalHeight;
+	const hullContext = getContext(hullCanvas, {willReadFrequently: true});
+	hullContext.drawImage(hull, 0, 0);
+	const hullPixels = hullContext.getImageData(0, 0, hullCanvas.width, hullCanvas.height).data;
+	let left = hullCanvas.width, top = hullCanvas.height, right = -1, bottom = -1;
+	for (let y = 0; y < hullCanvas.height; y++) {
+		for (let x = 0; x < hullCanvas.width; x++) {
+			if (hullPixels[(y * hullCanvas.width + x) * 4 + 3] < 16) continue;
+			left = Math.min(left, x); right = Math.max(right, x);
+			top = Math.min(top, y); bottom = Math.max(bottom, y);
+		}
+	}
+	if (right < left || bottom < top) throw new Error("No opaque ship silhouette");
+	const hullWidth = right - left + 1, hullHeight = bottom - top + 1;
+
+	// A fixed spherical UV projection. Only longitude changes between frames.
+	const size = 256;
+	const globe = document.createElement("canvas");
+	globe.width = size; globe.height = size;
+	const globeContext = getContext(globe, {willReadFrequently: true});
+	const globeFrame = globeContext.createImageData(size, size);
+	const samples = [];
+	for (let y = 0; y < size; y++) {
+		for (let x = 0; x < size; x++) {
+			const nx = (x + .5 - size / 2) / (size / 2 - 1);
+			const ny = (y + .5 - size / 2) / (size / 2 - 1);
+			const radial = nx * nx + ny * ny;
+			if (radial >= 1) continue;
+			const nz = Math.sqrt(1 - radial);
+			const longitude = Math.atan2(nx, nz) / (Math.PI * 2) + .5;
+			const latitude = Math.asin(ny) / Math.PI + .5;
+			const light = Math.max(0, -.56 * nx - .42 * ny + .71 * nz);
+			// Broad ink shadow bands preserve the printed quality.
+			const lit = light > .55 ? 1 : light > .18 ? .78 : .43;
+			const alpha = Math.min(1, (1 - Math.sqrt(radial)) * size / 2);
+			samples.push({index: (y * size + x) * 4, longitude, row: Math.min(source.height - 1, Math.floor(latitude * source.height)), lit, alpha});
+		}
+	}
+	const renderGlobe = function (seconds) {
+		const turn = ((seconds / 48) % 1 + 1) % 1;
+		const pixels = globeFrame.data;
+		for (const sample of samples) {
+			const column = Math.floor(((sample.longitude + turn) % 1) * source.width);
+			const from = (sample.row * source.width + column) * 4;
+			const i = sample.index;
+			pixels[i] = surface[from] * sample.lit + 12 * (1 - sample.lit);
+			pixels[i + 1] = surface[from + 1] * sample.lit + 42 * (1 - sample.lit);
+			pixels[i + 2] = surface[from + 2] * sample.lit + 49 * (1 - sample.lit);
+			pixels[i + 3] = Math.round(sample.alpha * 255);
+		}
+		globeContext.putImageData(globeFrame, 0, 0);
+	};
+	const drawHull = function (ctx, x, y, length, angle) {
+		ctx.save();
+		ctx.translate(x, y);
+		ctx.rotate(angle);
+		const height = length * hullHeight / hullWidth;
+		ctx.drawImage(hull, left, top, hullWidth, hullHeight, -length / 2, -height / 2, length, height);
+		ctx.restore();
+	};
+	const motion = function (seconds, radius) {
+		const cx = 430, cy = 187, orbit = radius + 46;
+		if (seconds >= 8) {
+			const angle = Math.PI / 2 - (seconds - 8) / 18 * Math.PI * 2;
+			return {x: cx + Math.cos(angle) * orbit, y: cy + Math.sin(angle) * orbit, heading: angle - Math.PI / 2, phase: "IN ORBIT"};
+		}
+		const t = Math.max(0, seconds / 8), q = 1 - t;
+		const p0 = {x: 48, y: cy + orbit + 22};
+		const p1 = {x: 162, y: cy + orbit + 22};
+		const p2 = {x: cx - orbit * Math.PI * 2 / 18 * 8 / 3, y: cy + orbit};
+		const p3 = {x: cx, y: cy + orbit};
+		const x = q * q * q * p0.x + 3 * q * q * t * p1.x + 3 * q * t * t * p2.x + t * t * t * p3.x;
+		const y = q * q * q * p0.y + 3 * q * q * t * p1.y + 3 * q * t * t * p2.y + t * t * t * p3.y;
+		const dx = 3 * q * q * (p1.x - p0.x) + 6 * q * t * (p2.x - p1.x) + 3 * t * t * (p3.x - p2.x);
+		const dy = 3 * q * q * (p1.y - p0.y) + 6 * q * t * (p2.y - p1.y) + 3 * t * t * (p3.y - p2.y);
+		return {x, y, heading: Math.atan2(dy, dx), phase: t < .5 ? "CRUISING" : "ENTERING ORBIT"};
+	};
+	const backgrounds = new Map();
+	const makeGround = function (kind, height) {
+		const canvas = document.createElement("canvas");
+		canvas.width = 1456; canvas.height = height * 2;
+		const ctx = getContext(canvas);
+		ctx.scale(2, 2);
+		ctx.fillStyle = kind === "ink" ? "#102c35" : "#eee7d6";
+		ctx.fillRect(0, 0, 728, height);
+		if (kind === "check") {
+			ctx.fillStyle = "#d3d2c9";
+			for (let y = 0; y < height; y += 16) for (let x = 0; x < 728; x += 16) if ((x / 16 + y / 16) % 2 === 0) ctx.fillRect(x, y, 16, 16);
+		} else {
+			let seed = 73;
+			const random = function () {seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296;};
+			ctx.fillStyle = kind === "ink" ? "#e6dbc31c" : "#183c4914";
+			for (let i = 0; i < 2100; i++) ctx.fillRect(random() * 728, random() * height, .5, .5);
+			ctx.strokeStyle = kind === "ink" ? "#eee7d615" : "#16465214";
+			ctx.lineWidth = .6;
+			for (const x of [62, 182, 302, 422, 542, 662]) {ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,height);ctx.stroke();}
+			for (let y = 60; y < height; y += 120) {ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(728,y);ctx.stroke();}
+		}
+		return canvas;
+	};
+	for (const kind of ["paper", "check", "ink"]) {
+		backgrounds.set(kind + "-scene", makeGround(kind, 420));
+		backgrounds.set(kind + "-bench", makeGround(kind, 150));
+	}
+	let seconds = 0;
+	let playing = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+	let request = 0, previous = null, globeTick = -1;
+	const draw = function () {
+		const tick = Math.floor(seconds * 24);
+		if (tick !== globeTick) {renderGlobe(seconds);globeTick = tick;}
+		const large = zoom.value === "3";
+		const radius = 34 * (large ? 3 : 1);
+		const shipLength = 26 * (large ? 3 : 1);
+		const ink = ground.value === "ink" ? "#e9dfc9" : "#153d49";
+		for (const [ctx, canvas, suffix] of [[context, scene, "-scene"], [benchContext, bench, "-bench"]]) {
+			ctx.setTransform(1,0,0,1,0,0);
+			ctx.clearRect(0,0,canvas.width,canvas.height);
+			const background = backgrounds.get(ground.value + suffix);
+			if (background) ctx.drawImage(background,0,0);
+			ctx.setTransform(2,0,0,2,0,0);
+			ctx.fillStyle = ink;
+		}
+		context.save();
+		context.strokeStyle = ground.value === "ink" ? "#72bfc18c" : "#187c8070";
+		context.lineWidth = .8;
+		context.setLineDash([2,6]);
+		context.beginPath();context.arc(430,187,radius+46,0,Math.PI*2);context.stroke();
+		context.setLineDash([]);
+		context.strokeStyle = "#167c80";
+		context.lineWidth = 2;
+		context.beginPath();context.arc(430,187,radius+10,-.5,.48);context.stroke();
+		context.beginPath();context.arc(430,187,radius+10,Math.PI-.5,Math.PI+.48);context.stroke();
+		context.drawImage(globe,430-radius,187-radius,radius*2,radius*2);
+		context.strokeStyle=ink;context.lineWidth=1.1;
+		context.beginPath();context.arc(430,187,radius-.5,0,Math.PI*2);context.stroke();
+		context.font = "600 23px Georgia,serif";context.textAlign = "center";context.fillText("Terra",430,187+radius+34);
+		context.restore();
+		const ship = motion(seconds,radius);
+		drawHull(context,ship.x,ship.y,shipLength,ship.heading);
+		context.fillStyle=ink;context.textAlign="left";context.font="11px monospace";
+		context.fillText("STELLAR ATLAS / ASSET PROOF",22,28);
+		context.fillText(ship.phase,22,48);
+		context.textAlign="right";context.fillText(large?"INSPECTION 3×":"GAME SCALE 1×",706,28);
+		benchContext.drawImage(globe,133-34,61-34,68,68);
+		benchContext.font="12px Georgia,serif";benchContext.textAlign="center";
+		benchContext.fillText("Planet · 68 px",133,119);
+		drawHull(benchContext,335,61,26,motion(seconds,34).heading);
+		benchContext.fillText("Warship · 26 px",335,119);
+		drawHull(benchContext,574,61,140,0);
+		benchContext.fillText("Hull detail · 140 px",574,119);
+		timeSlider.value = String(Math.min(60,seconds));
+		clock.value = seconds.toFixed(1).padStart(4,"0")+" s";
+		playButton.textContent = playing?"Pause":"Play";
+		playButton.setAttribute("aria-pressed",String(playing));
+	};
+	const animate = function (now) {
+		request = 0;
+		if (!playing || document.hidden) return;
+		if (previous !== null) seconds += Math.min(.1,(now-previous)/1000);
+		previous = now;draw();
+		request = requestAnimationFrame(animate);
+	};
+	const schedule = function () {
+		if (request) cancelAnimationFrame(request);
+		request = 0;previous = null;
+		if (playing && !document.hidden) request = requestAnimationFrame(animate);
+		draw();
+	};
+	playButton.addEventListener("click",function(){playing=!playing;schedule();});
+	replayButton.addEventListener("click",function(){seconds=0;globeTick=-1;playing=true;schedule();});
+	timeSlider.addEventListener("input",function(){playing=false;seconds=Number(timeSlider.value);globeTick=-1;schedule();});
+	zoom.addEventListener("change",draw);ground.addEventListener("change",draw);
+	document.addEventListener("visibilitychange",schedule);
+	window.addEventListener("pagehide",function(){if(request)cancelAnimationFrame(request);});
+	// Meaningful bounded checks on the generated assets and motion junction.
+	renderGlobe(0);
+	const start = globeContext.getImageData(0,0,size,size).data.slice();
+	renderGlobe(48);
+	const end = globeContext.getImageData(0,0,size,size).data;
+	if (!start.every(function(value,index){return value===end[index];})) throw new Error("Planet rotation does not loop");
+	if (end[3]!==0 || end[(128*size+128)*4+3]!==255) throw new Error("Planet alpha silhouette failed");
+	if (hullPixels[3]!==0) throw new Error("Ship source corner is not transparent");
+	for (const radius of [34,102]) {
+		const a=motion(8-.00001,radius), b=motion(8+.00001,radius);
+		if (Math.hypot(a.x-b.x,a.y-b.y)>.01 || Math.abs(a.heading-b.heading)>.001) throw new Error("Orbit entry is discontinuous");
+	}
+	console.log("PASS: transparent inputs; 48s globe loop; fixed circular silhouette; continuous orbit position and heading at both zoom levels.");
+	seconds=0;globeTick=-1;schedule();
+	status.textContent="Ready · generated atlas texture + transparent warship · live 2D animation · effects omitted";
+})().catch(function(error){
+	const output=document.getElementById("error");
+	if(output){output.hidden=false;output.textContent=error instanceof Error?error.message:String(error);}
+	console.error(error);
+});
+</script>
+</body>
+</html>

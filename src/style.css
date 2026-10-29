@@ -282,3 +282,11 @@ canvas,
 	transform: translateY(-50%) scale(calc(1 / var(--map-scale, 1)));
 	transform-origin: right center;
 }
+
+/* Keep live artwork visible beneath the original dark map overlays. */
+.planet:not(.carrier) .surface { background: transparent; }
+#app .planet:not(.carrier)[aria-pressed='true'] { background: transparent; }
+.planet:not(.carrier) .count { background: #10202be8; border-radius: 3px; padding: 1px 3px; text-shadow: 0 1px 2px #071e27; }
+.planet .orbit-count { background: #10202bee; border-radius: 3px; padding: 1px 3px; }
+.planet.carrier .surface img { display: block; width: 100%; height: 100%; }
+.planet.carrier .surface::after { content: ''; position: absolute; left: 20%; top: 43%; width: 8%; height: 14%; background: var(--owner); border: 1px solid #10202b; border-radius: 50%; }

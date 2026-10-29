@@ -1,0 +1,53 @@
+{
+  "errors": [],
+  "lifecycle": [
+    {
+      "ships": 8,
+      "totalShips": 8,
+      "candidates": 8,
+      "indexEntries": 0,
+      "platforms": 0,
+      "travelLines": 2,
+      "textures": 8,
+      "entities": 12,
+      "tickerStarted": false,
+      "width": 660,
+      "height": 727,
+      "resolution": 2
+    },
+    {
+      "ships": 8,
+      "totalShips": 8,
+      "candidates": 8,
+      "indexEntries": 0,
+      "platforms": 0,
+      "travelLines": 2,
+      "textures": 8,
+      "entities": 12,
+      "tickerStarted": false,
+      "width": 660,
+      "height": 727,
+      "resolution": 2
+    },
+    {
+      "ships": 8,
+      "totalShips": 8,
+      "candidates": 8,
+      "indexEntries": 0,
+      "platforms": 0,
+      "travelLines": 2,
+      "textures": 8,
+      "entities": 12,
+      "tickerStarted": false,
+      "width": 660,
+      "height": 727,
+      "resolution": 2
+    }
+  ],
+  "overflow": {
+    "width": 1440,
+    "scrollWidth": 1440,
+    "height": 900,
+    "scrollHeight": 900
+  }
+}

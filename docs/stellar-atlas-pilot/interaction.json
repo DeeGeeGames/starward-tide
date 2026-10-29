@@ -1,0 +1,38 @@
+[
+  {
+    "viewport": [
+      1440,
+      900
+    ],
+    "document": [
+      1440,
+      900
+    ]
+  },
+  {
+    "viewport": [
+      390,
+      844
+    ],
+    "document": [
+      390,
+      844
+    ]
+  },
+  {
+    "viewport": [
+      667,
+      320
+    ],
+    "document": [
+      667,
+      320
+    ]
+  },
+  {
+    "pausedCanvasStable": false
+  },
+  {
+    "resumedCanvasChanges": true
+  }
+]

@@ -1,0 +1,101 @@
+{
+	"version": 1,
+	"files": [
+		{
+			"path": "01-orbital-command.png",
+			"bytes": 1469371,
+			"sha256": "2e907456fdebbeb463f727db9ee713a879e598eaa412e242ce4cb70031c770e1",
+			"width": 1586,
+			"height": 992
+		},
+		{
+			"path": "02-deep-space.png",
+			"bytes": 2069052,
+			"sha256": "15408aa53fbfb2a9ca08d60d4ac78efb248718f52b6636c7afc0e10f1334a377",
+			"width": 1586,
+			"height": 992
+		},
+		{
+			"path": "03-stellar-atlas.png",
+			"bytes": 2460439,
+			"sha256": "244f77954f58d8d8c2e8f1a5e0f04374b9b4d15a78e961ddc60cc6d633265572",
+			"width": 1586,
+			"height": 992
+		},
+		{
+			"path": "asset-proof/atlas-warship.png",
+			"bytes": 1914260,
+			"sha256": "04668994b3d85518a865414e9289ab5e5fa84e5036845487ba97e080157b6136",
+			"width": 1536,
+			"height": 1024
+		},
+		{
+			"path": "asset-proof/index.html",
+			"bytes": 16361,
+			"sha256": "15abdde5d3b5dd45aec6b4eea140f4dfc2beff026e87ca09837032a84b959f30"
+		},
+		{
+			"path": "asset-proof/planet-frame.png",
+			"bytes": 126796,
+			"sha256": "d28574b4b362982a266ed5d0e10f50bb989a2d7d196c87995dd886f92bb729f0",
+			"width": 256,
+			"height": 256
+		},
+		{
+			"path": "asset-proof/planet-surface.png",
+			"bytes": 2568789,
+			"sha256": "45d91934ec909bbdde74b5f2c8188d3224a6bc7a1cfe19899d37c9afd3e6caf8",
+			"width": 1774,
+			"height": 887
+		},
+		{
+			"path": "asset-proof/prompts.md",
+			"bytes": 5836,
+			"sha256": "b794ffe1faf38dec9cdeea4677433317ef7108f2bbd7a09955aea059877ac767"
+		},
+		{
+			"path": "asset-proof/standalone.html",
+			"bytes": 5994571,
+			"sha256": "79b778c5d62a716e95b7b00bab057c2cfaba8e0ea6f63396d5528e864a8c0058"
+		},
+		{
+			"path": "asset-proof/warship-sprite.png",
+			"bytes": 49484,
+			"sha256": "1ce73cfc184a1fc6bc356a9000e253a22dac029315fb56386bcd6c32c30d5a50",
+			"width": 256,
+			"height": 256
+		},
+		{
+			"path": "index.html",
+			"bytes": 7086,
+			"sha256": "f5dd5fa5c03f9d0a7cd2f83c31f7c43cbfefe7a3e51e31a526691dafff4784bb"
+		},
+		{
+			"path": "package-preview.mjs",
+			"bytes": 3552,
+			"sha256": "a807896140d359a80daeb2adb5e5c72b1f4300bda6f97be12ebc7649a2edf968"
+		},
+		{
+			"path": "prompts.md",
+			"bytes": 16362,
+			"sha256": "d8393e8f3385a82296dc11b9c1b65a455849cae1cf040e431d220c9ad10bf0b9"
+		},
+		{
+			"path": "README.md",
+			"bytes": 12052,
+			"sha256": "2c242dc469e34b9e2aa9e17ed1830e056e298a9d6b3174619f945cd1d615d750"
+		},
+		{
+			"path": "reference-inputs/current-gameplay-desktop.png",
+			"bytes": 440793,
+			"sha256": "3921a29b9ec410b1f60d019c082e01af35b74ab1d73bf13950e1d378fba5ab29",
+			"width": 1440,
+			"height": 900
+		},
+		{
+			"path": "validation.json",
+			"bytes": 1102,
+			"sha256": "5fe585ff4f778ddf70e5c86e6e4d3d4e5b95a658aba760762d1145cb4701cec6"
+		}
+	]
+}
