@@ -283,7 +283,7 @@ const clearSelection = function (): void {
 	inspected = undefined;
 	multi = false;
 };
-const selectPlanet = function (id: number): void {
+const selectPlanet = function (id: number, additive = false): void {
 	if (
 		busy ||
 		frontMenu.getCurrentScreen() !== 'playing' ||
@@ -302,9 +302,11 @@ const selectPlanet = function (id: number): void {
 			return value !== id;
 		});
 		inspected = undefined;
-	} else if (multi) {
-		if (selectable) selected = [...selected, id];
-		else feedback('Finish source selection before choosing a destination.');
+	} else if (multi || additive) {
+		if (selectable) {
+			selected = [...selected, id];
+			inspected = undefined;
+		} else feedback(multi ? 'Finish source selection before choosing a destination.' : 'Choose one of your worlds or orbital ships to add.');
 	} else {
 		selected = selectable ? [id] : [];
 		inspected = p.owner === 'blue' ? undefined : id;
@@ -502,7 +504,7 @@ const arrangeLabels = function (): void {
 		labels.push({ ...labelBounds(view.name), key: `${id}:name`, priority });
 		if (view.orbit.textContent) labels.push({ ...labelBounds(view.orbit), key: `${id}:orbit`, priority: priority - 1 });
 	}
-	for (const panel of document.querySelectorAll<HTMLElement>('.status-cluster, .header-actions, #planet-panel, #orders-drawer, #field-guide, #banner, #destination-prompt, #destination-summary')) {
+	for (const panel of document.querySelectorAll<HTMLElement>('.status-cluster, .header-actions, .map-heading, #planet-panel, #orders-drawer, #field-guide, #banner, #destination-prompt, #destination-summary')) {
 		if (!panel.hidden && panel.getClientRects().length > 0) reserved.push(panel.getBoundingClientRect());
 	}
 	for (const label of planetLayer.querySelectorAll<HTMLElement>('.race-destination > span')) {
@@ -668,9 +670,9 @@ const refreshContent = function (): void {
 	progressBar.setAttribute('aria-valuenow', String(progress));
 	const progressFill = progressBar.querySelector('i');
 	if (progressFill instanceof HTMLElement) progressFill.style.width = `${progress}%`;
-	const compact = window.matchMedia('(max-width: 699px) and (min-height: 551px)').matches;
-	element('production-options', HTMLDivElement).hidden = compact && !productionExpanded;
+	element('production-options', HTMLDivElement).hidden = !productionExpanded;
 	element('change-production', HTMLButtonElement).setAttribute('aria-expanded', String(productionExpanded));
+	element('change-production', HTMLButtonElement).textContent = productionExpanded ? 'Done' : 'Change';
 	element('sheet-toggle', HTMLButtonElement).setAttribute('aria-expanded', String(!sheetCollapsed));
 	element('sheet-toggle', HTMLButtonElement).setAttribute('aria-label', sheetCollapsed ? 'Expand world commands' : 'Collapse world commands');
 	element('sheet-toggle', HTMLButtonElement).textContent = sheetCollapsed ? '⌃' : '⌄';
@@ -710,10 +712,10 @@ const refreshContent = function (): void {
 	launchCarrierButton.disabled = matchEnded(match) || first === undefined || dockedShips(world, first, 'blue').length === 0;
 	if (carrier) dispatchInfo.textContent = 'Docked ships can launch';
 	instruction.textContent = multi
-		? 'Tap or left-click sources · finish selection to send'
+		? 'Select sources · then finish selection'
 		: selected.length
-			? p?.carrier && p.owner === 'blue' && selected.length === 1 ? 'Click empty space to move · hold or right-click an entity to dispatch' : 'Use Send units, or hold / right-click a destination'
-			: 'Select a blue planet or orbital ring';
+			? p?.carrier && p.owner === 'blue' && selected.length === 1 ? 'Click empty space to move carrier' : 'Send units · hold / right-click to send directly'
+			: 'Select your world or orbital ships';
 	multiButton.hidden = selected.length > 0 && !multi;
 	multiButton.setAttribute('aria-pressed', String(multi));
 	multiButton.textContent = multi ? '✓ Finish selection' : '＋ Multi-select';
@@ -859,15 +861,13 @@ const revealSelection = function (): void {
 };
 const updateLayout = function (): void {
 	if (board.clientWidth === 0 || board.clientHeight === 0) return;
-	if (selected.length === 0 && inspected === undefined) { fitMap(); return; }
+	if (!previousArea) { fitMap(); return; }
 	const area = playableArea();
-	if (previousArea) {
-		presentation.pan({
-			x: area.x + area.width / 2 - previousArea.x - previousArea.width / 2,
-			y: area.y + area.height / 2 - previousArea.y - previousArea.height / 2,
-		});
-		applyCamera();
-	}
+	presentation.pan({
+		x: area.x + area.width / 2 - previousArea.x - previousArea.width / 2,
+		y: area.y + area.height / 2 - previousArea.y - previousArea.height / 2,
+	});
+	applyCamera();
 	previousArea = area;
 	revealSelection();
 };
@@ -885,9 +885,9 @@ const mapInput = createMapInput({
 			return view.button === button;
 		})?.[0];
 	},
-	selectPlanet: function (id): void {
+	selectPlanet: function (id, additive): void {
 		if (choosingDestination) sendToPlanet(id);
-		else selectPlanet(id);
+		else selectPlanet(id, additive);
 	},
 	dispatchPlanet: sendToPlanet,
 	getFleetId: function (target): number | undefined {
@@ -902,12 +902,21 @@ const mapInput = createMapInput({
 	dispatchFleet: sendToFleet,
 	moveTo: function (point): void {
 		if (choosingDestination) { feedback('Choose a world, carrier, or hostile group as the destination.'); refresh(); return; }
-		if (busy || multi || selected.length !== 1 || frontMenu.getCurrentScreen() !== 'playing') return;
+		if (busy || multi || frontMenu.getCurrentScreen() !== 'playing') return;
 		const id = selected[0];
-		if (id === undefined) return;
+		if (selected.length !== 1 || id === undefined || !world.getComponent(id, 'planet')?.carrier) {
+			clearSelection();
+			refresh();
+			updateLayout();
+			board.focus({ preventScroll: true });
+			return;
+		}
 		const worldPoint = presentation.toWorld(point);
 		const destination = { x: Math.max(0, Math.min(activeMap.width, worldPoint.x)), y: Math.max(0, Math.min(activeMap.height, worldPoint.y)) };
 		if (moveCarrier(world, id, destination)) { feedback('Carrier course set'); queueAutosave(); refresh(); }
+	},
+	cancelCommand: function (): void {
+		if (choosingDestination) cancelDispatch();
 	},
 	panBy: function (delta): void {
 		presentation.pan(delta);
@@ -1176,12 +1185,21 @@ multiButton.addEventListener('click', function () {
 element('clear', HTMLButtonElement).addEventListener('click', function () {
 	clearSelection();
 	refresh();
+	updateLayout();
+	board.focus({ preventScroll: true });
+});
+element('fit-map', HTMLButtonElement).addEventListener('click', function () {
+	fitMap();
+	board.focus({ preventScroll: true });
 });
 const cancelDispatch = function (): void {
+	const command = choosingDestination;
 	cancelMapCommand();
 	refresh();
 	updateLayout();
-	element('send-units', HTMLButtonElement).focus();
+	const button = element(command === 'bombard' ? 'bombard-planet' : 'send-units', HTMLButtonElement);
+	if (button.disabled || sheetCollapsed) board.focus({ preventScroll: true });
+	else button.focus({ preventScroll: true });
 };
 element('send-units', HTMLButtonElement).addEventListener('click', function () {
 	if (busy || multi || selected.length === 0 || matchEnded(world.getResource('match'))) return;
@@ -1360,18 +1378,27 @@ document.addEventListener('visibilitychange', function () {
 	}
 });
 window.addEventListener('keydown', function (event) {
-	if (frontMenu.getCurrentScreen() !== 'playing' || busy) return;
+	if (frontMenu.getCurrentScreen() !== 'playing' || busy || event.repeat) return;
 	if (event.key === 'Escape') {
+		event.preventDefault();
 		if (choosingDestination) { cancelDispatch(); return; }
 		if (!ordersPanel.hidden) {
 			drawer.close();
 			return;
 		}
-		if (!fieldGuide.hidden) toggleGuide();
+		if (!fieldGuide.hidden) { toggleGuide(); return; }
 		clearSelection();
 		refresh();
+		updateLayout();
+		board.focus({ preventScroll: true });
 	}
-	if (event.code === 'Space' && event.target === document.body) {
+	if (event.altKey || event.ctrlKey || event.metaKey) return;
+	const mapFocused = event.target === document.body || event.target === board;
+	if (event.key === 'Home' && (mapFocused || event.target instanceof Node && board.contains(event.target))) {
+		event.preventDefault();
+		fitMap();
+	}
+	if (event.code === 'Space' && mapFocused) {
 		event.preventDefault();
 		pause.click();
 	}

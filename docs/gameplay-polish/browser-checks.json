@@ -1,0 +1,125 @@
+{
+  "checks": [
+    "production remains available behind compact disclosure",
+    "Shift-click adds/removes sources and clears stale enemy inspection",
+    "Escape closes one layer and ignores key repeats",
+    "right-click empty map cancels destination and retains sources",
+    "manual zoom survives clear and menu layout changes",
+    "Home, arrow keys and Space work from map focus",
+    "empty-map clicks clear ordinary sources and still move carriers",
+    "drags suppress clicks, track beyond the board edge and end cleanly",
+    "touch holds show feedback, cancel safely and launch exactly once",
+    "six viewport layouts keep destination, Orders and collapse controls usable"
+  ],
+  "viewports": [
+    {
+      "name": "desktop",
+      "viewport": [
+        1440,
+        900
+      ],
+      "page": [
+        1440,
+        900
+      ],
+      "panel": {
+        "x": 1156,
+        "y": 86,
+        "width": 268,
+        "height": 504.953125
+      },
+      "headerBottom": 72
+    },
+    {
+      "name": "tablet",
+      "viewport": [
+        1024,
+        768
+      ],
+      "page": [
+        1024,
+        768
+      ],
+      "panel": {
+        "x": 740,
+        "y": 86,
+        "width": 268,
+        "height": 504.953125
+      },
+      "headerBottom": 72
+    },
+    {
+      "name": "portrait",
+      "viewport": [
+        390,
+        844
+      ],
+      "page": [
+        390,
+        844
+      ],
+      "panel": {
+        "x": 12,
+        "y": 386.328125,
+        "width": 366,
+        "height": 445.671875
+      },
+      "headerBottom": 70
+    },
+    {
+      "name": "small-portrait",
+      "viewport": [
+        320,
+        568
+      ],
+      "page": [
+        320,
+        568
+      ],
+      "panel": {
+        "x": 12,
+        "y": 226.5625,
+        "width": 296,
+        "height": 329.4375
+      },
+      "headerBottom": 70
+    },
+    {
+      "name": "landscape",
+      "viewport": [
+        844,
+        390
+      ],
+      "page": [
+        844,
+        390
+      ],
+      "panel": {
+        "x": 552,
+        "y": 78,
+        "width": 280,
+        "height": 300
+      },
+      "headerBottom": 64
+    },
+    {
+      "name": "short-landscape",
+      "viewport": [
+        568,
+        320
+      ],
+      "page": [
+        568,
+        320
+      ],
+      "panel": {
+        "x": 276,
+        "y": 78,
+        "width": 280,
+        "height": 230
+      },
+      "headerBottom": 66
+    }
+  ],
+  "errors": []
+}

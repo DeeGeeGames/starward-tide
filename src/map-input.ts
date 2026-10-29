@@ -4,12 +4,13 @@ interface MapInputDependencies {
 	board: HTMLElement;
 	events: Window;
 	getPlanetId: (target: EventTarget | null) => number | undefined;
-	selectPlanet: (id: number) => void;
+	selectPlanet: (id: number, additive: boolean) => void;
 	dispatchPlanet: (id: number) => void;
 	getFleetId?: (target: EventTarget | null) => number | undefined;
 	selectFleet?: (id: number) => void;
 	dispatchFleet?: (id: number) => void;
 	moveTo?: (point: Point) => void;
+	cancelCommand?: () => void;
 	panBy: (delta: Point) => void;
 	zoomAt: (anchor: Point, factor: number) => void;
 }
@@ -29,9 +30,12 @@ export const createMapInput = function (dependencies: MapInputDependencies): {
 	let gestureMoved = false;
 	let holdHandled = false;
 	let holdTimer: ReturnType<typeof setTimeout> | undefined;
+	let holdTarget: Element | undefined;
 	const cancelHold = function (): void {
 		clearTimeout(holdTimer);
 		holdTimer = undefined;
+		holdTarget?.classList.remove('holding');
+		holdTarget = undefined;
 	};
 	let gestureStart: Point | undefined;
 	const midpoint = function (a: Point, b: Point): Point {
@@ -50,7 +54,7 @@ export const createMapInput = function (dependencies: MapInputDependencies): {
 			if (action) {
 				event.preventDefault();
 				action();
-			}
+			} else dependencies.cancelCommand?.();
 			return;
 		}
 		if (event.button !== 0) return;
@@ -66,15 +70,18 @@ export const createMapInput = function (dependencies: MapInputDependencies): {
 		} else if (event.pointerType === 'touch' || event.pointerType === 'pen') {
 			const action = dispatchAction(event.target);
 			if (action) {
+				holdTarget = event.target instanceof Element ? event.target.closest('button') ?? undefined : undefined;
+				holdTarget?.classList.add('holding');
 				holdTimer = setTimeout(function () {
-					holdTimer = undefined;
+					cancelHold();
 					holdHandled = true;
 					action();
 				}, 500);
 			}
 		}
 	}, { signal });
-	board.addEventListener('pointermove', function (event) {
+	// Track movement outside the board even before the drag threshold is met.
+	events.addEventListener('pointermove', function (event) {
 		const previous = pointers.get(event.pointerId);
 		if (!previous) return;
 		const current = localPoint(event);
@@ -145,6 +152,10 @@ export const createMapInput = function (dependencies: MapInputDependencies): {
 	board.addEventListener(
 		'wheel',
 		function (event) {
+			if (pointers.size > 0) {
+				cancelHold();
+				gestureMoved = true;
+			}
 			event.preventDefault();
 			const multiplier =
 				event.deltaMode === 1
@@ -184,7 +195,7 @@ export const createMapInput = function (dependencies: MapInputDependencies): {
 			return;
 		}
 		const id = dependencies.getPlanetId(event.target);
-		if (id !== undefined) dependencies.selectPlanet(id);
+		if (id !== undefined) dependencies.selectPlanet(id, event.shiftKey);
 		else {
 			const rect = board.getBoundingClientRect();
 			dependencies.moveTo?.({ x: event.clientX - rect.left, y: event.clientY - rect.top });
