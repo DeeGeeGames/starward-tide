@@ -69,7 +69,7 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 	});
 	const root = new Container();
 	root.eventMode = 'none';
-	// Screen-sized coverage with world-space stars, including outside the map.
+	// Fixed screen-space stars, including outside the map.
 	const stars = new TilingSprite({ texture: Texture.EMPTY, eventMode: 'none' });
 	let starTexture: Texture | undefined;
 	app.stage.addChild(stars);
@@ -267,8 +267,7 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			currentMap = map;
 		}
 		stars.width = viewport.width; stars.height = viewport.height;
-		stars.tileScale.set(camera.scale);
-		stars.tilePosition.set(camera.x % (map.width * camera.scale), camera.y % (map.height * camera.scale));
+		// Keep the star field in screen space; only the map root follows the camera.
 		routes.clear(); effects.clear();
 		const match = world.getResource('match');
 		for (const [index, globe] of atlas.globes.entries()) {
