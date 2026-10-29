@@ -57,6 +57,7 @@ const { warnings } = await generateSW({
 	cacheId: 'galaxy-conquest',
 	// Let existing games finish before activating a new release.
 	skipWaiting: false,
-	clientsClaim: false,
+	// Claim existing pages on activation so an opted-in page can reload on controllerchange.
+	clientsClaim: true,
 });
 if (warnings.length > 0) throw new Error(warnings.join('\n'));
