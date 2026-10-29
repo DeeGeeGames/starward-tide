@@ -1,0 +1,10 @@
+[
+  {
+    "mode": "center-race",
+    "markers": 1
+  },
+  {
+    "mode": "crossing-race",
+    "markers": 2
+  }
+]

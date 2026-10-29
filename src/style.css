@@ -297,3 +297,11 @@ canvas,
 .planet.carrier .orbit-count { background: #10202bee; border-radius: 3px; padding: 1px 3px; }
 
 #app .planet:hover .name, #app .planet:focus-visible .name { color: #eee5cf; }
+
+.planet.carrier .surface img { display: block; width: 100%; height: 100%; }
+/* Counters/ownership remain live layers over the rigid carrier illustration. */
+.planet.carrier .surface::after { content: ''; position: absolute; left: 20%; top: 43%; width: 8%; height: 14%; background: var(--owner); border: 1px solid #153e46; border-radius: 50%; }
+.planet:not(.carrier) .count { color: #f8f1de; border-left: 3px solid var(--owner); }
+.planet.selected::after { border-color: #08747d; border-width: 2px; }
+.planet.carrier .count { color: #f8f1de; border-color: var(--owner); }
+.race-destination > span { background: #f8f1def5; color: #153e46; }

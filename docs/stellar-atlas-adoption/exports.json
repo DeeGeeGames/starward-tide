@@ -1,0 +1,67 @@
+[
+  {
+    "path": "assets/stellar-atlas/transport.png",
+    "bounds": [
+      279,
+      184,
+      964,
+      646
+    ],
+    "width": 256,
+    "height": 256,
+    "bytes": 77128,
+    "sha256": "e5b79d123ca81df53a3f034cbd5349af7725207a987c9bc6c8b519f00699ea0c"
+  },
+  {
+    "path": "assets/stellar-atlas/carrier.png",
+    "bounds": [
+      39,
+      210,
+      1522,
+      571
+    ],
+    "width": 256,
+    "height": 256,
+    "bytes": 51075,
+    "sha256": "4a029158313cc9ff76f403363e9464033c04035f393fe42b4360c3d18f117c75"
+  },
+  {
+    "path": "assets/stellar-atlas/platform.png",
+    "bounds": [
+      116,
+      122,
+      1035,
+      990
+    ],
+    "width": 256,
+    "height": 256,
+    "bytes": 80407,
+    "sha256": "96f6737cf25d055227f0a05019e30f4d6d7fd906dd18c57fde2e44f4c572b50c"
+  },
+  {
+    "path": "assets/stellar-atlas/ochre-surface.png",
+    "bounds": [
+      0,
+      0,
+      1774,
+      887
+    ],
+    "width": 1024,
+    "height": 512,
+    "bytes": 1264500,
+    "sha256": "a4ccfaac6d1ae6521e029a740aed37ff82196862b9a6ac248481112d22c490ac"
+  },
+  {
+    "path": "assets/stellar-atlas/mineral-surface.png",
+    "bounds": [
+      0,
+      0,
+      1774,
+      887
+    ],
+    "width": 1024,
+    "height": 512,
+    "bytes": 1293726,
+    "sha256": "1a70998fa385fa09d136ed384faa30432740d1b1a1d63f37093845c1db7dd5e7"
+  }
+]

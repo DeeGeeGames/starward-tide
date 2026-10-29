@@ -1,0 +1,403 @@
+{
+  "saveEvents": [
+    {
+      "phase": "save.capture",
+      "elapsedMs": 10710.100000023842,
+      "durationMs": 0.2999999523162842
+    },
+    {
+      "phase": "save.validateCloneSync",
+      "elapsedMs": 10711.200000047684,
+      "durationMs": 1
+    },
+    {
+      "phase": "save.capture",
+      "elapsedMs": 25710.300000071526,
+      "durationMs": 0.5
+    },
+    {
+      "phase": "save.validateCloneSync",
+      "elapsedMs": 25712.300000071526,
+      "durationMs": 1.9000000953674316
+    }
+  ],
+  "enabled": true,
+  "elapsedMs": 31007.200000047684,
+  "sampleLimit": 7200,
+  "context": {
+    "renderer": {
+      "ships": 7,
+      "totalShips": 7,
+      "candidates": 7,
+      "indexEntries": 0,
+      "platforms": 0,
+      "travelLines": 0,
+      "textures": 5,
+      "entities": 11,
+      "tickerStarted": false,
+      "width": 570,
+      "height": 627,
+      "resolution": 2
+    },
+    "scenario": "skirmish",
+    "map": {
+      "width": 1200,
+      "height": 1320,
+      "planets": [
+        [
+          "Polaris",
+          234,
+          180,
+          25,
+          "neutral",
+          8,
+          1.7
+        ],
+        [
+          "Vega",
+          521,
+          198,
+          31,
+          "red",
+          44,
+          2.6
+        ],
+        [
+          "Altair",
+          942,
+          165,
+          25,
+          "neutral",
+          8,
+          1.7
+        ],
+        [
+          "Rhea",
+          277,
+          414,
+          25,
+          "neutral",
+          8,
+          1.7
+        ],
+        [
+          "Deneb",
+          668,
+          418,
+          28,
+          "neutral",
+          14,
+          2.2
+        ],
+        [
+          "Io",
+          930,
+          389,
+          25,
+          "neutral",
+          8,
+          1.7
+        ],
+        [
+          "Nyx",
+          98,
+          600,
+          28,
+          "neutral",
+          14,
+          2.2
+        ],
+        [
+          "Sol",
+          514,
+          570,
+          36,
+          "neutral",
+          24,
+          3.4
+        ],
+        [
+          "Eris",
+          1077,
+          617,
+          28,
+          "neutral",
+          14,
+          2.2
+        ],
+        [
+          "Tethys",
+          214,
+          801,
+          28,
+          "neutral",
+          14,
+          2.2
+        ],
+        [
+          "Atlas",
+          535,
+          831,
+          36,
+          "neutral",
+          24,
+          3.4
+        ],
+        [
+          "Dione",
+          1084,
+          841,
+          28,
+          "neutral",
+          14,
+          2.2
+        ],
+        [
+          "Luna",
+          337,
+          991,
+          25,
+          "neutral",
+          8,
+          1.7
+        ],
+        [
+          "Astra",
+          638,
+          1032,
+          28,
+          "neutral",
+          14,
+          2.2
+        ],
+        [
+          "Ceres",
+          866,
+          1024,
+          25,
+          "neutral",
+          8,
+          1.7
+        ],
+        [
+          "Mira",
+          244,
+          1192,
+          25,
+          "neutral",
+          8,
+          1.7
+        ],
+        [
+          "Terra",
+          532,
+          1229,
+          31,
+          "blue",
+          44,
+          2.6
+        ],
+        [
+          "Lyra",
+          1069,
+          1186,
+          25,
+          "neutral",
+          8,
+          1.7
+        ]
+      ],
+      "carriers": true
+    },
+    "pace": 1,
+    "camera": {
+      "x": 355.45454545454544,
+      "y": 147.99999999999997,
+      "scale": 0.47424242424242424
+    },
+    "simulationTime": 32.950000000000266,
+    "ships": 12,
+    "transports": 0,
+    "screen": "playing",
+    "viewport": {
+      "width": 1280,
+      "height": 800,
+      "dpr": 2
+    },
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36",
+    "paused": false,
+    "visibility": "visible"
+  },
+  "entityCount": 32,
+  "metrics": {
+    "simulation": {
+      "count": 752,
+      "p50": 0.20000004768371582,
+      "p95": 0.3999999761581421,
+      "p99": 1.399999976158142,
+      "max": 3.5,
+      "over50": 0
+    },
+    "phase.preUpdate": {
+      "count": 752,
+      "p50": 0,
+      "p95": 0,
+      "p99": 0,
+      "max": 0.10000002384185791,
+      "over50": 0
+    },
+    "phase.fixedUpdate": {
+      "count": 752,
+      "p50": 0.19999992847442627,
+      "p95": 0.3999999761581421,
+      "p99": 1,
+      "max": 3.399999976158142,
+      "over50": 0
+    },
+    "phase.update": {
+      "count": 752,
+      "p50": 0,
+      "p95": 0,
+      "p99": 0,
+      "max": 0.10000002384185791,
+      "over50": 0
+    },
+    "phase.postUpdate": {
+      "count": 752,
+      "p50": 0,
+      "p95": 0,
+      "p99": 0,
+      "max": 0.10000002384185791,
+      "over50": 0
+    },
+    "phase.render": {
+      "count": 752,
+      "p50": 0,
+      "p95": 0.10000002384185791,
+      "p99": 0.10000002384185791,
+      "max": 1.2000000476837158,
+      "over50": 0
+    },
+    "system.diagnostics-collect": {
+      "count": 752,
+      "p50": 0,
+      "p95": 0,
+      "p99": 0.10000002384185791,
+      "max": 1.2000000476837158,
+      "over50": 0
+    },
+    "system.production": {
+      "count": 752,
+      "p50": 0,
+      "p95": 0.10000002384185791,
+      "p99": 0.10000002384185791,
+      "max": 1.5,
+      "over50": 0
+    },
+    "system.spatial-index-rebuild-fixedUpdate": {
+      "count": 752,
+      "p50": 0,
+      "p95": 0,
+      "p99": 0,
+      "max": 0.10000002384185791,
+      "over50": 0
+    },
+    "system.travel": {
+      "count": 752,
+      "p50": 0,
+      "p95": 0.10000002384185791,
+      "p99": 0.10000002384185791,
+      "max": 0.7000000476837158,
+      "over50": 0
+    },
+    "system.combat-and-landing": {
+      "count": 752,
+      "p50": 0.10000002384185791,
+      "p95": 0.20000004768371582,
+      "p99": 0.3999999761581421,
+      "max": 3.3000000715255737,
+      "over50": 0
+    },
+    "system.strategy-and-victory": {
+      "count": 752,
+      "p50": 0,
+      "p95": 0.10000002384185791,
+      "p99": 0.10000002384185791,
+      "max": 0.6999999284744263,
+      "over50": 0
+    },
+    "system.traveler-spatial-cleanup": {
+      "count": 752,
+      "p50": 0.10000002384185791,
+      "p95": 0.10000002384185791,
+      "p99": 0.10000002384185791,
+      "max": 0.10000002384185791,
+      "over50": 0
+    },
+    "render.index": {
+      "count": 752,
+      "p50": 0,
+      "p95": 0.10000002384185791,
+      "p99": 0.10000002384185791,
+      "max": 3.799999952316284,
+      "over50": 0
+    },
+    "draw": {
+      "count": 752,
+      "p50": 1.3000000715255737,
+      "p95": 3.200000047683716,
+      "p99": 4.5,
+      "max": 8.700000047683716,
+      "over50": 0
+    },
+    "raf": {
+      "count": 751,
+      "p50": 33.400000000001455,
+      "p95": 83.29999999999927,
+      "p99": 83.40000000000146,
+      "max": 116.59999999999854,
+      "over50": 123
+    },
+    "hud": {
+      "count": 233,
+      "p50": 3,
+      "p95": 8.100000023841858,
+      "p99": 10.200000047683716,
+      "max": 17.09999990463257,
+      "over50": 0
+    },
+    "save.capture": {
+      "count": 2,
+      "p50": 0.2999999523162842,
+      "p95": 0.5,
+      "p99": 0.5,
+      "max": 0.5,
+      "over50": 0
+    },
+    "save.validateCloneSync": {
+      "count": 2,
+      "p50": 1,
+      "p95": 1.9000000953674316,
+      "p99": 1.9000000953674316,
+      "max": 1.9000000953674316,
+      "over50": 0
+    }
+  },
+  "systems": {
+    "diagnostics-collect": 0,
+    "production": 0,
+    "spatial-index-rebuild-fixedUpdate": 0,
+    "travel": 0,
+    "combat-and-landing": 0.10000002384185791,
+    "strategy-and-victory": 0.09999990463256836,
+    "traveler-spatial-cleanup": 0.10000002384185791
+  },
+  "phases": {
+    "preUpdate": 0,
+    "fixedUpdate": 0.19999992847442627,
+    "update": 0,
+    "postUpdate": 0,
+    "render": 0
+  },
+  "ecsUpdateCadenceFps": 25.552187093980077
+}

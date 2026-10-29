@@ -1,0 +1,32 @@
+[
+  {
+    "port": 3128,
+    "title": {
+      "background": "rgb(96, 217, 255)",
+      "color": "rgb(6, 19, 29)",
+      "font": "650 14px system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Noto Sans\", Ubuntu, Cantarell, \"Helvetica Neue\", sans-serif",
+      "border": "rgb(96, 217, 255)"
+    },
+    "menu": {
+      "background": "rgb(16, 32, 46)",
+      "color": "rgb(220, 230, 237)",
+      "font": "14px / 19.6px Arial, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Noto Sans\", Ubuntu, Cantarell, \"Helvetica Neue\", sans-serif",
+      "border": "rgb(43, 66, 78)"
+    }
+  },
+  {
+    "port": 3127,
+    "title": {
+      "background": "rgb(96, 217, 255)",
+      "color": "rgb(6, 19, 29)",
+      "font": "650 14px system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Noto Sans\", Ubuntu, Cantarell, \"Helvetica Neue\", sans-serif",
+      "border": "rgb(96, 217, 255)"
+    },
+    "menu": {
+      "background": "rgb(16, 32, 46)",
+      "color": "rgb(220, 230, 237)",
+      "font": "14px / 19.6px Arial, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Noto Sans\", Ubuntu, Cantarell, \"Helvetica Neue\", sans-serif",
+      "border": "rgb(43, 66, 78)"
+    }
+  }
+]

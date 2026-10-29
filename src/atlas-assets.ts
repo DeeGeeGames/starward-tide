@@ -1,4 +1,8 @@
 import surfaceUrl from '../docs/visual-directions/asset-proof/planet-surface.png';
+import transportUrl from '../assets/stellar-atlas/transport.png';
+import platformUrl from '../assets/stellar-atlas/platform.png';
+import ochreUrl from '../assets/stellar-atlas/ochre-surface.png';
+import mineralUrl from '../assets/stellar-atlas/mineral-surface.png';
 import warshipUrl from '../docs/visual-directions/asset-proof/warship-sprite.png';
 
 const loadImage = async function (url: string): Promise<HTMLImageElement> {
@@ -8,10 +12,9 @@ const loadImage = async function (url: string): Promise<HTMLImageElement> {
 	return image;
 };
 
-// One shared globe, independent of planet/fleet count. Projection and lighting
-// lookup is fixed; only longitude changes. No additional RAF or persisted clock.
-export const loadAtlasAssets = async function () {
-	const [surface, warship] = await Promise.all([loadImage(surfaceUrl), loadImage(warshipUrl)]);
+// Each of the three terrain variants shares one globe across all its worlds.
+// No per-planet sampling, additional RAF, or persisted presentation state.
+const createGlobe = function (surface: HTMLImageElement) {
 	const sampling = document.createElement('canvas');
 	sampling.width = 1024; sampling.height = 512;
 	const sampler = sampling.getContext('2d', { willReadFrequently: true });
@@ -53,5 +56,16 @@ export const loadAtlasAssets = async function () {
 		return true;
 	};
 	update(0);
-	return { globe, warship, update };
+	return { globe, update };
+};
+
+export const loadAtlasAssets = async function () {
+	const [surface, ochre, mineral, warship, transport, platform] = await Promise.all([
+		loadImage(surfaceUrl), loadImage(ochreUrl), loadImage(mineralUrl),
+		loadImage(warshipUrl), loadImage(transportUrl), loadImage(platformUrl),
+	]);
+	const original = createGlobe(surface);
+	const globes = [original, createGlobe(ochre), createGlobe(mineral)];
+	return { globe: original.globe, globes, warship, transport, platform,
+		update: function (seconds: number): boolean { return original.update(seconds); } };
 };

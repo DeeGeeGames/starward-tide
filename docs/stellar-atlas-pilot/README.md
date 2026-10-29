@@ -1,6 +1,6 @@
 # Stellar Atlas pilot (#117)
 
-Pending owner visual acceptance. This pilot does not authorize #118/#119 or merge.
+Owner visual acceptance of this pilot was received in the implementation thread before #118/#119 began. The combined final battlefield/HUD appearance still requires owner acceptance before merge.
 
 ## Inputs and rendering
 

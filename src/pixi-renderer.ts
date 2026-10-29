@@ -1,8 +1,9 @@
 import ECSpresso from 'ecspresso';
+import { ATLAS_COLORS as COLORS } from './atlas-palette';
 import { loadAtlasAssets } from './atlas-assets';
 import { createRenderer2DPlugin, createSpriteComponents } from 'ecspresso/plugins/rendering/renderer2D';
 import { Application, Container, Graphics, Sprite, Texture, CanvasSource } from 'pixi.js';
-import { COLORS, CONFIG, SIDES, isHostile, type Owner, type Side } from './config';
+import { CONFIG, SIDES, isHostile, type Owner, type Side } from './config';
 import type { Camera } from './camera';
 import type { StarMap } from './maps';
 import { isBlockaded, planets, shipsAt, orderUnits, unitPoint } from './game';
@@ -10,7 +11,6 @@ import type { Game, Order } from './game';
 import { travelAim } from './movement';
 import { interceptionAims } from './fleet-interception';
 import { createRenderCandidates, type RenderSelection } from './render-candidates';
-import { createShipPainter } from './ship-art';
 import { canvasViewport, visibleMapViewport, mapClipInsets, dashedLine, shipDetailZoom, planetPlatformOrbitRadius } from './render-geometry';
 
 interface RendererState {
@@ -63,7 +63,9 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 		preference: 'webgl', backgroundAlpha: 0, antialias: false,
 		autoStart: false, sharedTicker: false, autoDensity: false, eventMode: 'none',
 		eventFeatures: { move: false, click: false, wheel: false, globalMove: false } });
-	const globeTexture = new Texture({ source: new CanvasSource({ resource: atlas.globe }) });
+	const globeTextures = atlas.globes.map(function ({ globe }) {
+		return new Texture({ source: new CanvasSource({ resource: globe }) });
+	});
 	const root = new Container();
 	root.eventMode = 'none';
 	app.stage.addChild(root);
@@ -78,7 +80,16 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 	const textures = new Map<string, Texture>();
 	const fleet = new Map<number, { entityId: number; display: Container; hull: Sprite; badge: Sprite | undefined }>();
 	const routeViews = new Map<number, Sprite>();
-	const candidates = await createRenderCandidates();
+	const destroyStage = function (): void {
+		for (const graphics of [background, routes, effects]) graphics.destroy();
+		travelLines.destroy({ children: true });
+		app.destroy(false, { children: true });
+		for (const texture of globeTextures) texture.destroy(true);
+	};
+	const candidates = await createRenderCandidates().catch(async function (error: unknown) {
+		await presentation.dispose().finally(destroyStage);
+		throw error;
+	});
 	let counts = { totalShips: 0, candidates: 0, indexEntries: 0 };
 	const platformViews = new Map<number, PlatformView[]>();
 	let currentWorld: Game | undefined;
@@ -95,12 +106,7 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 		presentation.spawn({ container: travelLines, renderLayer: 'routes' });
 	} catch (error) {
 		await candidates.dispose();
-		await presentation.dispose().finally(function () {
-			for (const graphics of [background, routes, effects]) graphics.destroy();
-			travelLines.destroy({ children: true });
-			app.destroy(false, { children: true });
-			globeTexture.destroy(true);
-		});
+		await presentation.dispose().finally(destroyStage);
 		throw error;
 	}
 	const texture = function (owner: Side, kind: 'ship' | 'transport', detail: 1 | 2 | 3): Texture {
@@ -108,16 +114,12 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 		const cached = textures.get(key);
 		if (cached) return cached;
 		const created = makeTexture(32, 4, function (context) {
-			const painter = createShipPainter(context);
-			if (kind === 'ship') {
-				context.drawImage(atlas.warship, -16, -16, 32, 32);
-				context.fillStyle = COLORS[owner];
-				context.strokeStyle = '#0c2a31';
-				context.lineWidth = 0.8;
-				context.beginPath(); context.arc(-6, 0, 2.8, 0, Math.PI * 2);
-				context.fill(); context.stroke();
-			}
-			else painter.transport(owner, detail === 3 ? 2.5 : detail === 2 ? 1.75 : 1);
+			context.drawImage(kind === 'ship' ? atlas.warship : atlas.transport, -16, -16, 32, 32);
+			context.fillStyle = COLORS[owner];
+			context.strokeStyle = '#0c2a31';
+			context.lineWidth = 0.8;
+			context.beginPath(); context.arc(-6, 0, 2.8, 0, Math.PI * 2);
+			context.fill(); context.stroke();
 		});
 		textures.set(key, created);
 		return created;
@@ -130,10 +132,12 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 		const cached = textures.get(key);
 		if (cached) return cached;
 		const created = makeTexture(32, 4, function (context) {
-			createShipPainter(context).defensePlatform(
-				owner,
-				detail === 3 ? 2.5 : detail === 2 ? 1.75 : 1,
-			);
+			context.drawImage(atlas.platform, -12, -12, 24, 24);
+			context.fillStyle = COLORS[owner];
+			context.strokeStyle = '#0c2a31';
+			context.lineWidth = 0.8;
+			context.beginPath(); context.arc(-2, 0, 2.5, 0, Math.PI * 2);
+			context.fill(); context.stroke();
 		});
 		textures.set(key, created);
 		return created;
@@ -234,7 +238,9 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 		}
 		routes.clear(); effects.clear();
 		const match = world.getResource('match');
-		if (atlas.update(match.time)) globeTexture.source.update();
+		for (const [index, globe] of atlas.globes.entries()) {
+			if (globe.update(match.time)) globeTextures[index]?.source.update();
+		}
 		const ids = new Set(planets(world).map(function (entity) { return entity.id; }));
 		for (const [id, sprite] of globeViews) if (!ids.has(id)) { sprite.destroy(); globeViews.delete(id); }
 		const intercepts = interceptionAims(world);
@@ -243,7 +249,8 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			if (!p.carrier) {
 				let globe = globeViews.get(id);
 				if (!globe) {
-					globe = new Sprite(globeTexture); globe.anchor.set(0.5);
+					const variant = [...p.name].reduce(function (sum, letter) { return sum + letter.charCodeAt(0); }, 0) % globeTextures.length;
+					globe = new Sprite(globeTextures[variant]); globe.anchor.set(0.5);
 					background.addChild(globe); globeViews.set(id, globe);
 				}
 				globe.position.set(p.x, p.y); globe.width = p.radius * 2; globe.height = p.radius * 2;
@@ -253,16 +260,16 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			if (bombardment && target) {
 				const charging = !p.carrier?.destination;
 				const progress = bombardment.elapsed / CONFIG.bombardmentCharge;
-				routes.moveTo(p.x, p.y).lineTo(target.x, target.y).stroke({ color: '#ffd083', alpha: charging ? 0.65 : 0.25, width: (charging ? 2 : 1) / camera.scale });
-				routes.circle(target.x, target.y, target.radius + 10 / camera.scale).stroke({ color: '#ffd083', alpha: 0.5, width: 1 / camera.scale });
+				routes.moveTo(p.x, p.y).lineTo(target.x, target.y).stroke({ color: '#986014', alpha: charging ? 0.65 : 0.25, width: (charging ? 2 : 1) / camera.scale });
+				routes.circle(target.x, target.y, target.radius + 10 / camera.scale).stroke({ color: '#986014', alpha: 0.5, width: 1 / camera.scale });
 				if (progress > 0) routes.moveTo(target.x, target.y - target.radius - 10 / camera.scale)
-					.arc(target.x, target.y, target.radius + 10 / camera.scale, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress).stroke({ color: '#ffd083', width: 4 / camera.scale });
+					.arc(target.x, target.y, target.radius + 10 / camera.scale, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress).stroke({ color: '#986014', width: 4 / camera.scale });
 			}
 			if (p.carrier?.destination) {
 				routes.moveTo(p.x, p.y).lineTo(p.carrier.destination.x, p.carrier.destination.y).stroke({ color: COLORS[p.owner], alpha: 0.6, width: 1.5 / camera.scale });
 				routes.circle(p.carrier.destination.x, p.carrier.destination.y, 5 / camera.scale).stroke({ color: COLORS[p.owner], width: 1 / camera.scale });
 			}
-			routes.circle(p.x, p.y, p.radius + 20).stroke({ color: '#4d739517', width: 1 });
+			routes.circle(p.x, p.y, p.radius + 20).stroke({ color: '#153e4638', width: 1 });
 			const platformCount = Math.max(0, Math.ceil(p.guns));
 			const existingPlatforms = platformViews.get(id) ?? [];
 			while (existingPlatforms.length > platformCount) {
@@ -330,7 +337,7 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 				const angle = match.time * 4;
 				routes.moveTo(p.x + Math.cos(angle) * (p.radius + 19), p.y + Math.sin(angle) * (p.radius + 19))
 					.lineTo(p.x - Math.cos(angle) * (p.radius + 19), p.y - Math.sin(angle) * (p.radius + 19))
-					.stroke({ color: '#ffe3a9', width: 1.7 });
+					.stroke({ color: '#986014', width: 1.7 });
 			}
 		}
 		if (highlighted) {
@@ -452,13 +459,13 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			app.destroy(false, { children: true });
 			for (const shared of textures.values()) shared.destroy(true);
 			textures.clear();
-			globeTexture.destroy(true);
+			for (const texture of globeTextures) texture.destroy(true);
 		});
 		return disposal;
 	};
 	const inspect = function (): RendererInspection {
 		return { ships: fleet.size, ...counts, platforms: [...platformViews.values()].reduce(function (count, views) { return count + views.length; }, 0),
-			travelLines: travelLines.children.length, textures: textures.size + cargoTextures.size + 1, entities: presentation.entityCount,
+			travelLines: travelLines.children.length, textures: textures.size + cargoTextures.size + globeTextures.length, entities: presentation.entityCount,
 			tickerStarted: app.ticker.started, width: app.screen.width, height: app.screen.height, resolution: app.renderer.resolution };
 	};
 	return { draw, reset, inspect, dispose };

@@ -1,0 +1,16 @@
+[
+  {
+    "base": "http://127.0.0.1:3127/",
+    "errors": [],
+    "controlled": true,
+    "offlinePlanets": 20,
+    "gameVisible": true
+  },
+  {
+    "base": "http://127.0.0.1:3127/subpath/",
+    "errors": [],
+    "controlled": true,
+    "offlinePlanets": 20,
+    "gameVisible": true
+  }
+]
