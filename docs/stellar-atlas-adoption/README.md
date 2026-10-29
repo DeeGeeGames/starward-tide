@@ -1,10 +1,10 @@
-# Stellar Atlas battlefield and HUD adoption (#118 / #119)
+# Stellar Atlas battlefield artwork and UI decision (#118 / #119)
 
-The owner explicitly accepted the #117 pilot in the implementation thread before this work began. Final appearance remains pending owner acceptance. Do not merge this visual work before that gate.
+The owner explicitly accepted the #117 pilot before this work began, then accepted the revised final appearance with the original dark UI and starfield. Final visual acceptance is recorded in [PR #120](https://github.com/david0178418/galaxy-conquest/pull/120). The proposed paper HUD in #119 is superseded; retain the existing dark gameplay UI for this adoption.
 
 ## Current owner direction
 
-After reviewing the complete appearance, the owner retained the new unit and planet designs and requested the previous dark UI/background for readability. The current implementation therefore restores the original gameplay HUD CSS, dark starfield, bright faction/route colors and readable labels. The new planet variants, warships, transports, carriers and platforms are retained. `dark-ui/` contains current screenshots and viewport checks; the earlier paper-theme evidence and performance captures below are historical. No new rendering architecture or texture work was introduced by this style revision. `bun run check` passed all 195 tests, lint, typecheck and build. Final visual acceptance of the revised appearance remains pending.
+After reviewing the complete appearance, the owner retained the new unit and planet designs and requested the previous dark UI/background for readability. The current implementation therefore restores the original gameplay HUD CSS, dark starfield, bright faction/route colors and readable labels. The new planet variants, warships, transports, carriers and platforms are retained. `dark-ui/` contains current screenshots and viewport checks; the earlier paper-theme evidence and performance captures below are historical. No new rendering architecture or texture work was introduced by this style revision. `bun run check` passed all 195 tests, lint, typecheck and build. The owner accepted this revised appearance after reviewing the dark-UI evidence.
 
 ## Artwork and provenance
 
@@ -28,7 +28,7 @@ Historical paper-theme implementation (superseded by the dark-UI revision above)
 
 Performance compares accepted pilot commit `8bf212a` (port 3128) against this adoption (port 3127), using sequential fresh-context 31s captures at 1280×800/DPR2/1×, identical deterministic capture/carrier and 1500-unit crowded fixtures, 2s warmup. `compare.cjs` records raw reports with renderer texture counts. Chromium/Linux uses SwiftShader software rendering; results are not hardware GPU timings. Separate GPU memory profiling and physical-device performance remain unavailable.
 
-Final owner acceptance remains required, including asset readability at real play scale and any measured performance/detail tradeoff. No merge has been performed.
+The owner accepted the final artwork and dark-UI presentation with the documented validation limits and measurements. Delivery and merge status are recorded in [PR #120](https://github.com/david0178418/galaxy-conquest/pull/120).
 
 ## Measured pilot comparison
 
@@ -39,7 +39,7 @@ Milliseconds, accepted pilot → adoption. One sequential 31s capture per scene/
 | normal | 1.30 → 2.30 | 3.20 → 5.70 | 33.40 → 33.40 | 5.00 → 7.00 |
 | crowded | 8.20 → 9.20 | 13.60 → 11.50 | 116.60 → 116.60 | 5.00 → 7.00 |
 
-Three terrain variants add approximately 1 ms median draw work and two shared globe textures. The globe texture pixel allocation grows from 64 KiB to 192 KiB (dimension-based estimate; actual driver memory was not profiled). Normal median RAF cadence is unchanged in this sample; crowded draw tails improve. Normal draw tails increase, so final acceptance includes this cost/detail tradeoff. No draw samples exceed 50 ms.
+Three terrain variants add approximately 1 ms median draw work and two shared globe textures. The globe texture pixel allocation grows from 64 KiB to 192 KiB (dimension-based estimate; actual driver memory was not profiled). Normal median RAF cadence is unchanged in this sample; crowded draw tails improve. Normal draw tails increased in the historical paper-theme capture; this measured cost/detail tradeoff was included in the accepted review evidence. No draw samples exceed 50 ms.
 
 Production offline reload passed at both root and a local simulated subpath, including opening the saved carrier fixture with 20 holdings and new artwork. The diagnostics query URL itself was not cached by the default Workbox query policy; the offline checks navigate to normal production URLs. Excluded title-button and opened-game-menu computed font/color/background/border values match the accepted pilot (`excluded-styles.json`). All three globe variants passed alpha, stationary-clock, visible-rotation and 48-second wrap checks.
 

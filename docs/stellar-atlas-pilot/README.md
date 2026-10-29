@@ -1,6 +1,6 @@
 # Stellar Atlas pilot (#117)
 
-Owner visual acceptance of this pilot was received in the implementation thread before #118/#119 began. The combined final battlefield/HUD appearance still requires owner acceptance before merge.
+Owner visual acceptance of this pilot was received in the implementation thread before #118/#119 began. The owner subsequently accepted the new artwork with the original dark UI and starfield; see PR #120 for final acceptance and delivery status.
 
 ## Inputs and rendering
 
