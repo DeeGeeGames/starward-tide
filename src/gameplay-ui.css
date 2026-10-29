@@ -82,8 +82,6 @@
 #app #filter button { font-size: 11px; min-height: 36px; background: transparent; border-color: transparent; color: #a0b7c3; }
 #app #filter button[aria-pressed='true'] { border-color: #36595f; background: #19313b; color: #d5e7e8; }
 #app #dispatch-preview { margin: 10px 0; font-size: 14px; font-variant-numeric: tabular-nums; }
-#app .send-button { width: 100%; display: flex; justify-content: space-between; align-items: center; background: var(--action); border-color: var(--action); color: #09251e; padding: 0 14px; font-weight: 600; }
-#app .send-button:hover { background: #a1f0e0; }
 #app .dispatch-shortcut { color: #97aeb9; text-align: center; font-size: 10px; margin: 8px 0; }
 #app .command-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid var(--ui-line); margin: 10px -14px 0; padding: 2px 14px; font-size: 11px; color: var(--ui-muted); }
 #app .text-button { padding: 0 3px; background: transparent; border-color: transparent; color: #b8ced4; font-size: 12px; }
@@ -211,8 +209,6 @@
 	#app .segments button { font-size: 13px; }
 	#app #filter button { font-size: 12px; }
 	#app #dispatch-preview { margin: 11px 0; font-size: 14px; }
-	#app .send-button { min-height: 44px; font-size: 14px; }
-	#app .dispatch-shortcut { display: none; }
 	#app .command-footer { margin: 8px -14px 0; padding: 0 14px; }
 	#app #field-guide { max-height: calc(100dvh - var(--panel-top) - 16px); }
 }

@@ -286,7 +286,7 @@
 			</section>
 		</div>
 		<div id="app" hidden>
-			<main id="board" aria-label="Star map" tabindex="0">
+			<main id="board" aria-label="Star map" aria-keyshortcuts="D" tabindex="0">
 				<div id="map-world">
 					<canvas id="space" aria-hidden="true"></canvas>
 					<div id="planets"></div>
@@ -359,8 +359,7 @@
 								<button data-filter="combined" aria-pressed="true">Combined</button><button data-filter="ships">Ships only</button><button data-filter="troops">Troops only</button>
 							</div></div>
 							<p id="dispatch-preview"></p>
-							<button id="send-units" class="send-button">Send units <span aria-hidden="true">→</span></button>
-							<p class="dispatch-shortcut">Or hold / right-click a destination</p>
+							<p class="dispatch-shortcut">Hold / right-click a destination<br />Keyboard: D, then choose a destination</p>
 						</div>
 					</div>
 					<div class="command-footer"><button id="panel-multi" class="text-button" aria-pressed="false">＋ Multi-select</button><span id="selection-count"></span></div>
@@ -436,8 +435,8 @@
 				<details class="guide">
 					<summary>How to play</summary>
 					<div id="play-instructions">
-						<p>Drag to explore. Scroll or pinch to zoom. Focus the map and use arrow keys to pan, Space to pause, or Home to fit the map. Shift-click to add or remove a source. Click empty space to clear selection; with one carrier selected, it sets its course instead. Select a world, choose Send units, then tap or click a destination. Cancel, Escape, or right-clicking empty space cancels destination choice and keeps the sources. Hold or right-click a destination to send directly.</p>
-						<p>To intercept, select a planet or orbital ring, choose Send units, then select a hostile group’s ⌖ marker. You can also hold or right-click its marker. Interception sends warships only, even with Combined selected. Troops and transports stay behind. Ships follow the group and use normal combat rules in range, then return to their launch points when the group is destroyed or reaches orbit.</p>
+						<p>Drag to explore. Scroll or pinch to zoom. Focus the map and use arrow keys to pan, Space to pause, or Home to fit the map. Shift-click to add or remove a source. Click empty space to clear selection; with one carrier selected, it sets its course instead. Hold or right-click a destination to send units. For keyboard dispatch, select a source and press D, then tap, click, or focus a destination and press Enter. Cancel, Escape, or right-clicking empty space cancels destination choice and keeps the sources.</p>
+						<p>To intercept, select a planet or orbital ring, then hold or right-click a hostile group’s ⌖ marker. You can also press D to enter destination mode and select its marker. Interception sends warships only, even with Combined selected. Troops and transports stay behind. Ships follow the group and use normal combat rules in range, then return to their launch points when the group is destroyed or reaches orbit.</p>
 						<p>
 							Tap or left-click a world to select it. Hold a destination on touch,
 							or right-click it with a mouse, to send units. Select the source again
