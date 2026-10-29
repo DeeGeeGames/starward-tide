@@ -3,7 +3,7 @@ import { createWeaponEffects } from './visual-effects';
 import { turnToward, SHIP_TURN_RATE } from './turning';
 import { loadAtlasAssets } from './atlas-assets';
 import { createRenderer2DPlugin, createSpriteComponents } from 'ecspresso/plugins/rendering/renderer2D';
-import { Application, Container, Graphics, Sprite, Texture, CanvasSource } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, TilingSprite, Texture, CanvasSource } from 'pixi.js';
 import { COLORS, CONFIG, SIDES, isHostile, type Owner, type Side } from './config';
 import type { Camera } from './camera';
 import type { StarMap } from './maps';
@@ -12,7 +12,7 @@ import type { Game, Order } from './game';
 import { travelAim } from './movement';
 import { interceptionAims } from './fleet-interception';
 import { createRenderCandidates, worldViewport, type RenderSelection } from './render-candidates';
-import { canvasViewport, visibleMapViewport, mapClipInsets, dashedLine, shipDetailZoom, planetPlatformOrbitRadius } from './render-geometry';
+import { canvasViewport, dashedLine, shipDetailZoom, planetPlatformOrbitRadius } from './render-geometry';
 
 interface RendererState {
 	world: Game;
@@ -69,6 +69,10 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 	});
 	const root = new Container();
 	root.eventMode = 'none';
+	// Screen-sized coverage with world-space stars, including outside the map.
+	const stars = new TilingSprite({ texture: Texture.EMPTY, eventMode: 'none' });
+	let starTexture: Texture | undefined;
+	app.stage.addChild(stars);
 	app.stage.addChild(root);
 	const presentation = ECSpresso.create()
 		.withPlugin(createRenderer2DPlugin({ app, rootContainer: root, startLoop: false,
@@ -88,6 +92,7 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 		travelLines.destroy({ children: true });
 		trails.destroy({ children: true });
 		app.destroy(false, { children: true });
+		starTexture?.destroy(true);
 		for (const texture of globeTextures) texture.destroy(true);
 	};
 	const candidates = await createRenderCandidates().catch(async function (error: unknown) {
@@ -236,29 +241,34 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 		if (world !== currentWorld) { clearFleet(); currentWorld = world; }
 		const viewport = dependencies.getViewport();
 		if (viewport.width <= 0 || viewport.height <= 0) return;
-		const frame = visibleMapViewport(camera, viewport.width, viewport.height, map.width, map.height);
-		const frameCamera = { ...camera, x: camera.x - frame.x, y: camera.y - frame.y };
 		const resolution = Math.min(dependencies.getPixelRatio() || 1, 3);
-		if (app.screen.width !== frame.width || app.screen.height !== frame.height || app.renderer.resolution !== resolution) {
-			app.renderer.resize(frame.width, frame.height, resolution);
+		if (app.screen.width !== viewport.width || app.screen.height !== viewport.height || app.renderer.resolution !== resolution) {
+			app.renderer.resize(viewport.width, viewport.height, resolution);
 		}
-		const box = canvasViewport(frameCamera, frame.width, frame.height);
+		const box = canvasViewport(camera, viewport.width, viewport.height);
 		const style = dependencies.canvas.style;
 		style.left = `${box.left}px`; style.top = `${box.top}px`;
 		style.width = `${box.width}px`; style.height = `${box.height}px`;
-		// Preserve the old map-canvas clip without a full-frame GPU stencil pass.
-		const clip = mapClipInsets(frameCamera, frame.width, frame.height, map.width, map.height);
-		style.clipPath = `inset(${clip.top}px ${clip.right}px ${clip.bottom}px ${clip.left}px)`;
-		root.position.set(frameCamera.x, frameCamera.y);
+		root.position.set(camera.x, camera.y);
 		root.scale.set(camera.scale);
 		if (map !== currentMap) {
-			background.clear();
+			const tile = document.createElement('canvas');
+			tile.width = map.width; tile.height = map.height;
+			const context = tile.getContext('2d');
+			if (!context) throw new Error('Canvas 2D is required to prepare the star field');
 			for (let i = 0; i < 460; i++) {
-				background.rect((i * 137.57) % map.width, (i * 83.37) % map.height, i % 5 === 0 ? 1.8 : 1, i % 5 === 0 ? 1.8 : 1)
-					.fill(i % 4 === 0 ? '#738ea45c' : '#42627b55');
+				context.fillStyle = i % 4 === 0 ? '#738ea45c' : '#42627b55';
+				context.fillRect((i * 137.57) % map.width, (i * 83.37) % map.height, i % 5 === 0 ? 1.8 : 1, i % 5 === 0 ? 1.8 : 1);
 			}
+			const previous = starTexture;
+			starTexture = new Texture({ source: new CanvasSource({ resource: tile }) });
+			stars.texture = starTexture;
+			previous?.destroy(true);
 			currentMap = map;
 		}
+		stars.width = viewport.width; stars.height = viewport.height;
+		stars.tileScale.set(camera.scale);
+		stars.tilePosition.set(camera.x % (map.width * camera.scale), camera.y % (map.height * camera.scale));
 		routes.clear(); effects.clear();
 		const match = world.getResource('match');
 		for (const [index, globe] of atlas.globes.entries()) {
