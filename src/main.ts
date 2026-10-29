@@ -1,5 +1,4 @@
 import { GAME_MODES, destinationFor } from './objectives';
-import { ATLAS_COLORS } from './atlas-palette';
 import carrierSpriteUrl from '../assets/stellar-atlas/carrier.png';
 import { createPerformanceDiagnostics, type PerformanceDiagnostics, type DiagnosticsReport } from './performance-diagnostics';
 import { createCrowdedBaseline } from './performance-scenario';
@@ -386,7 +385,7 @@ const mountPlanets = function (): void {
 		marker.style.top = `${destination.y}px`;
 		marker.style.width = `${destination.radius * 2}px`;
 		marker.style.height = `${destination.radius * 2}px`;
-		marker.style.setProperty('--destination-color', destination.owner === 'neutral' ? '#986014' : ATLAS_COLORS[destination.owner]);
+		marker.style.setProperty('--destination-color', destination.owner === 'neutral' ? '#f8d787' : COLORS[destination.owner]);
 		marker.setAttribute('role', 'img');
 		marker.setAttribute('aria-label', destination.label);
 		const label = document.createElement('span');
@@ -561,7 +560,7 @@ const refreshContent = function (): void {
 		const hitSize = Math.max(54, (p.radius + 32) * 2);
 		view.button.style.width = `${hitSize}px`;
 		view.button.style.height = `${hitSize}px`;
-		view.button.style.setProperty('--owner', ATLAS_COLORS[p.owner]);
+		view.button.style.setProperty('--owner', COLORS[p.owner]);
 		view.button.style.setProperty('--diameter', `${p.radius * 2}px`);
 		const highlighted = selected.includes(id) || inspected === id;
 		view.button.classList.toggle('selected', highlighted);

@@ -2,6 +2,10 @@
 
 The owner explicitly accepted the #117 pilot in the implementation thread before this work began. Final appearance remains pending owner acceptance. Do not merge this visual work before that gate.
 
+## Current owner direction
+
+After reviewing the complete appearance, the owner retained the new unit and planet designs and requested the previous dark UI/background for readability. The current implementation therefore restores the original gameplay HUD CSS, dark starfield, bright faction/route colors and readable labels. The new planet variants, warships, transports, carriers and platforms are retained. `dark-ui/` contains current screenshots and viewport checks; the earlier paper-theme evidence and performance captures below are historical. No new rendering architecture or texture work was introduced by this style revision. `bun run check` passed all 195 tests, lint, typecheck and build. Final visual acceptance of the revised appearance remains pending.
+
 ## Artwork and provenance
 
 Accepted concept, planet surface and warship masters remain unchanged under `docs/visual-directions`, pinned to `a0dd71d9a230acf9ee3156422175d2e46f8aca7d`. New unit and surface masters live under `assets/stellar-atlas/masters`; runtime exports live immediately above them. `manifest.json` records source/export dimensions, sizes and SHA-256 hashes; `exports.json` records crop bounds. No runtime asset points to a private image-generation directory.
@@ -14,7 +18,7 @@ Three shared 128px globe canvases/textures replace the pilot's single shared glo
 
 ## HUD boundaries
 
-Only tactical header, command rail/sheet, Orders, destination prompts, warnings, results/status and gameplay save status are themed. Paper backgrounds are opaque; headings use Georgia and controls retain utilitarian/tabular text. Existing disclosure, scrolling inside panels, responsive breakpoints, hit targets, commands and keyboard state remain unchanged. Title/setup/profile screens and opened `#field-guide` keep their existing styles. No custom fonts, menus, new effects, mechanics, save migrations or control redesign are included.
+Historical paper-theme implementation (superseded by the dark-UI revision above): only tactical header, command rail/sheet, Orders, destination prompts, warnings, results/status and gameplay save status were themed. Paper backgrounds are opaque; headings use Georgia and controls retain utilitarian/tabular text. Existing disclosure, scrolling inside panels, responsive breakpoints, hit targets, commands and keyboard state remain unchanged. Title/setup/profile screens and opened `#field-guide` keep their existing styles. No custom fonts, menus, new effects, mechanics, save migrations or control redesign are included.
 
 ## Validation
 

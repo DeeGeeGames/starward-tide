@@ -1,9 +1,8 @@
 import ECSpresso from 'ecspresso';
-import { ATLAS_COLORS as COLORS } from './atlas-palette';
 import { loadAtlasAssets } from './atlas-assets';
 import { createRenderer2DPlugin, createSpriteComponents } from 'ecspresso/plugins/rendering/renderer2D';
 import { Application, Container, Graphics, Sprite, Texture, CanvasSource } from 'pixi.js';
-import { CONFIG, SIDES, isHostile, type Owner, type Side } from './config';
+import { COLORS, CONFIG, SIDES, isHostile, type Owner, type Side } from './config';
 import type { Camera } from './camera';
 import type { StarMap } from './maps';
 import { isBlockaded, planets, shipsAt, orderUnits, unitPoint } from './game';
@@ -229,10 +228,9 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 		root.scale.set(camera.scale);
 		if (map !== currentMap) {
 			background.clear();
-			background.rect(0, 0, map.width, map.height).fill('#eee5cf');
 			for (let i = 0; i < 460; i++) {
 				background.rect((i * 137.57) % map.width, (i * 83.37) % map.height, i % 5 === 0 ? 1.8 : 1, i % 5 === 0 ? 1.8 : 1)
-					.fill(i % 4 === 0 ? '#153e4630' : '#153e4618');
+					.fill(i % 4 === 0 ? '#738ea45c' : '#42627b55');
 			}
 			currentMap = map;
 		}
@@ -260,16 +258,16 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 			if (bombardment && target) {
 				const charging = !p.carrier?.destination;
 				const progress = bombardment.elapsed / CONFIG.bombardmentCharge;
-				routes.moveTo(p.x, p.y).lineTo(target.x, target.y).stroke({ color: '#986014', alpha: charging ? 0.65 : 0.25, width: (charging ? 2 : 1) / camera.scale });
-				routes.circle(target.x, target.y, target.radius + 10 / camera.scale).stroke({ color: '#986014', alpha: 0.5, width: 1 / camera.scale });
+				routes.moveTo(p.x, p.y).lineTo(target.x, target.y).stroke({ color: '#ffd083', alpha: charging ? 0.65 : 0.25, width: (charging ? 2 : 1) / camera.scale });
+				routes.circle(target.x, target.y, target.radius + 10 / camera.scale).stroke({ color: '#ffd083', alpha: 0.5, width: 1 / camera.scale });
 				if (progress > 0) routes.moveTo(target.x, target.y - target.radius - 10 / camera.scale)
-					.arc(target.x, target.y, target.radius + 10 / camera.scale, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress).stroke({ color: '#986014', width: 4 / camera.scale });
+					.arc(target.x, target.y, target.radius + 10 / camera.scale, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress).stroke({ color: '#ffd083', width: 4 / camera.scale });
 			}
 			if (p.carrier?.destination) {
 				routes.moveTo(p.x, p.y).lineTo(p.carrier.destination.x, p.carrier.destination.y).stroke({ color: COLORS[p.owner], alpha: 0.6, width: 1.5 / camera.scale });
 				routes.circle(p.carrier.destination.x, p.carrier.destination.y, 5 / camera.scale).stroke({ color: COLORS[p.owner], width: 1 / camera.scale });
 			}
-			routes.circle(p.x, p.y, p.radius + 20).stroke({ color: '#153e4638', width: 1 });
+			routes.circle(p.x, p.y, p.radius + 20).stroke({ color: '#4d739517', width: 1 });
 			const platformCount = Math.max(0, Math.ceil(p.guns));
 			const existingPlatforms = platformViews.get(id) ?? [];
 			while (existingPlatforms.length > platformCount) {
@@ -337,7 +335,7 @@ export const createPixiRenderer = async function (dependencies: RendererDependen
 				const angle = match.time * 4;
 				routes.moveTo(p.x + Math.cos(angle) * (p.radius + 19), p.y + Math.sin(angle) * (p.radius + 19))
 					.lineTo(p.x - Math.cos(angle) * (p.radius + 19), p.y - Math.sin(angle) * (p.radius + 19))
-					.stroke({ color: '#986014', width: 1.7 });
+					.stroke({ color: '#ffe3a9', width: 1.7 });
 			}
 		}
 		if (highlighted) {
