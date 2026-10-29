@@ -1,0 +1,126 @@
+{
+  "checks": [
+    "production remains available behind compact disclosure",
+    "Shift-click adds/removes sources and clears stale enemy inspection",
+    "Escape closes one layer and ignores key repeats",
+    "right-click empty map cancels destination and retains sources",
+    "D enters destination mode from gameplay controls and respects multi-select and menus",
+    "manual zoom survives clear and menu layout changes",
+    "Home, arrow keys and Space work from map focus",
+    "empty-map clicks clear ordinary sources and still move carriers",
+    "drags suppress clicks, track beyond the board edge and end cleanly",
+    "touch holds show feedback, cancel safely and launch exactly once",
+    "six viewport layouts keep destination, Orders and collapse controls usable"
+  ],
+  "viewports": [
+    {
+      "name": "desktop",
+      "viewport": [
+        1440,
+        900
+      ],
+      "page": [
+        1440,
+        900
+      ],
+      "panel": {
+        "x": 998,
+        "y": 135,
+        "width": 370,
+        "height": 684
+      },
+      "headerBottom": 121.40625
+    },
+    {
+      "name": "tablet",
+      "viewport": [
+        1024,
+        768
+      ],
+      "page": [
+        1024,
+        768
+      ],
+      "panel": {
+        "x": 680.8125,
+        "y": 128.390625,
+        "width": 292,
+        "height": 563.875
+      },
+      "headerBottom": 100.171875
+    },
+    {
+      "name": "portrait",
+      "viewport": [
+        390,
+        844
+      ],
+      "page": [
+        390,
+        844
+      ],
+      "panel": {
+        "x": 14,
+        "y": 340.484375,
+        "width": 362,
+        "height": 489.515625
+      },
+      "headerBottom": 62
+    },
+    {
+      "name": "small-portrait",
+      "viewport": [
+        320,
+        568
+      ],
+      "page": [
+        320,
+        568
+      ],
+      "panel": {
+        "x": 14,
+        "y": 224.5625,
+        "width": 292,
+        "height": 329.4375
+      },
+      "headerBottom": 69.578125
+    },
+    {
+      "name": "landscape",
+      "viewport": [
+        844,
+        390
+      ],
+      "page": [
+        844,
+        390
+      ],
+      "panel": {
+        "x": 548,
+        "y": 68,
+        "width": 284,
+        "height": 312
+      },
+      "headerBottom": 56
+    },
+    {
+      "name": "short-landscape",
+      "viewport": [
+        568,
+        320
+      ],
+      "page": [
+        568,
+        320
+      ],
+      "panel": {
+        "x": 272,
+        "y": 68,
+        "width": 284,
+        "height": 242
+      },
+      "headerBottom": 56
+    }
+  ],
+  "errors": []
+}
