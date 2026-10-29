@@ -1,3 +1,4 @@
+import { createPlanetSurface, PLANET_TERRAINS } from './planet-surfaces';
 import surfaceUrl from '../docs/visual-directions/asset-proof/planet-surface.png';
 import transportUrl from '../assets/stellar-atlas/transport.png';
 import platformUrl from '../assets/stellar-atlas/platform.png';
@@ -12,9 +13,9 @@ const loadImage = async function (url: string): Promise<HTMLImageElement> {
 	return image;
 };
 
-// Each of the three terrain variants shares one globe across all its worlds.
+// Each terrain variant shares one globe across all its worlds.
 // No per-planet sampling, additional RAF, or persisted presentation state.
-const createGlobe = function (surface: HTMLImageElement) {
+const createGlobe = function (surface: CanvasImageSource) {
 	const sampling = document.createElement('canvas');
 	sampling.width = 1024; sampling.height = 512;
 	const sampler = sampling.getContext('2d', { willReadFrequently: true });
@@ -65,7 +66,9 @@ export const loadAtlasAssets = async function () {
 		loadImage(warshipUrl), loadImage(transportUrl), loadImage(platformUrl),
 	]);
 	const original = createGlobe(surface);
-	const globes = [original, createGlobe(ochre), createGlobe(mineral)];
+	const globes = [original, createGlobe(ochre), createGlobe(mineral),
+		...PLANET_TERRAINS.map(function (terrain) { return createGlobe(createPlanetSurface(terrain)); }),
+	];
 	return { globe: original.globe, globes, warship, transport, platform,
 		update: function (seconds: number): boolean { return original.update(seconds); } };
 };
