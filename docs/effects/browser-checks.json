@@ -1,0 +1,24 @@
+{
+  "checks": {
+    "pauseStable": true,
+    "inspection": {
+      "ships": 2,
+      "totalShips": 2,
+      "candidates": 2,
+      "indexEntries": 2,
+      "platforms": 0,
+      "travelLines": 2,
+      "textures": 7,
+      "entities": 7,
+      "tickerStarted": false,
+      "width": 1000,
+      "height": 650,
+      "resolution": 1
+    }
+  },
+  "lifecycle": {
+    "resetClean": true
+  },
+  "errors": [],
+  "environment": "Chromium SwiftShader; desktop and emulated mobile, controlled adapter impact fixture"
+}
