@@ -2,14 +2,14 @@ import { createGamepadInput, type GamepadFrame } from './gamepad-input';
 import { moveFocus, activateControl, visibleControls } from './ui-navigation';
 import { GAME_MODES, destinationFor } from './objectives';
 import { confirmAction } from './ui-dialog';
-import carrierSpriteUrl from '../assets/stellar-atlas/carrier.png';
 import { createPerformanceDiagnostics, type PerformanceDiagnostics, type DiagnosticsReport } from './performance-diagnostics';
 import { createCrowdedBaseline } from './performance-scenario';
-import { createPixiRenderer } from './pixi-renderer';
+import { createThreeRenderer } from './three-renderer';
 import { createMapInput } from './map-input';
 import { createFleetTargets } from './fleet-targets';
 import { createOrdersDrawer } from './orders-drawer';
-import { fitCamera, revealPoint } from './camera';
+import { revealPoint } from './camera';
+import { fitIsometricCamera, projectMap, unprojectMap } from './isometric';
 import type { ViewportArea } from './camera';
 import { createPresentation } from './presentation';
 import { visibleMapLabels, type LabelBounds, type MapLabel } from './map-labels';
@@ -398,10 +398,11 @@ const mountPlanets = function (): void {
 		const marker = document.createElement('div');
 		marker.className = 'race-destination';
 		marker.dataset.owner = destination.owner;
-		marker.style.left = `${destination.x}px`;
-		marker.style.top = `${destination.y}px`;
+		const point = projectMap(destination);
+		marker.style.left = `${point.x}px`;
+		marker.style.top = `${point.y}px`;
 		marker.style.width = `${destination.radius * 2}px`;
-		marker.style.height = `${destination.radius * 2}px`;
+		marker.style.height = `${destination.radius * 2 / Math.sqrt(3)}px`;
 		marker.style.setProperty('--destination-color', destination.owner === 'neutral' ? '#f8d787' : COLORS[destination.owner]);
 		marker.setAttribute('role', 'img');
 		marker.setAttribute('aria-label', destination.label);
@@ -418,17 +419,11 @@ const mountPlanets = function (): void {
 		const button = document.createElement('button');
 		button.className = p.carrier ? 'planet carrier' : 'planet';
 		button.dataset.planet = p.name;
-		button.style.left = `${p.x}px`;
-		button.style.top = `${p.y}px`;
+		const point = projectMap(p);
+		button.style.left = `${point.x}px`;
+		button.style.top = `${point.y}px`;
 		button.innerHTML =
 			'<span class="surface"></span><span class="count"></span><span class="name"></span><span class="orbit-count"></span><span class="production-mark"></span><span class="production-progress"><i></i></span><span class="bombardment-label" hidden></span>';
-		if (p.carrier) {
-			const image = document.createElement('img');
-			image.src = carrierSpriteUrl;
-			image.alt = '';
-			image.draggable = false;
-			button.querySelector('.surface')?.append(image);
-		}
 		const count = button.querySelector('.count');
 		const name = button.querySelector('.name');
 		const orbit = button.querySelector('.orbit-count');
@@ -569,8 +564,9 @@ const refreshContent = function (): void {
 	} of all) {
 		const view = views.get(id);
 		if (!view) continue;
-		view.button.style.left = `${p.x}px`;
-		view.button.style.top = `${p.y}px`;
+		const point = projectMap(p);
+		view.button.style.left = `${point.x}px`;
+		view.button.style.top = `${point.y}px`;
 		view.button.style.setProperty('--heading', `${p.carrier?.heading ?? 0}rad`);
 		const docked = dockedShips(world, id).length;
 		const blue = shipsAt(world, id, 'blue').length;
@@ -855,7 +851,7 @@ const drawer = createOrdersDrawer(
 	},
 );
 
-// One renderer-agnostic ECSpresso camera drives the DOM and Pixi layers.
+// The ECSpresso camera pans/zooms projected map coordinates in both layers.
 let camera: Camera = presentation.camera();
 let fitScale = 1;
 let previousArea: ViewportArea | undefined;
@@ -884,7 +880,7 @@ const playableArea = function (): ViewportArea {
 const fitMap = function (): void {
 	if (board.clientWidth === 0 || board.clientHeight === 0) return;
 	const area = playableArea();
-	const fitted = fitCamera(activeMap, area);
+	const fitted = fitIsometricCamera(activeMap, area);
 	previousArea = area;
 	fitScale = fitted.scale;
 	presentation.setCamera(fitted, board.clientWidth, board.clientHeight);
@@ -895,7 +891,7 @@ const revealSelection = function (): void {
 	const id = selected.at(-1) ?? inspected;
 	const planet = id === undefined ? undefined : world.getComponent(id, 'planet');
 	if (!planet) return;
-	presentation.setCamera(revealPoint(camera, planet, playableArea()), board.clientWidth, board.clientHeight);
+	presentation.setCamera(revealPoint(camera, projectMap(planet), playableArea()), board.clientWidth, board.clientHeight);
 	applyCamera();
 };
 const updateLayout = function (): void {
@@ -925,7 +921,7 @@ const moveOnMap = function (point: Point): void {
 			board.focus({ preventScroll: true });
 			return;
 		}
-		const worldPoint = presentation.toWorld(point);
+		const worldPoint = unprojectMap(presentation.toWorld(point));
 		const destination = { x: Math.max(0, Math.min(activeMap.width, worldPoint.x)), y: Math.max(0, Math.min(activeMap.height, worldPoint.y)) };
 		if (moveCarrier(world, id, destination)) { feedback('Carrier course set'); queueAutosave(); refresh(); }
 };
@@ -964,8 +960,11 @@ const mapInput = createMapInput({
 	},
 	zoomAt,
 });
-const renderer = await createPixiRenderer({
-	measure: function (name, action) { return diagnostics ? diagnostics.measure(name, action) : action(); },
+const renderer = await createThreeRenderer({
+	onContextLost: function (): void {
+		world.getResource('match').paused = true;
+		feedback('3D view interrupted · the conquest is paused. Resume after the view returns.');
+	},
 	getViewport: function () { return { width: board.clientWidth, height: board.clientHeight }; },
 	canvas,
 	getPixelRatio: function (): number {
@@ -974,12 +973,14 @@ const renderer = await createPixiRenderer({
 	getState: function () {
 		return {
 			world,
-			map: activeMap,
 			camera,
 			fitScale,
 			highlighted: drawer.highlighted(),
 		};
 	},
+}).catch(function (error: unknown): never {
+	element('menu-profile-status', HTMLParagraphElement).textContent = 'The 3D view could not start. Check that WebGL is enabled, then reload to retry loading the fleet models.';
+	throw error;
 });
 const resizeObserver = new ResizeObserver(updateLayout);
 resizeObserver.observe(board);
@@ -1513,7 +1514,7 @@ const backFromController = function (): void {
 const pointAtTarget = function (target: HTMLElement): void {
 	const id = [...views].find(function ([, view]) { return view.button === target; })?.[0];
 	const planet = id === undefined ? undefined : world.getComponent(id, 'planet');
-	const point = planet ?? { x: Number(target.style.left.replace('px', '')), y: Number(target.style.top.replace('px', '')) };
+	const point = planet ? projectMap(planet) : { x: Number(target.style.left.replace('px', '')), y: Number(target.style.top.replace('px', '')) };
 	if (Number.isFinite(point.x) && Number.isFinite(point.y)) {
 		presentation.setCamera(revealPoint(camera, point, playableArea()), board.clientWidth, board.clientHeight);
 		applyCamera();

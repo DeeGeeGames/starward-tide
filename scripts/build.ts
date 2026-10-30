@@ -7,6 +7,7 @@ const result = await Bun.build({
 	outdir: 'dist',
 	minify: true,
 	sourcemap: 'external',
+	loader: { '.glb': 'file' },
 });
 if (!result.success)
 	throw new AggregateError(result.logs, 'Browser build failed');
@@ -50,7 +51,7 @@ const { warnings } = await generateSW({
 	globDirectory: 'dist',
 	// Accepted opaque atlas master; included for offline gameplay.
 	maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
-	globPatterns: ['**/*.{html,js,css,svg,png,webmanifest}'],
+	globPatterns: ['**/*.{html,js,css,svg,png,glb,webmanifest}'],
 	swDest: 'dist/sw.js',
 	inlineWorkboxRuntime: true,
 	sourcemap: false,

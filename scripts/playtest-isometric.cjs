@@ -1,0 +1,65 @@
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+// Run against a production build to exercise GLB packaging and offline reload.
+const output=process.env.ISOMETRIC_OUTPUT_DIR || '/tmp/starward-isometric';
+fs.mkdirSync(output,{recursive:true});
+const gameUrl=new URL(process.env.GAME_URL || 'http://localhost:3000/');
+const diagnosticsUrl=new URL(gameUrl);diagnosticsUrl.searchParams.set('diagnostics','1');
+(async function(){
+const browser=await chromium.launch({headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+const context=await browser.newContext({viewport:{width:1440,height:1000}});const page=await context.newPage();page.setDefaultTimeout(10000);
+const errors=[],checks=[];page.on('pageerror',e=>errors.push(e.message));
+const check=name=>{checks.push(name);console.log('PASS',name);};
+const report=()=>page.evaluate(()=>window.conquestDiagnostics.report().context);
+try{
+ await page.goto(diagnosticsUrl.href);
+ await page.waitForFunction(()=>window.conquestDiagnostics);
+ await page.addStyleTag({content:'#performance-diagnostics { display:none !important; }'});
+ await page.locator('#new-game').click();await page.locator('#setup-next').click();await page.locator('#start-conquest').click();
+ await page.locator('#app').waitFor({state:'visible'});await page.locator('#pause').click();await page.waitForTimeout(300);
+ const initial=await report();assert.equal(initial.renderer.renderer,'three');assert.equal(initial.renderer.projection,'isometric');assert(initial.renderer.ships>0);
+ await page.screenshot({path:output+'/overview.png'});check('new conquest renders real spheres and GLB fleet at a production subpath');
+ await page.evaluate(()=>window.conquestDiagnostics.carrierPreview('capture'));await page.waitForTimeout(350);
+ const carrier=page.locator('button[data-planet="Blue carrier"]');await carrier.click();
+ await page.locator('#board').focus();await page.keyboard.press('Home');await page.waitForTimeout(200);
+ const camera=(await report()).camera;
+ const target={x:650,y:800};const projected={x:(target.x-target.y)/Math.sqrt(2),y:(target.x+target.y)/Math.sqrt(6)};
+ const screen={x:camera.x+projected.x*camera.scale,y:camera.y+projected.y*camera.scale};
+ await page.mouse.click(screen.x,screen.y);await page.waitForTimeout(500);
+ await page.locator('#settings').click();await page.locator('#save-game').click();await page.waitForTimeout(100);
+ const saved=await page.evaluate(()=>new Promise((resolve,reject)=>{const req=indexedDB.open('galaxy-conquest-local');req.onerror=()=>reject(req.error);req.onsuccess=()=>{const db=req.result;const q=db.transaction('profiles').objectStore('profiles').getAll();q.onsuccess=()=>{resolve(q.result.filter(p=>p.name==='Carrier review')[0].save);db.close();};q.onerror=()=>{db.close();reject(q.error);};};}));
+ const host=saved.game.planets.find(p=>p.planet.name==='Blue carrier').planet;
+ // Chromium click events round client coordinates to integer CSS pixels.
+ const clickPlane={x:(Math.floor(screen.x)-camera.x)/camera.scale,y:(Math.floor(screen.y)-camera.y)/camera.scale};const expected={x:(clickPlane.x*Math.sqrt(2)+clickPlane.y*Math.sqrt(6))/2,y:(clickPlane.y*Math.sqrt(6)-clickPlane.x*Math.sqrt(2))/2}; assert(Math.abs(host.carrier.destination.x-expected.x)<0.01);assert(Math.abs(host.carrier.destination.y-expected.y)<0.01);check('click-to-move converts projected coordinates into the exact saved map destination');
+ await page.locator('#close-guide').click();await page.keyboard.press('Escape');await page.locator('#board').focus();
+ const before=(await report()).camera;const anchor={x:720,y:500};
+ await page.mouse.move(anchor.x,anchor.y);await page.mouse.wheel(0,-420);await page.waitForTimeout(250);
+ const after=(await report()).camera;
+ assert(after.scale>before.scale);
+ assert(Math.abs((anchor.x-before.x)/before.scale-(anchor.x-after.x)/after.scale)<0.01);
+ assert(Math.abs((anchor.y-before.y)/before.scale-(anchor.y-after.y)/after.scale)<0.01);check('wheel zoom preserves the map point under the cursor');
+ await page.mouse.move(550,750);await page.mouse.down();await page.mouse.move(650,790,{steps:6});await page.mouse.up();await page.waitForTimeout(200);
+ const panned=(await report()).camera;assert(Math.abs(panned.x-after.x-100)<1);check('drag pan stays aligned with projected DOM controls');
+ await page.keyboard.press('Home');
+ await page.evaluate(()=>window.conquestDiagnostics.carrierPreview('bombardment'));await page.waitForTimeout(350);
+ await page.mouse.move(850,500);await page.mouse.wheel(0,-650);await page.waitForTimeout(250);
+ await page.screenshot({path:output+'/fleet.png'});
+ const paused=(await report()).simulationTime;await page.waitForTimeout(250);assert.equal((await report()).simulationTime,paused);check('pause freezes planet rotation, fleet motion, effects, and simulation time');
+ const details=(await report()).renderer;assert(details.platforms>0);assert(details.drawCalls<100);check('defense platforms and fleet classes render with bounded instanced draw calls');
+ await page.evaluate(()=>{const canvas=document.querySelector('#space');window.qaGl=canvas.getContext('webgl2');window.qaLoss=window.qaGl.getExtension('WEBGL_lose_context');window.qaLoss.loseContext();});
+ await page.waitForFunction(()=>window.conquestDiagnostics.report().context.renderer.contextLost);
+ await page.evaluate(()=>window.qaLoss.restoreContext());await page.waitForFunction(()=>!window.conquestDiagnostics.report().context.renderer.contextLost);await page.waitForTimeout(300);
+ assert((await report()).renderer.drawCalls>0);check('WebGL context loss restores the existing match and GPU assets');
+ await page.setViewportSize({width:390,height:844});await page.locator('#board').focus();await page.keyboard.press('Home');await page.waitForTimeout(350);
+ await page.screenshot({path:output+'/mobile.png'});
+ const b=await page.locator('#space').boundingBox();assert(Math.abs(b.width-390)<1);assert(Math.abs(b.height-844)<1);
+ await page.locator('button[data-planet="Blue carrier"]').click();assert(await page.locator('#planet-panel').isVisible());check('mobile resize fits the map and carrier selection opens its command sheet');
+ await page.evaluate(async()=>{await navigator.serviceWorker.ready;});await page.goto(gameUrl.href);await page.waitForFunction(()=>navigator.serviceWorker.controller!==null);await page.locator('#continue-conquest').waitFor({state:'visible'});
+ await context.setOffline(true);await page.reload();
+ await page.locator('#continue-conquest').click();await page.locator('#app').waitFor({state:'visible'});await page.waitForTimeout(350);
+ assert.match(await page.locator('#space').getAttribute('data-engine'),/three.js/);check('offline reload from the production subpath loads cached GLBs and continues the saved conquest');
+ assert.equal(errors.length,0,errors.join('\n'));
+ fs.writeFileSync(output+'/checks.json',JSON.stringify({checks,errors,initial:initial.renderer,details},null,2));
+}finally{await page.close();await context.close();await browser.close();console.log('Task browser closed');}
+})().catch(e=>{console.error(e);process.exitCode=1;});
