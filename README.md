@@ -21,6 +21,14 @@ After the first online visit finishes caching, the game can reopen and play offl
 
 The page includes X player-card metadata intended to embed the game in a post, using [assets/x-card.jpg](assets/x-card.jpg) as the poster. Metadata and a successful build alone do not verify live inline playback on X. Use the deployed standalone URL, including the trailing slash, when checking card behavior. An embedding host must permit framing.
 
+## Gameplay controls
+
+Select a world to access **Send**, **Build**, and **Orders**. Send settings are visible immediately: choose the fraction and unit type, then **Choose destination** and select a map target. Cancel preserves the sources and settings. In multi-select, Choose destination finishes source selection directly. Selecting the same world again keeps its commands open; use Clear, empty space, or additive selection to deselect. Zoom buttons supplement wheel and pinch gestures.
+
+On controller, D-pad navigation follows the visible rows and columns. **X** opens send settings from the map and chooses a destination from the command panel. **B** cancels targeting or returns from Send to the map; from Build it returns to Send first. Mouse right-click, touch hold, and keyboard D remain dispatch shortcuts.
+
+The responsive gameplay smoke journey is `scripts/playtest-ux.cjs`. Run it against a local development server with `GAME_URL=http://localhost:3000 PLAYWRIGHT_MODULE=/path/to/playwright node scripts/playtest-ux.cjs`. It exercises mouse/touch flows and simulated controller navigation at desktop, portrait, small portrait, and landscape sizes. Hardware usability still requires hands-on review.
+
 ## Skirmish and local profiles
 
 The title screen offers up to 10 local profiles. On first use, a **Player** profile is created and selected automatically so you can start immediately. You can rename it or create another profile. Each profile has one ongoing star system battle: **Continue** restores its saved map and game state paused, and **New conquest** opens setup and asks before replacing progress. Rename keeps progress; deleting a profile requires confirmation and removes only that profile. Choose **Save** in the game menu or rely on periodic autosaves, including while paused. The menu retains the full save timestamp; save failures stay visible during play, including on phones.

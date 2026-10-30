@@ -158,6 +158,7 @@
 			<div class="map-heading">
 				<span id="instruction">Select one of your worlds to manage it.</span>
 				<button id="multi" aria-pressed="false">＋ Multi-select</button>
+				<button id="zoom-out" aria-label="Zoom out">−</button><button id="zoom-in" aria-label="Zoom in">+</button>
 				<button id="fit-map" aria-label="Fit map to view" title="Fit map to view (Home)">⊡</button>
 			</div>
 			<div id="destination-prompt" class="hud" hidden>
@@ -186,7 +187,7 @@
 						<p id="selection-info"></p>
 						<p id="orbital-info" hidden></p>
 						<div id="selection-warning" class="selection-warning" role="status" hidden></div>
-						<div id="command-actions"><button id="open-dispatch">Dispatch <span aria-hidden="true">›</span></button><button id="open-production">Production <span aria-hidden="true">›</span></button><button id="selection-orders">Orders <span aria-hidden="true">›</span></button></div>
+						<div id="command-actions"><button id="open-dispatch" aria-controls="dispatch-details">Send</button><button id="open-production" aria-controls="production-controls">Build</button><button id="selection-orders">Orders</button></div>
 						<div id="production-controls">
 							<div class="control-label"><strong>Production</strong><span id="production-info"></span><button id="change-production" class="text-button" aria-expanded="false" aria-controls="production-options">Change ›</button></div>
 							<div id="production-options">
@@ -284,7 +285,7 @@
 				</details>
 				<details class="guide">
 					<summary>How to play</summary>
-					<div id="play-instructions"><p>Controller: press A or Start, then release to activate. Use the left stick for the cursor, right stick to pan, LT/RT to zoom, and LB/RB to cycle worlds and hostile groups. A selects or confirms; X opens dispatch; Y toggles multi-select; B returns to the previous command layer or map; Start pauses; Back/View opens the game menu. Use the right stick to scroll long menus. On disconnect or focus loss, the match pauses and requires deliberate resume.</p>
+					<div id="play-instructions"><p>Controller: press A or Start, then release to activate. Use the left stick for the cursor, right stick to pan, LT/RT to zoom, and LB/RB to cycle worlds and hostile groups. A selects or confirms; X opens dispatch settings; press X again to choose a destination; Y toggles multi-select; B returns to the previous command layer or map; Start pauses; Back/View opens the game menu. Use the right stick to scroll long menus. On disconnect or focus loss, the match pauses and requires deliberate resume.</p>
 						<p>Drag to explore. Scroll or pinch to zoom. Focus the map and use arrow keys to pan, Space to pause, or Home to fit the map. Shift-click to add or remove a source. Click empty space to clear selection; with one carrier selected, it sets its course instead. Hold or right-click a destination to send units. For keyboard dispatch, select a source and press D, then tap, click, or focus a destination and press Enter. Cancel, Escape, or right-clicking empty space cancels destination choice and keeps the sources.</p>
 						<p>To intercept, select a planet or orbital ring, then hold or right-click a hostile group’s ⌖ marker. You can also press D to enter destination mode and select its marker. Interception sends warships only, even with Combined selected. Troops and transports stay behind. Ships follow the group and use normal combat rules in range, then return to their launch points when the group is destroyed or reaches orbit.</p>
 						<p>
