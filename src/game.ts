@@ -15,6 +15,7 @@ import { raceDestinations, type Objectives } from './objectives';
 import { DEFAULT_OPPONENT, DIFFICULTIES } from './opponent';
 import type { OpponentSettings } from './opponent';
 import { registerCombat } from './combat';
+import { emitSound, type SoundEvents, type WorldSound, type SoundEvent } from './sound-events';
 import { registerMovement, registerTravelerCleanup, travelAim } from './movement';
 import { initializeLabScenario, seedFreshGame } from './game-scenario';
 import { LAB_MAP, mapSides } from './maps';
@@ -132,7 +133,7 @@ const spatialIndexPlugin = createSpatialIndexPlugin({
 type SpatialIndexConfig = NonNullable<typeof spatialIndexPlugin['_cfg']>;
 type GameConfig = WithResources<
 	WithComponents<SpatialIndexConfig, { planet: Planet; unit: Unit }>,
-	DiagnosticsResourceTypes & { objectives: Objectives; match: Match; orderBook: OrderBook; diagnosticsLifetime: { dispose: () => void }; mapBounds: { width: number; height: number } }
+	DiagnosticsResourceTypes & { soundEvents: SoundEvents; objectives: Objectives; match: Match; orderBook: OrderBook; diagnosticsLifetime: { dispose: () => void }; mapBounds: { width: number; height: number } }
 >;
 export type Game = ECSpresso<GameConfig>;
 type PlanetEntity = FilteredEntity<GameConfig['components'], 'planet'>;
@@ -183,6 +184,7 @@ const makeWorld = function (map: StarMap, opponent: OpponentSettings): Game {
 		.withResource('diagnosticsLifetime', { dispose: function (): void {} })
 		.withComponentTypes<{ planet: Planet; unit: Unit }>()
 		.withResource('match', match)
+		.withResource('soundEvents', { pending: new Map<WorldSound, SoundEvent>() })
 		.withResource('objectives', objectives)
 		.withResource('mapBounds', { width: map.width, height: map.height })
 		.withResource('orderBook', orderBook)
@@ -779,7 +781,10 @@ export const createGame = async function (
 				else if (!match.winner && !match.draw && survivors.length === 0) match.draw = true;
 				else if (!match.winner && !match.draw && !owners.has('blue')) match.defeated = true;
 			}
-			if (matchEnded(match)) return;
+			if (matchEnded(match)) {
+				emitSound(ecs, match.draw ? 'draw' : match.winner === 'blue' ? 'victory' : 'defeat');
+				return;
+			}
 			match.aiClock += dt;
 			if (match.ai && match.aiClock >= DIFFICULTIES[(match.opponent ?? DEFAULT_OPPONENT).difficulty].interval) {
 				match.aiClock = 0;

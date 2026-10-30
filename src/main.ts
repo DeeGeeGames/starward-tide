@@ -44,6 +44,8 @@ import type { Game } from './game';
 import { openProfileRepository } from './profile-storage';
 import type { ProfileRepository, ProfileSummary } from './profile-storage';
 import { formatElapsedTime } from './time-format';
+import { createSoundPlayer } from './sound-player';
+import { drainSounds } from './sound-events';
 
 document.addEventListener('contextmenu', function (event) {
 	event.preventDefault();
@@ -114,6 +116,34 @@ const amountButtons = [
 const filterButtons = [
 	...document.querySelectorAll<HTMLButtonElement>('[data-filter]'),
 ];
+const sounds = createSoundPlayer();
+const soundListeners = new AbortController();
+const unlockSound = function (): void { sounds.unlock(); };
+document.addEventListener('pointerdown', unlockSound, { capture: true, signal: soundListeners.signal });
+document.addEventListener('keydown', unlockSound, { capture: true, signal: soundListeners.signal });
+const soundButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-sound-toggle]')];
+const syncSoundButtons = function (): void {
+	for (const button of soundButtons) {
+		button.textContent = sounds.isMuted() ? 'Sound: Off' : 'Sound: On';
+		button.setAttribute('aria-pressed', String(!sounds.isMuted()));
+		button.title = sounds.isMuted() ? 'Enable sound effects' : 'Mute sound effects';
+	}
+};
+for (const button of soundButtons) button.addEventListener('click', function () {
+	sounds.setMuted(!sounds.isMuted());
+	syncSoundButtons();
+	sounds.play('select');
+}, { signal: soundListeners.signal });
+document.addEventListener('click', function (event) {
+	const button = event.target instanceof Element ? event.target.closest('button') : null;
+	if (button && !button.disabled && !button.matches('.planet, [data-sound-toggle]')) sounds.play('select');
+}, { signal: soundListeners.signal });
+window.addEventListener('blur', function () { sounds.setActive(false); }, { signal: soundListeners.signal });
+window.addEventListener('focus', function () { sounds.setActive(!document.hidden); }, { signal: soundListeners.signal });
+document.addEventListener('visibilitychange', function () {
+	sounds.setActive(!document.hidden && document.hasFocus());
+}, { signal: soundListeners.signal });
+syncSoundButtons();
 interface PlanetView {
 	button: HTMLButtonElement;
 	count: HTMLSpanElement;
@@ -308,6 +338,7 @@ const selectPlanet = function (id: number, additive = false): void {
 	const p = world.getComponent(id, 'planet');
 	if (!p) return;
 	cancelMapCommand();
+	sounds.play('select');
 	sheetCollapsed = false;
 	commandView = 'overview';
 	const selectable =
@@ -341,10 +372,14 @@ const sendToPlanet = function (id: number): void {
 	if (choosingDestination === 'bombard') {
 		const source = selected.length === 1 ? selected[0] : undefined;
 		if (source !== undefined && bombardPlanet(world, source, id)) {
+			sounds.play('command');
 			feedback(`Carrier approaching ${p.name} to bombard`);
 			cancelMapCommand();
 			queueAutosave();
-		} else feedback('Choose a hostile or defended neutral planet. Carriers cannot be bombarded.');
+		} else {
+			sounds.play('error');
+			feedback('Choose a hostile or defended neutral planet. Carriers cannot be bombarded.');
+		}
 		refresh();
 		return;
 	}
@@ -362,6 +397,7 @@ const sendToPlanet = function (id: number): void {
 			fraction,
 			shipsOnly ? 'ships' : filter,
 		);
+		sounds.play(sent > 0 ? 'command' : 'error');
 		feedback(
 			sent > 0
 				? `${sent} ${sent === 1 ? 'unit' : 'units'} launched → ${p.name}`
@@ -383,6 +419,7 @@ const sendToFleet = function (id: number): void {
 		feedback('Choose Combined or Ships to intercept. Transports cannot intercept.');
 	else {
 		const sent = dispatchIntercept(world, selected, id, fraction);
+		sounds.play(sent > 0 ? 'command' : 'error');
 		feedback(sent > 0 ? `${sent} ${sent === 1 ? 'ship' : 'ships'} launched to intercept · returns after pursuit` : 'No ships launched. Check ship stock or blockade; the group may have arrived.');
 		if (sent > 0) {
 			cancelMapCommand();
@@ -457,6 +494,7 @@ raceDestinationButton.addEventListener('click', function () {
 	const destination = destinationFor(world.getResource('objectives'), 'blue');
 	if (id === undefined || !destination || busy) return;
 	if (moveCarrier(world, id, destination)) {
+		sounds.play('command');
 		feedback(`Carrier en route to ${destination.label.toLowerCase()}`);
 		queueAutosave();
 		refresh();
@@ -471,6 +509,7 @@ launchCarrierButton.addEventListener('click', function () {
 	const id = selected.length === 1 ? selected[0] : undefined;
 	if (id === undefined || busy) return;
 	const count = launchCarrierShips(world, id, fraction);
+	sounds.play(count > 0 ? 'command' : 'error');
 	feedback(`${count} ships launched into local space`);
 	if (count > 0) queueAutosave();
 	refresh();
@@ -923,7 +962,7 @@ const moveOnMap = function (point: Point): void {
 		}
 		const worldPoint = unprojectMap(presentation.toWorld(point));
 		const destination = { x: Math.max(0, Math.min(activeMap.width, worldPoint.x)), y: Math.max(0, Math.min(activeMap.height, worldPoint.y)) };
-		if (moveCarrier(world, id, destination)) { feedback('Carrier course set'); queueAutosave(); refresh(); }
+		if (moveCarrier(world, id, destination)) { sounds.play('command'); feedback('Carrier course set'); queueAutosave(); refresh(); }
 };
 const mapInput = createMapInput({
 	board,
@@ -1083,6 +1122,8 @@ const installGame = async function (
 	}
 	mapInput.cancel();
 	const previousWorld = world;
+	sounds.stop();
+	drainSounds(installation.game);
 	renderer.reset();
 	diagnostics?.dispose();
 	diagnostics = undefined;
@@ -1318,10 +1359,12 @@ aiInput.addEventListener('change', function () {
 });
 let previous = performance.now();
 let lastRefresh = 0;
+let soundWorldPaused = true;
 const frame = function (now: number): void {
 	if (disposed) return;
 	const dt = Math.min(Math.max((now - previous) / 1000, 0), 0.1);
 	previous = now;
+	sounds.setActive(!document.hidden && document.hasFocus());
 	updateGamepad(dt);
 	presentation.update(dt);
 	diagnostics?.frame(now);
@@ -1337,6 +1380,18 @@ const frame = function (now: number): void {
 			refresh();
 			lastRefresh = now;
 		}
+	}
+	const soundPaused = busy || frontMenu.getCurrentScreen() !== 'playing' || world.getResource('match').paused;
+	if (soundPaused && !soundWorldPaused) sounds.stop();
+	soundWorldPaused = soundPaused;
+	// Always drain, including while muted or blocked by autoplay: no old battle
+	// or result cues should play when sound is enabled or a tab returns.
+	for (const event of drainSounds(world)) {
+		if (soundPaused) continue;
+		const point = event.point ? projectMap(event.point) : undefined;
+		const screenX = point ? camera.x + point.x * camera.scale : board.clientWidth / 2;
+		const pan = board.clientWidth > 0 ? (screenX / board.clientWidth - 0.5) * 1.6 : 0;
+		sounds.play(event.kind, pan, event.point ? 0.7 : 1);
 	}
 	raf = requestAnimationFrame(frame);
 };
@@ -1393,6 +1448,7 @@ const frontMenu = await createFrontMenu({
 		saveGameButton.disabled = true;
 	},
 	onMenu: function () {
+		sounds.stop();
 		cancelMapCommand();
 		world.getResource('match').paused = true;
 		hiddenPause = false;
@@ -1454,6 +1510,7 @@ window.addEventListener('keydown', function (event) {
 const gamepad = await createGamepadInput({
 	onActivity: function () { setInputMethod('gamepad'); },
 	onClaim: function () {
+		sounds.unlock();
 		if (frontMenu.getCurrentScreen() === 'playing') {
 			world.getResource('match').paused = true;
 			hiddenPause = false;
@@ -1556,6 +1613,7 @@ const confirmMapTarget = function (): void {
 const updateGamepad = function (dt: number): void {
 	if (document.hidden || !document.hasFocus()) { gamepad.suspend(); controllerCursor.hidden = true; return; }
 	const input: GamepadFrame = gamepad.update(dt);
+	if (input.actions.length > 0 || input.directions.length > 0) sounds.unlock();
 	const status = gamepad.status();
 	const active = document.documentElement.dataset.input === 'gamepad';
 	const message = status.phase === 'disconnected' && active
@@ -1791,8 +1849,11 @@ if (diagnosticsEnabled) {
 }
 raf = requestAnimationFrame(frame);
 window.addEventListener('pagehide', function (event) {
+	sounds.setActive(false);
 	if (event.persisted) return;
 	disposed = true;
+	soundListeners.abort();
+	void sounds.dispose();
 	inputListeners.abort();
 	void gamepad.dispose();
 	diagnostics?.dispose();

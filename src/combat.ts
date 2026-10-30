@@ -2,6 +2,7 @@ import type { SystemRegistrarOf } from 'ecspresso';
 import { CONFIG, SIDES, isHostile } from './config';
 import type { Side } from './config';
 import type { Engagement, Game, GameOptions } from './game';
+import { emitSound } from './sound-events';
 
 // Return only scheduling capabilities so createGame owns the phase and edges.
 type ScheduledSystem = Pick<
@@ -26,6 +27,7 @@ const hurt = function (
 	if (damage <= 0 || unit.hp <= 0) return damage;
 	const taken = Math.min(unit.hp, damage);
 	unit.hp -= taken;
+	if (unit.hp <= 0) emitSound(world, 'explosion', unit);
 	if (unit.hp <= 0 && unit.kind === 'transport' && !lost.has(entity.id)) {
 		lost.add(entity.id);
 		const match = world.getResource('match');
@@ -58,8 +60,10 @@ const damageOrbit = function (
 	}))
 		damage = hurt(world, entity, damage, lost, notify);
 	if (planet.owner === side && planet.guns > 0) {
+		const platforms = Math.ceil(planet.guns);
 		const taken = Math.min(planet.guns * CONFIG.gunHealth, damage);
 		planet.guns = Math.max(0, planet.guns - taken / CONFIG.gunHealth);
+		if (platforms > Math.ceil(planet.guns)) emitSound(world, 'explosion', planet);
 		damage -= taken;
 	}
 	for (const entity of targets.filter(function (entry) {
@@ -165,7 +169,8 @@ const applyPassVolley = function (
 	for (const shot of volley) {
 		const before = shot.target.components.unit.hp;
 		hurt(world, shot.target, shot.damage, lost, notify);
-		if (shot.target.components.unit.hp < before)
+		if (shot.target.components.unit.hp < before) {
+			emitSound(world, 'laser', shot.from);
 			shots.push({
 				x1: shot.from.x,
 				y1: shot.from.y,
@@ -173,6 +178,7 @@ const applyPassVolley = function (
 				y2: shot.to.y,
 				owner: shot.owner,
 			});
+		}
 	}
 };
 
@@ -211,6 +217,7 @@ export const registerCombat = function (
 					});
 					for (const target of targets)
 						damageOrbit(ecs, id, target.side, force.damage * dt / targets.length, lost, dependencies);
+					if (force.damage > 0 && targets.length > 0) emitSound(ecs, 'laser', p);
 				}
 			}
 			// The index holds pre-movement positions; include one step of target travel.
@@ -237,6 +244,7 @@ export const registerCombat = function (
 						const previousOwner = p.owner;
 						p.troops = u.cargo - p.troops;
 						p.owner = u.owner;
+						if (u.owner === 'blue' || previousOwner === 'blue') emitSound(ecs, u.owner === 'blue' ? 'capture' : 'loss');
 					if (p.carrier) {
 						p.carrier.destination = null;
 						delete p.carrier.bombardment;
@@ -291,13 +299,18 @@ export const registerCombat = function (
 					delete carrier.bombardment;
 					continue;
 				}
-				if (attack.elapsed === 0) notify(ecs, `${p.name} charging bombardment of ${target.name}: ${CONFIG.bombardmentCharge}s`, p.owner);
+				if (attack.elapsed === 0) {
+					notify(ecs, `${p.name} charging bombardment of ${target.name}: ${CONFIG.bombardmentCharge}s`, p.owner);
+					emitSound(ecs, 'charge', p);
+				}
 				attack.elapsed += dt;
 				if (attack.elapsed + 1e-9 < CONFIG.bombardmentCharge) continue;
+				if (target.owner === 'blue') emitSound(ecs, 'loss');
 				target.troops = 0;
 				target.owner = 'neutral';
 				target.progress = 0;
 				target.production = 'troops';
+				emitSound(ecs, 'bombard', target);
 				ecs.markChanged(attack.target, 'planet');
 				notify(ecs, `${target.name} bombarded: surface neutralized`, p.owner);
 				delete carrier.bombardment;
