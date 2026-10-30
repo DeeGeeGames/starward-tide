@@ -8,7 +8,9 @@ Preserve the speed and clarity of a Galcon-like game while adding production cho
 
 The player is blue; one to three computer rivals are red, green, and purple; neutral planets are unclaimed. Tactical ships and transports are individual entities. A dispatch groups units for order tracking and recall, but does not create a separately managed fleet. Planet surfaces and carrier crews hold troop counts; defense platforms are planet-bound counts.
 
-There is no networking, controller support, audio, research, upgrades, diplomacy, construction queue, transport inventory, resource harvesting, account, cloud sync, or save export/import.
+There is no networking, controller support, research, upgrades, diplomacy, construction queue, transport inventory, resource harvesting, account, cloud sync, or save export/import.
+
+Procedural sound effects provide command, combat, capture/loss, bombardment, and result feedback. A shared browser mute preference is available in both menus. Transient sound events are bounded, drained each frame, and excluded from saves; battle voices stop on pause, focus loss, and menu transitions. Sound design and physical-device mix acceptance require listening playtests.
 
 ## Skirmish
 

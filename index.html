@@ -69,6 +69,7 @@
 					<button id="new-game" class="menu-choice" disabled>New conquest <span aria-hidden="true">›</span></button>
 					<button id="how-to-play" class="menu-choice" aria-haspopup="dialog" aria-controls="help-dialog">How to play <span aria-hidden="true">›</span></button>
 					<button id="profile-badge" class="menu-choice" disabled aria-label="Loading local profiles" aria-haspopup="dialog" aria-controls="profile-dialog">Profiles <span aria-hidden="true">›</span></button>
+					<button id="title-sound" class="menu-choice" data-sound-toggle aria-pressed="true">Sound: On</button>
 				</nav>
 				<p id="menu-profile-status" class="status" role="status" aria-live="polite"></p>
 				<div class="menu-footer"><div class="input-hints"><span data-key-hint><kbd>↵</kbd> Select</span><span data-key-hint><kbd>↑↓</kbd> Navigate</span><span data-pad-hint><kbd>A</kbd> Select</span><span data-pad-hint><kbd>Y</kbd> Profile</span><span data-touch-hint>Tap a choice</span><button id="title-fullscreen" class="fullscreen-icon-button" aria-label="Enter fullscreen" aria-pressed="false">⛶</button></div><span id="profile-save-time"></span></div>
@@ -240,6 +241,7 @@
 				</div>
 				<div class="menu-actions">
 					<button id="save-game" aria-label="Save conquest">Save</button>
+					<button id="game-sound" data-sound-toggle aria-pressed="true">Sound: On</button>
 					<button id="fullscreen" class="fullscreen-icon-button" aria-label="Enter fullscreen" aria-pressed="false">
 						<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
 							<path d="M5 14h2v3h3v2H5v-5zm2-4H5V5h5v2H7v3zm7 7h3v-3h2v5h-5v-2zm3-7V7h-3V5h5v5h-2z" />

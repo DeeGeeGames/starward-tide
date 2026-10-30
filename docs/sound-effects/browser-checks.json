@@ -1,0 +1,67 @@
+{
+	"runtime": "Production build served under /game/ in headless Chromium with native Web Audio and a user gesture autoplay policy.",
+	"gameplay": {
+		"checks": [
+			"no autoplay context before interaction; mute persists across reload",
+			"trusted pointer unlocks native audio with nonzero output",
+			"normal paused dispatch plays command cue and keeps controls playable",
+			"real orbital combat emits native laser playback",
+			"pause stops battle voices and never replays frozen volleys",
+			"mute silences UI and combat immediately; both controls synchronize",
+			"simulated focus loss stops active voices and suppresses background events",
+			"mobile title mute control stays reachable",
+			"game journey reports no browser runtime errors"
+		],
+		"errors": [],
+		"nativeSourcesStarted": 25
+	},
+	"audioLifecycle": {
+		"checks": [
+			"locked cues are discarded, never replayed after unlock",
+			"combat cooldown limits 100 simultaneous laser requests to one voice",
+			"all 12 cues render through native Web Audio with bounded concurrent voices",
+			"mute stops every voice and unmute does not replay dropped cues",
+			"browser audio suspension discards unfinished effects before resume",
+			"disposal is idempotent, stops voices, and closes the owned audio context",
+			"unavailable storage and Web Audio degrade without interrupting play"
+		],
+		"errors": [],
+		"energy": [
+			0.35929396748542786
+		]
+	},
+	"inputRegression": {
+		"controller": [
+			"deliberate claim consumes activation and shows controller focus",
+			"controller-only setup changes settings and starts exact preview",
+			"target snapping, controller dispatch, and paused unit reservation",
+			"Orders and launch cancellation work without pointer input",
+			"right-stick camera pan",
+			"disconnect pauses and reconnect requires deliberate resume",
+			"visible focus loss blocks input and held Start cannot resume on return",
+			"restart confirmation is controller reachable and Back safely cancels",
+			"carrier local launch and bombardment are controller reachable",
+			"snapped moving carrier remains targeted through movement and confirmation",
+			"no JavaScript errors"
+		],
+		"pointerKeyboardTouch": [
+			"production remains available behind compact disclosure",
+			"Shift-click adds/removes sources and clears stale enemy inspection",
+			"Escape closes one layer and ignores key repeats",
+			"right-click empty map cancels destination and retains sources",
+			"D enters destination mode from gameplay controls and respects multi-select and menus",
+			"manual zoom survives clear and menu layout changes",
+			"Home, arrow keys and Space work from map focus",
+			"empty-map clicks clear ordinary sources and still move carriers",
+			"drags suppress clicks, track beyond the board edge and end cleanly",
+			"touch holds show feedback, cancel safely and launch exactly once",
+			"six viewport layouts keep destination, Orders and collapse controls usable"
+		]
+	},
+	"deterministic": "bun run check passed: 221 tests, typecheck, production build; lint has four pre-existing return-type warnings.",
+	"review": "Independent static review found no actionable issues; primary self-review corrected platform-count comparison and revalidated it.",
+	"limits": [
+		"Focus loss is simulated via hasFocus and blur events.",
+		"Physical controllers, mobile audio policies, speaker/headphone mix, and owner listening acceptance are unmeasured."
+	]
+}
