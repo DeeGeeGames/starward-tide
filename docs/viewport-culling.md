@@ -42,12 +42,6 @@ Browser evidence at 1280×800 and 390×844 (desktop UA, DPR 2):
 - Actual-adapter overlap regression: two overlapping, opposing transports with upright cargo badges, paused throughout. Pan to cull only the first hull, then return: visible hull counts **2 → 1 → 2**, lines **2 → 2 → 2**. The [before](performance/culling-order-before.png) and [after](performance/culling-order-after.png) screenshots have **identical RGB pixels**. This validates the independent review repair for recreated hull ordering.
 - Offscreen endpoints: zero visible hulls still retain two [crossing travel lines and a crossing engagement](performance/culling-crossing-lines.png). A [pending highlighted route](performance/culling-crossing-highlight.png) also remains visible. Transitioning both travelers to orbit removes both travel sprites. No browser console entries were reported across these checks.
 
-The small actual-adapter fixture is retained in `scripts/preview-viewport-culling.ts`. To repeat after a production build:
-
-```sh
-bun build scripts/preview-viewport-culling.ts --outfile dist/issue43-order.js --target browser
-```
-
-Serve a temporary page containing `<script type="module" src="issue43-order.js"></script>`. In the console, `orderHarness.pan(-105)` culls one overlapping transport; `orderHarness.pan(0)` restores it. Capture screenshots before/after and compare RGB pixels. `orderHarness.crossing()`, `highlight()` and `arrive()` exercise the independent line/effect paths. `orderHarness.dispose()` releases the fixture. The harness writes no saves and is excluded from production entrypoints.
+These measurements describe the retired Pixi adapter. The isometric 3D migration replaces its spatial-index culling and overlap-order fixture with projected hull visibility, GPU instancing, and depth testing. Routes remain independent of hull visibility. Current projection and asset checks live in `src/isometric.test.ts` and `src/fleet-models.test.ts`; historical screenshots and measurements above remain available as evidence of the earlier renderer.
 
 Validation at the culling revision: `bun run check` passed lint, **190 tests**, strict typechecking, and the production build. Independent review's overlap-order finding was repaired and re-reviewed with no remaining source findings. The task-owned browser tab and HTTP server were closed; port 3010 was verified stopped.

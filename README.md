@@ -2,7 +2,7 @@
 
 A touch-first, single-player real-time strategy game. Expand between planets, choose troops, ships, or defense platforms, and conquer the rival. Battles take place within a single star system.
 
-Bun serves and bundles HTML/TypeScript/CSS directly. ECSpresso 0.24.1 runs the tactical simulation; PixiJS 8.19.0 renders units beneath DOM planets and controls.
+Bun serves and bundles HTML/TypeScript/CSS directly. ECSpresso 0.24.1 runs the tactical simulation and its renderer3D plugin wires the Three.js isometric scene. Planets are textured spheres; instanced GLB warships, transports, carriers, and defense platforms share geometry and faction materials. DOM controls use the matching projection. The simulation and saved coordinates remain planar. Runtime model preparation is documented in [assets/models](assets/models/README.md).
 
 The [current game design](docs/game-design.md) documents star system combat, production, victory, persistence, and remaining playtest questions. Technical evidence is in [performance diagnostics](docs/performance-diagnostics.md), [renderer migration](docs/renderer-migration.md), and [viewport culling](docs/viewport-culling.md).
 

@@ -1,0 +1,109 @@
+[
+  {
+    "asset": "transport",
+    "triangles": 1412,
+    "budget": 4500,
+    "source_objects": 43,
+    "material_slots": 6,
+    "forward": "+X",
+    "up": "glTF +Y",
+    "pivot": "hull center",
+    "status": "static model; no game integration",
+    "optimized_bytes": 69252,
+    "optimized_triangles": 1412,
+    "mesh_count": 8,
+    "primitive_count": 8,
+    "materials": [
+      "Drive_And_Windows",
+      "Recess",
+      "Trim_Titanium",
+      "Hull_Graphite",
+      "Faction_Accent",
+      "Armor_Steel"
+    ],
+    "validation": {
+      "numErrors": 0,
+      "numWarnings": 0,
+      "numInfos": 1,
+      "numHints": 0,
+      "messages": [
+        {
+          "code": "ACCESSOR_INDEX_TRIANGLE_DEGENERATE",
+          "message": "Indices accessor contains 6 degenerate triangles (out of 292).",
+          "severity": 2,
+          "pointer": "/meshes/0/primitives/0/indices"
+        }
+      ],
+      "truncated": false
+    }
+  },
+  {
+    "asset": "carrier",
+    "triangles": 3952,
+    "budget": 6500,
+    "source_objects": 124,
+    "material_slots": 6,
+    "forward": "+X",
+    "up": "glTF +Y",
+    "pivot": "hull center",
+    "status": "static model; no game integration",
+    "optimized_bytes": 205184,
+    "optimized_triangles": 3952,
+    "mesh_count": 8,
+    "primitive_count": 8,
+    "materials": [
+      "Drive_And_Windows",
+      "Hull_Graphite",
+      "Armor_Steel",
+      "Trim_Titanium",
+      "Recess",
+      "Faction_Accent"
+    ],
+    "validation": {
+      "numErrors": 0,
+      "numWarnings": 0,
+      "numInfos": 1,
+      "numHints": 0,
+      "messages": [
+        {
+          "code": "ACCESSOR_INDEX_TRIANGLE_DEGENERATE",
+          "message": "Indices accessor contains 40 degenerate triangles (out of 792).",
+          "severity": 2,
+          "pointer": "/meshes/4/primitives/0/indices"
+        }
+      ],
+      "truncated": false
+    }
+  },
+  {
+    "asset": "platform",
+    "triangles": 1552,
+    "budget": 3000,
+    "source_objects": 36,
+    "material_slots": 6,
+    "forward": "+X",
+    "up": "glTF +Y",
+    "pivot": "hull center",
+    "status": "static model; no game integration",
+    "optimized_bytes": 77820,
+    "optimized_triangles": 1552,
+    "mesh_count": 6,
+    "primitive_count": 6,
+    "materials": [
+      "Recess",
+      "Drive_And_Windows",
+      "Hull_Graphite",
+      "Trim_Titanium",
+      "Armor_Steel",
+      "Faction_Accent"
+    ],
+    "validation": {
+      "numErrors": 0,
+      "numWarnings": 0,
+      "numInfos": 0,
+      "numHints": 0,
+      "messages": [],
+      "truncated": false
+    }
+  }
+]

@@ -1,6 +1,7 @@
 import { COLORS, factionLabel, isHostile } from './config';
 import { travelingGroups } from './fleet-interception';
 import type { Game } from './game';
+import { projectMap } from './isometric';
 
 export const createFleetTargets = function (layer: HTMLElement): {
 	update: (world: Game, enabled: boolean) => void;
@@ -35,8 +36,9 @@ export const createFleetTargets = function (layer: HTMLElement): {
 				const label = `Intercept ${factionLabel(order.owner)} group ${order.id}, ${ships} ships, ${transports} transports`;
 				button.setAttribute('aria-label', label);
 				button.title = label;
-				button.style.left = `${anchor.x}px`;
-				button.style.top = `${anchor.y}px`;
+				const point = projectMap(anchor);
+				button.style.left = `${point.x}px`;
+				button.style.top = `${point.y}px`;
 				button.style.setProperty('--fleet-color', COLORS[order.owner]);
 				button.disabled = !enabled;
 				button.classList.toggle('intercepted', world.getResource('orderBook').active.some(function (candidate) {

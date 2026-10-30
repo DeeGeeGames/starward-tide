@@ -152,6 +152,7 @@
 #app .planet.carrier .name { top: calc(50% + var(--diameter) * .75 + 8px / var(--map-scale, 1)); }
 #app .planet.carrier .orbit-count { top: calc(50% - var(--diameter) * .75 - 18px / var(--map-scale, 1)); }
 #app .planet.carrier .count { font-size: max(15px, calc(12px / var(--map-scale, 1))); }
+#app .planet.carrier .surface { display: none; }
 #app #save-status { bottom: var(--hud-bottom); left: var(--hud-side); font-size: 13px; max-width: calc(100% - 420px); }
 #app #banner { bottom: var(--hud-bottom); background: #102d36f5; border-left: 2px solid var(--action); font-size: 15px; }
 #app #destination-prompt { top: calc(var(--hud-top) + 87px); max-width: calc(100% - 2 * var(--hud-side)); background: #102d36f5; border-left: 3px solid var(--action); }
