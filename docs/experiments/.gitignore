@@ -1,0 +1,5 @@
+# Download bundles and regenerated intermediate assets.
+*.zip
+*.raw.glb
+*.blend[1-9]
+__pycache__/

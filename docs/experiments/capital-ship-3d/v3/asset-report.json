@@ -1,0 +1,19 @@
+{
+  "source": "src/ship-art.ts:WARSHIP_HULL",
+  "mesh_objects": 256,
+  "triangles": 30608,
+  "materials": 8,
+  "pivot": "center of hull",
+  "forward": "+X",
+  "up": "glTF +Y; Blender +Z",
+  "length_design_units": 25.495,
+  "revision": "v3 narrower hull",
+  "hull_width_factor": 0.84,
+  "intended_scale": "approx 260 m; provisional",
+  "status": "visual experiment; no runtime integration or LOD",
+  "optimized_bytes": 768328,
+  "optimized_meshes": 11,
+  "validator_errors": 0,
+  "validator_warnings": 0,
+  "validator_infos": 0
+}
