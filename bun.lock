@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "galaxy-conquest",
+      "name": "starward-tide",
       "dependencies": {
         "ecspresso": "0.24.1",
         "idb": "^8.0.4",
