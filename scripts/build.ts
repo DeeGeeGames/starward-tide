@@ -16,8 +16,8 @@ await copyFile('assets/x-card.jpg', 'dist/x-card.jpg');
 // Keep PWA URLs relative so the same build works at a domain root or Pages subpath.
 const manifest = {
 	id: './',
-	name: 'Galaxy Conquest',
-	short_name: 'Galaxy Conquest',
+	name: 'Starward Tide',
+	short_name: 'Starward Tide',
 	description: 'Conquer the star map in a single-player strategy game.',
 	start_url: './',
 	scope: './',
