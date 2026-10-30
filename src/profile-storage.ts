@@ -427,7 +427,7 @@ class IndexedDbProfileDatabase implements ProfileDatabase {
 export const openProfileRepository = async function (): Promise<ProfileRepository> {
 	if (typeof indexedDB === 'undefined')
 		throw new ProfileStorageError(
-			'IndexedDB is unavailable. Open Galaxy Conquest in a regular browser tab to use local profiles.',
+			'IndexedDB is unavailable. Open Starward Tide in a regular browser tab to use local profiles.',
 		);
 	return new ProfileRepository(await IndexedDbProfileDatabase.open());
 };

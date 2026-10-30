@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 
 const page = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-const origin = 'https://david0178418.github.io/galaxy-conquest';
+const origin = 'https://starwardtide.deegeegames.com';
 
 const meta = function (attribute: string, name: string): string {
 	const pattern = new RegExp(
@@ -17,7 +17,7 @@ const meta = function (attribute: string, name: string): string {
 test('published page is an X player card for the live game', function () {
 	expect(page.match(/name="twitter:card"/g)).toHaveLength(1);
 	expect(meta('name', 'twitter:card')).toBe('player');
-	expect(meta('name', 'twitter:title')).toBe('Galaxy Conquest');
+	expect(meta('name', 'twitter:title')).toBe('Starward Tide');
 	expect(meta('name', 'twitter:player')).toBe(`${origin}/`);
 	expect(meta('name', 'twitter:player:width')).toBe('640');
 	expect(meta('name', 'twitter:player:height')).toBe('480');

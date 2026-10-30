@@ -1,4 +1,4 @@
-# Galaxy Conquest
+# Starward Tide
 
 A touch-first, single-player real-time strategy game. Expand between planets, choose troops, ships, or defense platforms, and conquer the rival. Battles take place within a single star system.
 
@@ -13,9 +13,9 @@ bun run dev
 
 Open http://localhost:3000. `bun run check` runs lint, simulation tests, strict TypeScript checks, and a production build into `dist/`.
 
-GitHub Pages publishes the production build at https://david0178418.github.io/galaxy-conquest/. The [deployment workflow](.github/workflows/deploy.yml) runs checks, builds, and deploys on pushes to `master`; it can also be run manually from the Actions tab on `master`. Repository Settings → Pages must use **GitHub Actions** as the build source. Bundled asset URLs are relative, so the same build works under `/galaxy-conquest/` and at a domain root.
+The repository is [DeeGeeGames/starward-tide](https://github.com/DeeGeeGames/starward-tide). GitHub Pages publishes the production build at https://starwardtide.deegeegames.com/. The [deployment workflow](.github/workflows/deploy.yml) runs checks, builds, and deploys on pushes to `master`; it can also be run manually from the Actions tab on `master`. Repository Settings → Pages must use **GitHub Actions** as the build source. Bundled asset URLs are relative, so the same build works under `/starward-tide/` and at a domain root.
 
-The production build is an installable PWA. Open the standalone HTTPS site and use your browser's **Install app** command; on iPhone/iPad, use Safari's **Share → Add to Home Screen**. It opens in its own window using the existing GC icon. Installation availability depends on the browser; embedded player cards should be opened as the standalone site first.
+The production build is an installable PWA. Open the standalone HTTPS site and use your browser's **Install app** command; on iPhone/iPad, use Safari's **Share → Add to Home Screen**. It opens in its own window using the ST icon. Installation availability depends on the browser; embedded player cards should be opened as the standalone site first.
 
 After the first online visit finishes caching, the game can reopen and play offline, including local profiles and saves. New releases download in the background. When ready, an **Update available — reload** button lets you activate the release and reload that window; finish or save your game first. Other open game windows are not automatically reloaded. Without clicking, updates activate after all game windows/tabs close. Saves remain in IndexedDB and retain the browser/site storage limits described below. Workbox generates the offline cache from build assets; source maps and the social poster are excluded. PWA registration is production-only, so `bun run dev` does not install a worker. Serve `dist/` over localhost or HTTPS to test installation/offline behavior.
 
@@ -33,7 +33,7 @@ Before starting, choose **Relaxed**, **Standard**, or **Hard** opponent difficul
 
 Random chooses one of those styles when the conquest starts. The game menu shows the actual difficulty and style. Saves, Continue, and Restart map retain them; older saves use Standard / Expansionist. The prototype lab's AI toggle remains independent of difficulty and style.
 
-Profiles and conquests use IndexedDB in the current browser and site. They do not sync between devices, browsers, hosting origins, or embedded and standalone versions. Clearing site data or browser storage eviction can remove them. Embedded browsers may block or partition storage; open the standalone game if saves are unavailable. There is no account, cloud backup, or export/import.
+Profiles and conquests use IndexedDB in the current browser and site. The rename preserves the existing database and save format, but the move to `starwardtide.deegeegames.com` changes the browser origin: saves from the former GitHub Pages origin do not transfer automatically. They do not sync between devices, browsers, hosting origins, or embedded and standalone versions. Clearing site data or browser storage eviction can remove them. Embedded browsers may block or partition storage; open the standalone game if saves are unavailable. There is no account, cloud backup, or export/import.
 
 Save validation has format safety bounds independent of gameplay tuning: at most 100,000 troops per planet or cargo units per transport; production-rate values up to 10,000 and production progress below 10,000; map dimensions up to 10,000; unit positions within ±20,000; and planet radii up to 1,000. A save outside those bounds cannot be continued; validation leaves the stored profile data unchanged.
 
