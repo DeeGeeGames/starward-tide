@@ -24,9 +24,10 @@
 #app .scorebar { display: flex; align-items: baseline; gap: 22px; font-size: clamp(15px, 1.5vw, 23px); }
 #app .scorebar strong { font-size: clamp(28px, 2.6vw, 40px); font-weight: 400; margin-right: 6px; }
 #app #clock { font: clamp(14px, 1.35vw, 21px) Arial, sans-serif; font-variant-numeric: tabular-nums; color: var(--ui-muted); }
-#app .header-actions { gap: 12px; padding: 0; background: #081d25bb; border: 0; box-shadow: none; }
+#app .header-actions { --action-gap: 12px; gap: var(--action-gap); padding: 0; background: #081d25bb; border: 0; box-shadow: none; }
 #app .header-actions button { background: transparent; border-color: transparent; padding: 0 12px; white-space: nowrap; }
-#app #pause { display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--command-ink); }
+#app #pause { position: relative; align-self: stretch; display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--command-ink); }
+#app #pause::before { content: ""; position: absolute; inset: -1px calc(var(--action-gap) / -2 - 1px); }
 #app #settings { min-width: 48px; padding: 0; font-size: 27px; }
 #app .map-heading { position: absolute; top: calc(var(--hud-top) + 88px); left: var(--hud-side); display: flex; align-items: center; gap: 14px; color: var(--ui-muted); font-size: 13px; max-width: calc(100% - 2 * var(--hud-side) - 390px); pointer-events: none; }
 #app #instruction { min-width: 0; padding: 7px 0; background: #081d25b8; }
@@ -164,7 +165,7 @@
 @keyframes hold-feedback { from { outline: 2px solid transparent; outline-offset: 6px; } to { outline: 2px solid var(--action); outline-offset: 2px; background-color: #edcb8633; } }
 @media (max-width: 1050px) {
 	#app .world-score > .eyebrow { font-size: 9px; }
-	#app .header-actions { gap: 5px; }
+	#app .header-actions { --action-gap: 5px; }
 	#app .header-actions button { font-size: 14px; padding: 0 8px; }
 	#app .status-cluster { gap: 14px; }
 	#app .map-heading { max-width: calc(100% - 2 * var(--hud-side) - 340px); gap: 8px; }
@@ -176,7 +177,7 @@
 	#app .scorebar { gap: 10px; font-size: 11px; }
 	#app .scorebar strong { font-size: 25px; margin-right: 3px; }
 	#app #clock { font-size: 12px; }
-	#app .header-actions { min-height: 48px; gap: 2px; }
+	#app .header-actions { min-height: 48px; --action-gap: 2px; }
 	#app .header-actions #orders-toggle { font-size: 11px; padding: 0 5px; }
 	#app #pause { min-width: 42px; padding: 0; font-size: 24px; }
 	#app .pause-label { display: none; }
