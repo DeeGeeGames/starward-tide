@@ -1,3 +1,4 @@
+import { FIRST_COMMAND_MAP, isFirstCommandMap } from './demo-content';
 import { adjustControl, moveFocus, visibleControls } from './ui-navigation';
 import { confirmAction } from './ui-dialog';
 import { GAME_MODES, isGameMode, raceDestinations, type GameMode } from './objectives';
@@ -77,6 +78,7 @@ export const createFrontMenu = async function (options: {
 	const setup = element('setup', HTMLElement);
 	const app = element('app', HTMLDivElement);
 	const newGame = element('new-game', HTMLButtonElement);
+	const firstCommand = element('first-command', HTMLButtonElement);
 	const start = element('start-conquest', HTMLButtonElement);
 	const profileBadge = element('profile-badge', HTMLButtonElement);
 	const profileBadgeName = element('profile-badge-name', HTMLElement);
@@ -185,6 +187,8 @@ export const createFrontMenu = async function (options: {
 			profileState.busy ||
 			starting ||
 			!selected;
+		firstCommand.disabled = newGame.disabled;
+		for (const button of root.querySelectorAll<HTMLButtonElement>('[data-operation]')) button.disabled = starting;
 		start.disabled = !profileState.available || !selected || starting;
 		sizeSelect.disabled = starting;
 		continueButton.hidden = !selected?.hasSave;
@@ -349,7 +353,15 @@ export const createFrontMenu = async function (options: {
 			`${DIFFICULTIES[difficulty].label} · ${style === 'random' ? 'Random style' : STYLES[style].label}`,
 		);
 		detail.textContent = MAP_SIZES[size].detail;
-		element('setup-title', HTMLHeadingElement).textContent = 'Prepare your conquest';
+		const introductory = isFirstCommandMap(map);
+		element('setup-title', HTMLHeadingElement).textContent = introductory ? 'First command' : mode === 'conquest' ? 'Prepare your conquest' : 'Run the blockade';
+		element('operation-description', HTMLParagraphElement).textContent = introductory ? 'A compact, balanced battlefield. Learn expansion, escorts, and production with optional guidance.' : mode === 'conquest' ? 'Build your economy. Control the orbits. Eliminate every rival holding.' : 'Your carrier must reach the destination first. Intercept rival escorts and protect your route.';
+		for (const button of root.querySelectorAll<HTMLButtonElement>('[data-operation]')) {
+			button.setAttribute('aria-pressed', String(button.dataset.operation === (introductory ? 'first' : mode === 'center-race' ? 'race' : 'frontier')));
+		}
+		const sizeButton = settingButtons.find(function (button) { return button.dataset.setting === 'map-size'; });
+		if (sizeButton) sizeButton.hidden = introductory;
+		element('reroll', HTMLButtonElement).hidden = introductory;
 		const intro = setup.querySelector('.intro');
 		if (intro) intro.textContent = mode === 'conquest' ? 'Expand your territory and capture the rival holdings.' : 'Escort your carrier. Intercept theirs. First arrival wins.';
 		start.textContent = mode === 'conquest' ? 'Begin conquest →' : 'Begin race →';
@@ -385,7 +397,7 @@ export const createFrontMenu = async function (options: {
 		if (stepCopy) stepCopy.textContent = opposition ? '02 Opposition' : '01 Galaxy';
 		syncSettingButtons();
 		root.scrollTop = 0;
-		if (screen === 'title') (continueButton.hidden || continueButton.disabled ? newGame : continueButton).focus();
+		if (screen === 'title') (continueButton.hidden || continueButton.disabled ? firstCommand : continueButton).focus();
 		else visibleControls(element(opposition ? 'opponent-settings' : 'galaxy-settings', HTMLElement))[0]?.focus();
 	};
 	flow.onScreenEnter('title', function () {
@@ -402,6 +414,29 @@ export const createFrontMenu = async function (options: {
 		app.hidden = false;
 		options.onPlaying();
 	});
+	const chooseOperation = function (preset: string): void {
+		if (starting) return;
+		size = 'small';
+		opponents = 1;
+		opponentCount.value = '1';
+		mode = preset === 'race' ? 'center-race' : 'conquest';
+		modeSelect.value = mode;
+		carriersEnabled = preset === 'race';
+		carrierToggle.checked = carriersEnabled;
+		difficultySelect.value = preset === 'first' ? 'relaxed' : 'standard';
+		styleSelect.value = 'expansionist';
+		map = preset === 'first' ? FIRST_COMMAND_MAP : freshMap(size, carriersEnabled, mode, opponents);
+		renderPreview();
+	};
+	firstCommand.addEventListener('click', function () {
+		if (firstCommand.disabled) return;
+		chooseOperation('first');
+		status.textContent = '';
+		void flow.setScreen('setup', {});
+	});
+	for (const button of root.querySelectorAll<HTMLButtonElement>('[data-operation]')) {
+		button.addEventListener('click', function () { chooseOperation(button.dataset.operation ?? 'frontier'); });
+	}
 	newGame.addEventListener('click', function () {
 		if (newGame.disabled) return;
 		status.textContent = '';
@@ -411,6 +446,7 @@ export const createFrontMenu = async function (options: {
 	modeSelect.addEventListener('change', function () {
 		if (starting || !isGameMode(modeSelect.value)) return;
 		mode = modeSelect.value;
+		if (isFirstCommandMap(map)) map = freshMap(size, carriersEnabled, mode, opponents);
 		map = { ...map, mode, carriers: carriersEnabled || mode !== 'conquest' };
 		renderPreview();
 	});
@@ -419,6 +455,7 @@ export const createFrontMenu = async function (options: {
 	carrierToggle.addEventListener('change', function () {
 		if (starting) return;
 		carriersEnabled = carrierToggle.checked;
+		if (isFirstCommandMap(map)) map = freshMap(size, carriersEnabled, mode, opponents);
 		map = { ...map, carriers: carriersEnabled };
 		renderPreview();
 	});

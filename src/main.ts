@@ -1,3 +1,5 @@
+import { createDemoSession } from './demo-session';
+import { assessInvasion, productionSummary } from './tactical-advisor';
 import { createGamepadInput, type GamepadFrame } from './gamepad-input';
 import { moveFocus, activateControl, visibleControls } from './ui-navigation';
 import { GAME_MODES, destinationFor } from './objectives';
@@ -79,7 +81,9 @@ const commandBackButton = element('command-back', HTMLButtonElement);
 const sendUnitsButton = element('send-units', HTMLButtonElement);
 const productionOverview = document.createElement('span');
 productionOverview.id = 'production-overview';
-commandActions.after(productionOverview);
+const quickAllocation = document.createElement('span');
+quickAllocation.id = 'quick-allocation';
+commandActions.after(productionOverview, quickAllocation);
 const canvas = element('space', HTMLCanvasElement);
 const planetLayer = element('planets', HTMLDivElement);
 const fleetLayer = document.createElement('div');
@@ -117,6 +121,9 @@ const filterButtons = [
 	...document.querySelectorAll<HTMLButtonElement>('[data-filter]'),
 ];
 const sounds = createSoundPlayer();
+let assessmentTarget: number | undefined;
+let pendingDestination: number | undefined;
+let battleMusicUntil = 0;
 const soundListeners = new AbortController();
 const unlockSound = function (): void { sounds.unlock(); };
 document.addEventListener('pointerdown', unlockSound, { capture: true, signal: soundListeners.signal });
@@ -126,7 +133,7 @@ const syncSoundButtons = function (): void {
 	for (const button of soundButtons) {
 		button.textContent = sounds.isMuted() ? 'Sound: Off' : 'Sound: On';
 		button.setAttribute('aria-pressed', String(!sounds.isMuted()));
-		button.title = sounds.isMuted() ? 'Enable sound effects' : 'Mute sound effects';
+		button.title = sounds.isMuted() ? 'Enable music and sound effects' : 'Mute music and sound effects';
 	}
 };
 for (const button of soundButtons) button.addEventListener('click', function () {
@@ -207,7 +214,7 @@ let busy = false;
 let disposed = false;
 let raf = 0;
 let choosingDestination: false | 'dispatch' | 'bombard' = false;
-type CommandView = 'overview' | 'production';
+type CommandView = 'overview' | 'dispatch' | 'production';
 let commandView: CommandView = 'overview';
 let sheetCollapsed = false;
 let lastNoticeKey = '';
@@ -320,6 +327,8 @@ const saveBeforeLeavingGame = async function (): Promise<boolean> {
 const cancelMapCommand = function (): void {
 	mapInput.cancel();
 	choosingDestination = false;
+	pendingDestination = undefined;
+	assessmentTarget = undefined;
 };
 const clearSelection = function (): void {
 	cancelMapCommand();
@@ -331,8 +340,7 @@ const clearSelection = function (): void {
 const selectPlanet = function (id: number, additive = false): void {
 	if (
 		busy ||
-		frontMenu.getCurrentScreen() !== 'playing' ||
-		matchEnded(world.getResource('match'))
+		frontMenu.getCurrentScreen() !== 'playing'
 	)
 		return;
 	const p = world.getComponent(id, 'planet');
@@ -556,7 +564,7 @@ const arrangeLabels = function (): void {
 		labels.push({ ...labelBounds(view.name), key: `${id}:name`, priority });
 		if (view.orbit.textContent) labels.push({ ...labelBounds(view.orbit), key: `${id}:orbit`, priority: priority - 1 });
 	}
-	for (const panel of document.querySelectorAll<HTMLElement>('.status-cluster, .header-actions, .map-heading, #planet-panel, #orders-drawer, #field-guide, #banner, #destination-prompt, #destination-summary')) {
+	for (const panel of document.querySelectorAll<HTMLElement>('.status-cluster, .header-actions, .map-heading, #planet-panel, #orders-drawer, #field-guide, #banner, #destination-prompt, #destination-summary, #operation-objective, #command-coach, #target-assessment')) {
 		if (!panel.hidden && panel.getClientRects().length > 0) reserved.push(panel.getBoundingClientRect());
 	}
 	for (const label of planetLayer.querySelectorAll<HTMLElement>('.race-destination > span')) {
@@ -577,6 +585,7 @@ const arrangeLabels = function (): void {
 const refresh = function (): void {
 	if (diagnostics) diagnostics.measure('hud', refreshContent);
 	else refreshContent();
+	demoSession?.update();
 };
 const refreshContent = function (): void {
 	const match = world.getResource('match');
@@ -658,10 +667,10 @@ const refreshContent = function (): void {
 	element('destination-prompt', HTMLDivElement).hidden = !choosingDestination;
 	element('destination-summary', HTMLDivElement).hidden = !choosingDestination;
 	element('destination-instruction', HTMLSpanElement).textContent = choosingDestination === 'bombard'
-		? 'Choose a planet to bombard' : 'Tap a world to send · hostile groups receive ships only';
+		? 'Choose a planet to bombard' : pendingDestination === undefined ? 'Choose a world, then confirm the launch' : 'Review this destination before launching';
 	planetPanel.hidden = selected.length === 0 && inspected === undefined;
 	dispatchControls.hidden = selected.length === 0;
-	dispatchDetails.hidden = selected.length === 0 || commandView === 'production';
+	dispatchDetails.hidden = selected.length === 0 || commandView !== 'dispatch';
 	commandActions.hidden = false;
 	commandBackButton.hidden = commandView === 'overview';
 	app.dataset.commandView = commandView;
@@ -671,7 +680,7 @@ const refreshContent = function (): void {
 	});
 	if (commandView === 'production' && ownedSelected.length === 0) {
 		commandView = 'overview';
-		dispatchDetails.hidden = selected.length === 0;
+		dispatchDetails.hidden = true;
 		commandActions.hidden = false;
 		commandBackButton.hidden = true;
 		app.dataset.commandView = commandView;
@@ -679,7 +688,7 @@ const refreshContent = function (): void {
 	productionControls.hidden = ownedSelected.length === 0 || commandView !== 'production';
 	openDispatchButton.hidden = selected.length === 0;
 	openDispatchButton.disabled = matchEnded(match);
-	openDispatchButton.setAttribute('aria-pressed', String(commandView !== 'production'));
+	openDispatchButton.setAttribute('aria-pressed', String(commandView === 'dispatch'));
 	openProductionButton.setAttribute('aria-pressed', String(commandView === 'production'));
 	openProductionButton.hidden = ownedSelected.length === 0;
 	openProductionButton.disabled = matchEnded(match);
@@ -713,11 +722,11 @@ const refreshContent = function (): void {
 	element('stat-troops', HTMLElement).textContent = String(troops);
 	element('stat-ships', HTMLElement).textContent = String(carrier && first !== undefined ? dockedShips(world, first).length : shipCount);
 	element('stat-platforms', HTMLElement).textContent = String(carrier && first !== undefined
-		? SIDES.reduce(function (sum, side) { return sum + shipsAt(world, first, side).length; }, 0)
+		? shipsAt(world, first, p?.owner === 'neutral' || !p ? 'blue' : p.owner).length
 		: Math.ceil(surfacePlanets.reduce(function (sum, planet) { return sum + planet.guns; }, 0)));
 	element('troops-label', HTMLElement).textContent = carrier ? 'Crew' : 'Troops';
 	element('ships-label', HTMLElement).textContent = carrier ? 'Docked ships' : shipsOnly ? 'Your ships' : 'Ships';
-	element('platforms-label', HTMLElement).textContent = carrier ? 'External ships' : 'Platforms';
+	element('platforms-label', HTMLElement).textContent = carrier ? 'Friendly orbit' : 'Platforms';
 	element('selection-kind', HTMLElement).textContent = selected.length > 1 ? 'YOUR SOURCES' :
 		`${p?.owner === 'blue' ? 'YOUR' : p ? factionLabel(p.owner).toUpperCase() : 'NEUTRAL'} ${p?.carrier ? 'CARRIER' : 'WORLD'}`;
 	selectionInfo.textContent = carrier && p?.owner === 'blue' ? 'Click empty space to move this carrier.' : shipsOnly ? `Your ships in orbit · ${p?.carrier ? 'carrier' : 'surface'} belongs to another faction.` : '';
@@ -741,7 +750,8 @@ const refreshContent = function (): void {
 	const progressFill = progressBar.querySelector('i');
 	if (progressFill instanceof HTMLElement) progressFill.style.width = `${progress}%`;
 	productionOverview.hidden = ownedSelected.length === 0;
-	productionOverview.textContent = `Building ${productionInfo.textContent}`;
+	productionOverview.textContent = productionSummary(ownedSelected);
+	if (ownedSelected.length > 1) productionInfo.textContent = productionSummary(ownedSelected);
 	element('production-options', HTMLDivElement).hidden = commandView !== 'production';
 	element('change-production', HTMLButtonElement).setAttribute('aria-expanded', String(commandView === 'production'));
 	element('change-production', HTMLButtonElement).textContent = 'Done';
@@ -749,10 +759,34 @@ const refreshContent = function (): void {
 	element('sheet-toggle', HTMLButtonElement).setAttribute('aria-label', sheetCollapsed ? 'Expand world commands' : 'Collapse world commands');
 	element('sheet-toggle', HTMLButtonElement).textContent = sheetCollapsed ? '⌃' : '⌄';
 	const preview = previewDispatch(world, selected, fraction, shipsOnly ? 'ships' : filter);
+	quickAllocation.hidden = selected.length === 0;
+	quickAllocation.textContent = `Quick send · ${Math.round(fraction * 100)}% · ${shipsOnly || filter === 'ships' ? 'ships only' : filter === 'troops' ? 'troops only' : 'troops + ships'}`;
 	element('dispatch-preview', HTMLParagraphElement).textContent = `Up to ${preview.troops} troops + ${preview.ships} ships`;
 	sendUnitsButton.disabled = busy || preview.troops + preview.ships === 0 || matchEnded(match);
 	sendUnitsButton.textContent = preview.troops + preview.ships === 0 ? 'No units available' : 'Choose destination →';
 	element('destination-summary', HTMLDivElement).textContent = choosingDestination === 'bombard' ? `${p?.name ?? 'Carrier'} · ${CONFIG.bombardmentCharge}s charge · neutralizes the surface` : `From ${selected.length > 1 ? `${selected.length} sources` : p?.name ?? 'selection'} · up to ${preview.troops} troops + ${preview.ships} ships · groups: ships only`;
+	const assessmentPanel = element('target-assessment', HTMLDivElement);
+	const targetPlanet = assessmentTarget === undefined ? undefined : world.getComponent(assessmentTarget, 'planet');
+	assessmentPanel.hidden = choosingDestination !== 'dispatch' || !targetPlanet || assessmentTarget === undefined || (selected.length === 1 && selected.includes(assessmentTarget));
+	if (!assessmentPanel.hidden && targetPlanet && assessmentTarget !== undefined) {
+		const targetId = assessmentTarget;
+		const analysis = assessInvasion({
+			target: { id: targetId, planet: targetPlanet },
+			sources: selected.flatMap(function (id) {
+				const planet = world.getComponent(id, 'planet');
+				return planet ? [{ id, planet, preview: previewDispatch(world, [id], fraction, shipsOnly ? 'ships' : filter) }] : [];
+			}),
+			hostileShips: SIDES.filter(function (side) { return side !== 'blue'; }).reduce(function (count, side) { return count + shipsAt(world, targetId, side).length; }, 0),
+		});
+		assessmentPanel.dataset.tone = analysis.tone;
+		assessmentPanel.dataset.confirming = String(pendingDestination !== undefined);
+		element('target-actions', HTMLDivElement).hidden = pendingDestination === undefined;
+		const confirm = element('confirm-target', HTMLButtonElement);
+		confirm.textContent = `Send ${analysis.troops} troops + ${analysis.ships} ships →`;
+		confirm.disabled = analysis.troops + analysis.ships === 0 || matchEnded(match);
+		element('target-title', HTMLElement).textContent = `${targetPlanet.name} / ${analysis.title}`;
+		element('target-detail', HTMLParagraphElement).textContent = `${analysis.detail} ${analysis.arrivalText} ${analysis.caveat}`;
+	}
 	const warning = element('selection-warning', HTMLDivElement);
 	const carrierBlocked = p?.carrier && first !== undefined && SIDES.some(function (side) { return isHostile(side, p.owner) && shipsAt(world, first, side).length > 0; });
 	warning.textContent = carrierBlocked ? `Docking blocked by hostile ships.${p?.owner === 'blue' ? ' Launching is still allowed.' : ''}` : preview.blockedSources > 0
@@ -777,6 +811,7 @@ const refreshContent = function (): void {
 	}
 	raceDestinationButton.hidden = !destinationFor(world.getResource('objectives'), 'blue') || selected.length !== 1 || !p?.carrier || p.owner !== 'blue';
 	raceDestinationButton.disabled = matchEnded(match);
+	launchCarrierButton.textContent = `Launch ${first === undefined ? 0 : Math.ceil(dockedShips(world, first, 'blue').length * fraction)} docked ships here · ${Math.round(fraction * 100)}%`;
 	launchCarrierButton.hidden = !p?.carrier || p.owner !== 'blue' || selected.length !== 1;
 	bombardButton.hidden = launchCarrierButton.hidden;
 	bombardButton.disabled = matchEnded(match) || multi;
@@ -819,14 +854,6 @@ const refreshContent = function (): void {
 	pause.title = match.paused
 		? 'Resume game'
 		: 'Pause action to issue orders and change production';
-	const racing = world.getResource('objectives').mode !== 'conquest';
-	const result = match.draw
-		? 'Draw. Restart to play again.'
-		: match.defeated ? 'Your last holding has fallen. Restart to try again.' : match.winner
-			? racing
-				? match.winner === 'blue' ? 'You win the carrier race. Restart to play again.' : `${match.winner ? factionLabel(match.winner) : 'A rival'} wins the carrier race. Restart to try again.`
-				: match.winner === 'blue' ? 'No rival holdings remain. You win. Restart to play again.' : 'Your last holding has fallen. Restart to try again.'
-			: '';
 	const threat = all.find(function (entry) {
 		const attack = entry.components.planet.carrier?.bombardment;
 		return isHostile(entry.components.planet.owner, 'blue') && attack && world.getComponent(attack.target, 'planet')?.owner === 'blue';
@@ -837,8 +864,7 @@ const refreshContent = function (): void {
 			: `${threatTarget.name} under bombardment · ${Math.ceil(CONFIG.bombardmentCharge - threat.carrier.bombardment.elapsed)}s · Board ${threat.name} to stop it`
 		: '';
 	bannerMessage.textContent =
-		result ||
-		threatWarning || presentation.notice() || (match.paused ? 'Paused · commands remain available' : racing ? GAME_MODES[world.getResource('objectives').mode].detail : '');
+		threatWarning || presentation.notice() || (matchEnded(match) ? '' : match.paused ? 'Tactical pause · orders remain available' : '');
 	banner.style.display = bannerMessage.textContent ? 'block' : 'none';
 	const key = match.notices
 		.map(function (n) {
@@ -977,7 +1003,10 @@ const mapInput = createMapInput({
 		})?.[0];
 	},
 	selectPlanet: function (id, additive): void {
-		if (choosingDestination) sendToPlanet(id);
+		if (choosingDestination === 'dispatch') {
+			pendingDestination = id; assessmentTarget = id; refresh();
+			if (!element('target-assessment', HTMLDivElement).hidden) element('confirm-target', HTMLButtonElement).focus({ preventScroll: true });
+		} else if (choosingDestination) sendToPlanet(id);
 		else selectPlanet(id, additive);
 	},
 	dispatchPlanet: sendToPlanet,
@@ -1130,6 +1159,8 @@ const installGame = async function (
 	diagnostics?.dispose();
 	diagnostics = undefined;
 	world = installation.game;
+	assessmentTarget = undefined;
+	demoSession?.reset();
 	attachDiagnostics();
 	try {
 		world.getResource('match').paused = installation.paused;
@@ -1290,7 +1321,7 @@ const cancelDispatch = function (): void {
 	updateLayout();
 	const button = element('bombard-planet', HTMLButtonElement);
 	if (command === 'bombard' && !button.hidden && !button.disabled && !sheetCollapsed) button.focus({ preventScroll: true });
-	else if (commandView !== 'production' && !sendUnitsButton.disabled && !sheetCollapsed) sendUnitsButton.focus({ preventScroll: true });
+	else if (commandView === 'dispatch' && !sendUnitsButton.disabled && !sheetCollapsed) sendUnitsButton.focus({ preventScroll: true });
 	else board.focus({ preventScroll: true });
 };
 const beginDispatch = function (): void {
@@ -1311,7 +1342,7 @@ sendUnitsButton.addEventListener('click', beginDispatch);
 element('cancel-dispatch', HTMLButtonElement).addEventListener('click', cancelDispatch);
 const showCommandView = function (view: CommandView | 'dispatch'): void {
 	cancelMapCommand();
-	commandView = view === 'dispatch' ? 'overview' : view;
+	commandView = view;
 	sheetCollapsed = false;
 	refresh();
 	updateLayout();
@@ -1379,7 +1410,7 @@ const frame = function (now: number): void {
 	diagnostics?.frame(now);
 	if (!busy && frontMenu.getCurrentScreen() === 'playing') {
 		// Keep rendering and command input live while simulation time is frozen.
-		if (!world.getResource('match').paused) {
+		if (!world.getResource('match').paused && !element('mission-briefing', HTMLDialogElement).open) {
 			if (diagnostics) diagnostics.measure('simulation', function () { world.update(dt * speed); });
 			else world.update(dt * speed);
 		}
@@ -1390,6 +1421,10 @@ const frame = function (now: number): void {
 			lastRefresh = now;
 		}
 	}
+	const currentMatch = world.getResource('match');
+	sounds.setMusicState(frontMenu.getCurrentScreen() !== 'playing' ? 'menu'
+		: matchEnded(currentMatch) ? currentMatch.winner === 'blue' ? 'victory' : 'defeat'
+		: busy || currentMatch.paused ? 'paused' : now < battleMusicUntil ? 'battle' : 'exploration');
 	const soundPaused = busy || frontMenu.getCurrentScreen() !== 'playing' || world.getResource('match').paused;
 	if (soundPaused && !soundWorldPaused) sounds.stop();
 	soundWorldPaused = soundPaused;
@@ -1397,6 +1432,7 @@ const frame = function (now: number): void {
 	// or result cues should play when sound is enabled or a tab returns.
 	for (const event of drainSounds(world)) {
 		if (soundPaused) continue;
+		if (event.kind === 'laser' || event.kind === 'explosion' || event.kind === 'charge') battleMusicUntil = now + 5000;
 		const point = event.point ? projectMap(event.point) : undefined;
 		const screenX = point ? camera.x + point.x * camera.scale : board.clientWidth / 2;
 		const pan = board.clientWidth > 0 ? (screenX / board.clientWidth - 0.5) * 1.6 : 0;
@@ -1463,11 +1499,53 @@ const frontMenu = await createFrontMenu({
 		hiddenPause = false;
 	},
 	onPlaying: function () {
+		demoSession?.start();
 		fitMap();
 		refresh();
-		board.focus();
+		if (!document.querySelector('dialog[open]')) board.focus();
 		void saveCurrentProfile().catch(function () {});
 	},
+});
+
+const demoSession = createDemoSession({
+	world: function () { return world; },
+	map: function () { return activeMap; },
+	selected: function () { return selected; },
+	playing: function () { return frontMenu.getCurrentScreen() === 'playing'; },
+	focusWorld: function (id) { selectPlanet(id); },
+	refresh,
+	rematch: async function () { await restart(scenario, activeMap, true); demoSession?.start(); },
+	newOperation: function () { element('setup-game', HTMLButtonElement).click(); },
+});
+const audioDialog = element('audio-settings', HTMLDialogElement);
+let audioReturn: HTMLElement | undefined;
+for (const id of ['title-audio', 'game-audio']) element(id, HTMLButtonElement).addEventListener('click', function () {
+	audioReturn = element(id, HTMLButtonElement);
+	audioDialog.showModal();
+}, { signal: soundListeners.signal });
+element('close-audio', HTMLButtonElement).addEventListener('click', function () { audioDialog.close(); }, { signal: soundListeners.signal });
+audioDialog.addEventListener('close', function () { audioReturn?.focus(); }, { signal: soundListeners.signal });
+for (const kind of ['music', 'effects'] as const) {
+	const slider = element(`${kind}-volume`, HTMLInputElement);
+	const output = element(`${kind}-volume-value`, HTMLOutputElement);
+	slider.value = String(Math.round((kind === 'music' ? sounds.getMusicVolume() : sounds.getEffectsVolume()) * 100));
+	output.value = `${slider.value}%`;
+	slider.addEventListener('input', function () {
+		const value = Number(slider.value) / 100;
+		if (kind === 'music') sounds.setMusicVolume(value); else sounds.setEffectsVolume(value);
+		output.value = `${slider.value}%`;
+		sounds.unlock();
+	}, { signal: soundListeners.signal });
+}
+element('confirm-target', HTMLButtonElement).addEventListener('click', function () {
+	if (pendingDestination === undefined) return;
+	const target = pendingDestination;
+	sendToPlanet(target);
+	board.focus({ preventScroll: true });
+});
+element('change-target', HTMLButtonElement).addEventListener('click', function () {
+	pendingDestination = undefined; assessmentTarget = undefined;
+	refresh(); board.focus({ preventScroll: true });
 });
 
 const inputListeners = new AbortController();
@@ -1492,6 +1570,7 @@ const menuControlRoot = function (): HTMLElement | undefined {
 		: element('setup', HTMLElement);
 	if (!fieldGuide.hidden) return fieldGuide;
 	if (!ordersPanel.hidden) return ordersPanel;
+	if (pendingDestination !== undefined && !element('target-assessment', HTMLDivElement).hidden) return element('target-assessment', HTMLDivElement);
 	return document.activeElement instanceof Node && planetPanel.contains(document.activeElement) && !planetPanel.hidden ? planetPanel : undefined;
 };
 const setInputMethod = function (method: 'gamepad' | 'keyboard' | 'mouse' | 'touch'): void {
@@ -1606,7 +1685,10 @@ const confirmMapTarget = function (): void {
 	const target = snappedTarget?.isConnected && !snappedTarget.closest('[hidden]') && !snappedTarget.matches(':disabled') ? snappedTarget : hit?.closest<HTMLElement>('button.planet, button.fleet-target');
 	const id = target ? [...views].find(function ([, view]) { return view.button === target; })?.[0] : undefined;
 	if (id !== undefined) {
-		if (choosingDestination) { sendToPlanet(id); board.focus({ preventScroll: true }); }
+		if (choosingDestination === 'dispatch') {
+			pendingDestination = id; assessmentTarget = id; refresh();
+			if (!element('target-assessment', HTMLDivElement).hidden) element('confirm-target', HTMLButtonElement).focus({ preventScroll: true });
+		} else if (choosingDestination) { sendToPlanet(id); board.focus({ preventScroll: true }); }
 		else {
 			selectPlanet(id);
 			if (!multi && selected.length > 0) {
@@ -1867,6 +1949,7 @@ window.addEventListener('pagehide', function (event) {
 	if (event.persisted) return;
 	disposed = true;
 	soundListeners.abort();
+	demoSession?.dispose();
 	void sounds.dispose();
 	inputListeners.abort();
 	void gamepad.dispose();

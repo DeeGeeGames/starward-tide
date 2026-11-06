@@ -45,14 +45,17 @@ const instrument = function () {
 		await page.locator('#new-game').waitFor({ state: 'visible' }); await page.waitForFunction(function () { return window.conquestDiagnostics; }); await page.evaluate(function () { window.conquestDiagnostics.enable(false); });
 		assert.equal(await page.evaluate(function () { return window.soundQA.contexts.length; }), 0);
 		await page.screenshot({ path: out + '/title-desktop.png' });
+		await page.locator('#title-audio').click();
 		await page.locator('#title-sound').click();
 		assert.equal(await page.locator('#title-sound').getAttribute('aria-pressed'), 'false');
 		await page.reload(); await page.locator('#new-game').waitFor({ state: 'visible' }); await page.waitForFunction(function () { return window.conquestDiagnostics; }); await page.evaluate(function () { window.conquestDiagnostics.enable(false); });
 		assert.equal(await page.locator('#title-sound').textContent(), 'Sound: Off');
 		assert.equal(await page.evaluate(function () { return window.soundQA.contexts.length; }), 0);
 		check('no autoplay context before interaction; mute persists across reload');
+		await page.locator('#title-audio').click();
 		await page.locator('#title-sound').click();
 		await page.waitForFunction(function () { return window.soundQA.contexts[0]?.state === 'running'; });
+		await page.locator('#close-audio').click();
 		await page.locator('#new-game').click();
 		await page.waitForFunction(function () {
 			return window.soundQA.analysers.some(function (analyser) { const data = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(data); return data.some(function (sample) { return Math.abs(sample) > 0.001; }); });
@@ -64,6 +67,7 @@ const instrument = function () {
 		await page.locator('.planet[aria-label*=", You "]').first().click();
 		await page.keyboard.press('d');
 		await page.locator('.planet[aria-label*=", Neutral "]').first().click();
+		await page.locator('#confirm-target').click();
 		await page.waitForFunction(function () { return window.soundQA.starts.some(function (entry) { return Math.abs(entry.duration - 0.26) < 0.001; }); });
 		check('normal paused dispatch plays command cue and keeps controls playable');
 		await page.locator('#settings').click();
@@ -104,6 +108,7 @@ const instrument = function () {
 		await page.locator('#pause').click();
 		await page.locator('#settings').click(); await page.locator('#profiles-game').click();
 		await page.setViewportSize({ width: 390, height: 844 });
+		await page.locator('#title-audio').click();
 		await page.locator('#title-sound').scrollIntoViewIfNeeded();
 		assert(await page.locator('#title-sound').isVisible());
 		const box = await page.locator('#title-sound').boundingBox();

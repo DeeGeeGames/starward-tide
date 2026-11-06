@@ -41,7 +41,9 @@ export const createSpaceLines = function (opacity: number): SpaceLines {
 				// Release the currently uploaded attributes before replacing them.
 				// Three can then upload the new buffers on the next render.
 				geometry.dispose();
-				capacity = Math.max(1024, 2 ** Math.ceil(Math.log2(positions.length)));
+				// BufferAttribute items must contain complete xyz triples. A power of
+				// two alone leaves an incomplete final vertex and produces NaN bounds.
+				capacity = Math.ceil(Math.max(1024, 2 ** Math.ceil(Math.log2(positions.length))) / 3) * 3;
 				geometry.setAttribute('position', new BufferAttribute(new Float32Array(capacity), 3).setUsage(DynamicDrawUsage));
 				geometry.setAttribute('color', new BufferAttribute(new Float32Array(capacity), 3).setUsage(DynamicDrawUsage));
 			}

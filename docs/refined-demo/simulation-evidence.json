@@ -1,0 +1,50 @@
+{
+  "ended": true,
+  "winner": "blue",
+  "time": 197.45000000001065,
+  "firstCapture": 16.5000000000001,
+  "orders": 8,
+  "captures": 11,
+  "holdings": [
+    {
+      "name": "Terra",
+      "owner": "blue",
+      "troops": 13
+    },
+    {
+      "name": "Haven",
+      "owner": "blue",
+      "troops": 1
+    },
+    {
+      "name": "Kepler",
+      "owner": "blue",
+      "troops": 1
+    },
+    {
+      "name": "Meridian",
+      "owner": "blue",
+      "troops": 12
+    },
+    {
+      "name": "Pyre",
+      "owner": "blue",
+      "troops": 4
+    },
+    {
+      "name": "Vesper",
+      "owner": "blue",
+      "troops": 0
+    },
+    {
+      "name": "Helix",
+      "owner": "blue",
+      "troops": 5
+    },
+    {
+      "name": "Cinder",
+      "owner": "blue",
+      "troops": 11
+    }
+  ]
+}

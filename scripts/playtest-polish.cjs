@@ -82,8 +82,10 @@ const run = async function () {
 		check('right-click empty map cancels destination and retains sources');
 		await page.locator('#panel-multi').click();
 		await page.keyboard.press('d');
-		assert.equal(await page.locator('#destination-prompt').isVisible(), false);
-		await page.locator('#panel-multi').click();
+		assert.equal(await page.locator('#destination-prompt').isVisible(), true);
+		assert.equal(await page.locator('#panel-multi').getAttribute('aria-pressed'), 'false');
+		assert.equal(await selected(), 1);
+		await page.keyboard.press('Escape');
 		await page.locator('#settings').click();
 		await page.locator('.lab summary').click();
 		await page.locator('#speed').focus();
@@ -94,7 +96,7 @@ const run = async function () {
 		await page.keyboard.press('d');
 		assert.equal(await page.locator('#destination-prompt').isVisible(), false);
 		await page.keyboard.press('Escape');
-		check('D enters destination mode from gameplay controls and respects multi-select and menus');
+		check('D finishes multi-select with sources retained and respects open menus');
 
 		await page.mouse.move(empty.x, empty.y);
 		await page.mouse.wheel(0, -250);
@@ -181,7 +183,7 @@ const run = async function () {
 			await page.locator('[data-planet="Sol"]').click();
 			assert.equal(await page.locator('#send-units').isVisible(), false);
 			await page.locator('#open-dispatch').click();
-			await page.locator('.dispatch-shortcut').scrollIntoViewIfNeeded();
+			await page.locator('#send-units').scrollIntoViewIfNeeded();
 			await page.screenshot({ path: path.join(output, `${name}.png`) });
 			const layout = await page.evaluate(function () {
 				const panel = document.querySelector('#planet-panel').getBoundingClientRect();

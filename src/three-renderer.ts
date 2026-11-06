@@ -15,6 +15,8 @@ import { syncIsometricCamera } from './isometric-camera';
 import { loadFleetModels, type FleetModelKind, type ModelInstance } from './fleet-models';
 import { createSpaceLines } from './space-lines';
 import { createPlanetSurface, PLANET_TERRAINS } from './planet-surfaces';
+import { createSpaceBackdrop } from './space-backdrop';
+import { createAtmosphereMaterial } from './planet-atmosphere';
 import surfaceUrl from '../docs/visual-directions/asset-proof/planet-surface.png';
 import ochreUrl from '../assets/stellar-atlas/ochre-surface.png';
 import mineralUrl from '../assets/stellar-atlas/mineral-surface.png';
@@ -65,6 +67,8 @@ export const createThreeRenderer = async function (dependencies: RendererDepende
 		return new MeshStandardMaterial({ map, roughness: 0.92, metalness: 0.05 });
 	});
 	const sphere = new SphereGeometry(1, 40, 28);
+	const atmospheres = ['#7ec8e0', '#d5a877', '#a1b6df', '#81c4e7', '#c8e7f1', '#db8c61', '#dcc19d', '#a9b7c5'].map(createAtmosphereMaterial);
+	const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 	const routes = createSpaceLines(0.6);
 	const effects = createSpaceLines(0.95);
 	const cargo = new Group();
@@ -101,13 +105,14 @@ export const createThreeRenderer = async function (dependencies: RendererDepende
 		listeners.abort(); models.dispose(); routes.dispose(); effects.dispose();
 		sphere.dispose();
 		for (const material of planetMaterials) material.dispose();
+		for (const material of atmospheres) material.dispose();
 		for (const surface of surfaces) surface.dispose();
 		background?.dispose(); scene.clear(); renderer.dispose();
 	};
 	try {
 		await ecs.initialize();
-		scene.add(new AmbientLight('#a4c5ef', 1.9));
-		const key = new DirectionalLight('#fff0d7', 3.3); key.position.set(-800, 1300, -500); scene.add(key);
+		scene.add(new AmbientLight('#a4c5ef', 1.3));
+		const key = new DirectionalLight('#fff0d7', 3.1); key.position.set(-800, 1300, -500); scene.add(key);
 		const rim = new DirectionalLight('#75cfff', 1.5); rim.position.set(600, 200, 800); scene.add(rim);
 		for (const kind of ['ship', 'transport', 'carrier', 'platform'] as const) ecs.spawn(createGroupComponents(models.batch(kind, [])));
 		for (const object of [routes.object, effects.object, cargo]) scene.add(object);
@@ -119,14 +124,7 @@ export const createThreeRenderer = async function (dependencies: RendererDepende
 		return x >= -margin && x <= width + margin && y >= -margin && y <= height + margin;
 	};
 	const makeBackground = function (): void {
-		const tile = document.createElement('canvas'); tile.width = width; tile.height = height;
-		const context = tile.getContext('2d');
-		if (!context) throw new Error('Star field requires Canvas 2D');
-		context.fillStyle = '#081820'; context.fillRect(0, 0, width, height);
-		for (let i = 0; i < 800; i++) {
-			context.fillStyle = i % 4 === 0 ? '#738ea45c' : '#42627b55';
-			context.fillRect((i * 137.57) % 2048, (i * 83.37) % 1600, i % 5 === 0 ? 1.8 : 1, i % 5 === 0 ? 1.8 : 1);
-		}
+		const tile = createSpaceBackdrop(width, height);
 		background?.dispose(); background = new CanvasTexture(tile); background.colorSpace = SRGBColorSpace;
 		scene.background = background;
 	};
@@ -166,16 +164,23 @@ export const createThreeRenderer = async function (dependencies: RendererDepende
 				if (!globe) {
 					const variant = [...p.name].reduce(function (sum, letter) { return sum + letter.charCodeAt(0); }, 0) % planetMaterials.length;
 					const mesh = new Mesh(sphere, planetMaterials[variant]);
+					const atmosphereMaterial = atmospheres[variant];
+					if (atmosphereMaterial) {
+						const atmosphere = new Mesh(sphere, atmosphereMaterial);
+						atmosphere.scale.setScalar(1.075);
+						mesh.add(atmosphere);
+					}
 					const entity = ecs.spawn(createMeshComponents(mesh, { x: p.x, y: 0, z: p.y }, { scale: p.radius }));
 					globe = { mesh, entityId: entity.id }; globes.set(id, globe);
 				}
 				const transform = ecs.getComponent(globe.entityId, 'localTransform3D');
 				if (transform) {
-					transform.x = p.x; transform.z = p.y; transform.ry = match.time / 48 * Math.PI * 2;
+					transform.x = p.x; transform.z = p.y;
+					transform.ry = id * 1.618 + (reducedMotion.matches ? 0 : match.time / (180 + id % 5 * 24) * Math.PI * 2);
 					ecs.markChanged(globe.entityId, 'localTransform3D');
 				}
 			}
-			routes.circle(p, p.radius + 20, COLORS[p.owner], 0.25);
+			routes.circle(p, p.radius + 20, COLORS[p.owner], p.owner === 'neutral' ? 0.22 : 0.6);
 			const platformCount = Math.max(0, Math.ceil(p.guns));
 			if (platformCount > 0) routes.circle(p, planetPlatformOrbitRadius(p.radius), COLORS[p.owner], 0.3);
 			for (let i = 0; i < platformCount; i++) {
@@ -230,7 +235,7 @@ export const createThreeRenderer = async function (dependencies: RendererDepende
 			if (u.phase === 'travel') { routes.line(point, intercepts.get(id) ?? travelAim(u, target), COLORS[u.owner], 0.18); travelLines++; }
 			if (!visible(point, camera, Math.max(40, 50 * camera.scale))) continue;
 			instances[u.kind].push({ ...point, heading, owner: u.owner, length: u.kind === 'ship' ? 36 : 30 });
-			const thrust = (u.phase === 'travel' ? 26 : 10) * (0.9 + 0.1 * Math.sin(match.time * 19 + id * 2.4));
+			const thrust = (u.phase === 'travel' ? 26 : 10) * (reducedMotion.matches ? 0.95 : 0.9 + 0.1 * Math.sin(match.time * 19 + id * 2.4));
 			effects.line({ x: point.x - Math.cos(heading) * 12, y: point.y - Math.sin(heading) * 12 },
 				{ x: point.x - Math.cos(heading) * (12 + thrust), y: point.y - Math.sin(heading) * (12 + thrust) }, COLORS[u.owner], u.phase === 'travel' ? 0.9 : 0.4);
 			if (u.kind === 'transport' && camera.scale / fitScale >= 3.5) {

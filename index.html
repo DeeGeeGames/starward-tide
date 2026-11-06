@@ -49,10 +49,7 @@
 			content="https://starwardtide.deegeegames.com/"
 		/>
 		<link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
-		<link rel="stylesheet" href="./src/style.css" />
-		<link rel="stylesheet" href="./src/menu.css" />
-		<link rel="stylesheet" href="./src/ui-theme.css" />
-		<link rel="stylesheet" href="./src/gameplay-ui.css" />
+		<link rel="stylesheet" href="./src/app.css" />
 	</head>
 	<body>
 		<div id="front-menu">
@@ -62,14 +59,15 @@
 				<div class="hero-fleet"><img src="./docs/visual-directions/asset-proof/warship-sprite.png" alt=""/><img src="./docs/visual-directions/asset-proof/warship-sprite.png" alt=""/><img src="./docs/visual-directions/asset-proof/warship-sprite.png" alt=""/></div>
 			</div>
 			<section class="screen title" id="title-screen" aria-labelledby="game-title">
-				<div class="title-wordmark"><h1 id="game-title">STARWARD<span>TIDE</span></h1><div class="brand-rule"></div></div>
+				<div class="title-wordmark"><p class="edition-label">DEEGEE GAMES / TACTICAL SPACE COMMAND</p><h1 id="game-title">STARWARD<span>TIDE</span></h1><div class="brand-rule"></div><p class="title-deck">Win the orbit. Take the world.</p></div>
 				<div class="profile-heading"><span id="profile-badge-orb" aria-hidden="true">P</span><span><strong id="profile-badge-name">Loading profiles…</strong><small>Local profile</small></span></div>
 				<nav class="main-menu" aria-label="Main menu" data-focus-group>
 					<button id="continue-conquest" class="menu-choice" disabled hidden>Continue <span aria-hidden="true">›</span></button>
-					<button id="new-game" class="menu-choice" disabled>New conquest <span aria-hidden="true">›</span></button>
+					<button id="first-command" class="menu-choice first-command" disabled>First command <small>Start here</small><span aria-hidden="true">›</span></button>
+					<button id="new-game" class="menu-choice" disabled>Custom operation <span aria-hidden="true">›</span></button>
 					<button id="how-to-play" class="menu-choice" aria-haspopup="dialog" aria-controls="help-dialog">How to play <span aria-hidden="true">›</span></button>
 					<button id="profile-badge" class="menu-choice" disabled aria-label="Loading local profiles" aria-haspopup="dialog" aria-controls="profile-dialog">Profiles <span aria-hidden="true">›</span></button>
-					<button id="title-sound" class="menu-choice" data-sound-toggle aria-pressed="true">Sound: On</button>
+					<button id="title-audio" class="menu-choice" aria-haspopup="dialog">Audio <span aria-hidden="true">›</span></button>
 				</nav>
 				<p id="menu-profile-status" class="status" role="status" aria-live="polite"></p>
 				<div class="menu-footer"><div class="input-hints"><span data-key-hint><kbd>↵</kbd> Select</span><span data-key-hint><kbd>↑↓</kbd> Navigate</span><span data-pad-hint><kbd>A</kbd> Select</span><span data-pad-hint><kbd>Y</kbd> Profile</span><span data-touch-hint>Tap a choice</span><button id="title-fullscreen" class="fullscreen-icon-button" aria-label="Enter fullscreen" aria-pressed="false">⛶</button></div><span id="profile-save-time"></span></div>
@@ -104,7 +102,12 @@
 			</section>
 			<section class="screen setup-screen" id="setup" hidden aria-labelledby="setup-title" tabindex="-1">
 				<div class="setup-top"><h2 id="setup-title">Prepare your conquest</h2><nav class="setup-steps" aria-label="Setup steps"><button id="setup-galaxy-tab" aria-current="step">01 Galaxy</button><span aria-hidden="true">—</span><button id="setup-opposition-tab">02 Opposition</button></nav></div>
-				<p class="setup-instruction">Choose a setting. Move left or right to change it.</p>
+				<p class="setup-instruction" id="operation-description">Choose your operation, then tune the opposition.</p>
+				<div class="operation-presets" role="group" aria-label="Operation presets">
+					<button data-operation="first"><span>01 / LEARN THE COMMAND</span><strong>First command</strong><small>8 authored worlds · guided opening</small></button>
+					<button data-operation="frontier"><span>02 / BUILD YOUR FRONT</span><strong>Open frontier</strong><small>12 generated worlds · conquest</small></button>
+					<button data-operation="race"><span>03 / BREAK THROUGH</span><strong>Carrier race</strong><small>Escort your flagship to the beacon</small></button>
+				</div>
 				<div class="setup-layout"><div class="setup-controls" data-focus-group>
 					<div id="galaxy-settings" class="settings-list">
 						<button class="setting-row" data-setting="game-mode"><span>Game mode</span><span class="setting-value">Conquest</span></button>
@@ -155,6 +158,7 @@
 					<button id="settings" aria-label="Open game menu" aria-controls="field-guide" title="Game menu & help" aria-expanded="false">☰</button>
 				</div>
 			</header>
+			<div id="operation-objective"><span class="objective-mark" aria-hidden="true">◇</span><div><span id="objective-label">CONQUEST</span><strong id="objective-text">Eliminate rival holdings</strong></div><button id="battle-report" hidden>Battle report</button></div>
 			<div class="map-heading">
 				<span id="instruction">Select one of your worlds to manage it.</span>
 				<button id="multi" aria-pressed="false">＋ Multi-select</button>
@@ -167,6 +171,8 @@
 			</div>
 			<div id="destination-summary" class="hud" hidden></div>
 			<div id="banner" role="status"></div>
+			<aside id="command-coach" aria-label="Command guidance" hidden><div class="coach-heading"><span id="coach-step">FIRST COMMAND</span><button id="dismiss-coach" aria-label="Dismiss command guidance">×</button></div><h2 id="coach-title"></h2><p id="coach-detail"></p><button id="coach-action">Locate home world →</button></aside>
+			<div id="target-assessment" hidden role="region" aria-labelledby="target-title"><strong id="target-title"></strong><p id="target-detail"></p><div id="target-actions" hidden><button id="confirm-target" aria-describedby="target-detail">Confirm dispatch</button><button id="change-target">Choose another</button></div></div>
 			<span id="save-status" role="status" aria-live="polite">Not saved</span>
 			<aside id="planet-panel" aria-label="World commands" hidden>
 				<section class="command-panel">
@@ -197,7 +203,7 @@
 									<button data-production="guns" title="Defense platforms stay at this world"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2v4m0 8v4M2 10h4m8 0h4M6 6h8v8H6zM8 8h4v4H8z"/></svg>Platforms</button>
 								</div>
 								<div id="production-progress" role="progressbar" aria-label="Current production" aria-valuemin="0" aria-valuemax="100"><i></i></div>
-								<p class="production-note">Switching production discards unfinished work.</p>
+								<p class="production-note">Troops capture. Ships escort and intercept. Platforms defend this orbit.<br />Switching production discards unfinished work.</p>
 							</div>
 						</div>
 						<div id="dispatch-details"><div id="dispatch-controls">
@@ -252,10 +258,11 @@
 					<button id="setup-game">New game</button>
 					<button id="profiles-game">Profiles</button>
 				</div>
+				<button id="game-audio" class="text-button" aria-haspopup="dialog">Audio settings</button><button id="show-coach" class="text-button">Command guidance</button>
 				<p id="opponent-summary"></p>
 				<p id="save-status-menu" role="status" aria-live="polite">Not saved</p>
 				<details class="lab">
-					<summary>Skirmish settings <span>scenarios & pace</span></summary>
+					<summary>Advanced settings <span>pace & practice scenarios</span></summary>
 					<div class="lab-content">
 						<label
 							>Scenario<select id="scenario">
@@ -307,7 +314,7 @@
 							and can be destroyed; escorts absorb fire first. Traveling ships within range
 							stop and trade shots, then resume the same destination. Transports cannot
 							shoot back and keep flying. Orbiting ships, transports, and defense
-							platforms do not join that passing fire. Take every rival planet to win.
+							platforms do not join that passing fire. Take every rival world and carrier to win. Neutral worlds are optional.
 							Switching production discards unfinished work.
 						</p>
 						<p>
@@ -328,6 +335,9 @@
 				<div id="events" aria-live="polite"></div>
 			</section>
 		</div>
+		<dialog id="mission-briefing" class="demo-dialog" aria-labelledby="briefing-title"><form method="dialog"><span class="edition-label">OPERATION 01 / FIRST COMMAND</span><h2 id="briefing-title">A foothold among the stars.</h2><p>Eight worlds. One rival. Build an economy, escort your troops, and take every rival holding.</p><div class="briefing-rules"><div><b>01</b><strong>Take ground</strong><span>Troops capture worlds. Captured worlds produce reinforcements.</span></div><div><b>02</b><strong>Win orbit</strong><span>Warships protect transports. Clear enemy ships and platforms before landing.</span></div><div><b>03</b><strong>Make time</strong><span>Pause whenever you need. Plan orders, then resume to launch.</span></div></div><p class="briefing-note">Optional guidance follows your progress. The rival uses the same rules and starts with the same forces.</p><button class="demo-primary" value="launch" autofocus>Take command →</button></form></dialog>
+		<dialog id="battle-results" class="demo-dialog" aria-labelledby="result-title"><span class="edition-label" id="result-kicker">AFTER ACTION</span><h2 id="result-title">Operation complete</h2><p id="result-description"></p><dl id="result-stats"></dl><div class="result-actions"><button id="result-rematch" class="demo-primary">Replay this map</button><button id="result-new">New operation</button><button id="result-close">Inspect battlefield</button></div><p id="result-status" role="status"></p></dialog>
+		<dialog id="audio-settings" class="demo-dialog" aria-labelledby="audio-title"><div class="dialog-heading"><div><span class="edition-label">SOUND & MUSIC</span><h2 id="audio-title">Set the atmosphere.</h2></div><button id="close-audio" aria-label="Close audio settings">×</button></div><p>An original ambient score follows the battle. Your settings stay in this browser.</p><label class="audio-slider" for="music-volume"><span>Music <output id="music-volume-value">45%</output></span><input id="music-volume" type="range" min="0" max="100" step="5" /></label><label class="audio-slider" for="effects-volume"><span>Sound effects <output id="effects-volume-value">80%</output></span><input id="effects-volume" type="range" min="0" max="100" step="5" /></label><button id="title-sound" class="demo-secondary" data-sound-toggle aria-pressed="true">Sound: On</button></dialog>
 		<dialog id="confirm-dialog" class="action-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-message"><form method="dialog"><h2 id="confirm-title">Confirm action</h2><p id="confirm-message"></p><label id="confirm-input-label" hidden>Profile name<input id="confirm-input" maxlength="32" autocomplete="off" /></label><div class="dialog-actions"><button id="confirm-cancel" value="cancel" autofocus>Cancel</button><button id="confirm-accept" value="confirm">Continue</button></div></form></dialog>
 		<div id="gamepad-cursor" aria-hidden="true" hidden><i></i></div><div id="controller-status" role="status" aria-live="polite" hidden></div>
 		<script type="module" src="./src/main.ts"></script>
