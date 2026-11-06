@@ -1,0 +1,15 @@
+{
+  "checks": [
+    "audio sliders support arrows, persist independently and restore focus",
+    "authored first command starts with a paused briefing and explicit launch",
+    "explicit send reviews exact target and forces before reserving a paused order",
+    "paused cancellation refunds forces and right-click remains a direct shortcut",
+    "real-time first invasion captures Haven and guidance reaches production specialization",
+    "Continue restores captured worlds paused without replaying the opening briefing",
+    "390px, 320px and short-landscape layouts expose send confirmation without page overflow",
+    "completed-save report, read-only battlefield inspection and rematch work",
+    "no browser or renderer errors"
+  ],
+  "errors": [],
+  "consoleErrors": []
+}

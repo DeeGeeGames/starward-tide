@@ -67,6 +67,12 @@ export const adjustControl = function (control: HTMLElement, delta: number): boo
 		target.click();
 		return true;
 	}
+	if (target instanceof HTMLInputElement && target.type === 'range' && !target.disabled) {
+		if (delta > 0) target.stepUp(); else target.stepDown();
+		target.dispatchEvent(new Event('input', { bubbles: true }));
+		target.dispatchEvent(new Event('change', { bubbles: true }));
+		return true;
+	}
 	return false;
 };
 

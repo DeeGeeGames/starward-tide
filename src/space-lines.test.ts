@@ -7,6 +7,9 @@ test('growing line buffers disposes the previously uploaded attributes before re
 		lines.line({ x: 0, y: 0 }, { x: 1, y: 1 }, '#fff'); lines.flush();
 		const geometry = lines.object.geometry;
 		const original = geometry.getAttribute('position');
+		expect(Number.isInteger(original.count)).toBe(true);
+		geometry.computeBoundingSphere();
+		expect(Number.isFinite(geometry.boundingSphere?.radius)).toBe(true);
 		let disposedAttribute = original;
 		let disposals = 0;
 		geometry.addEventListener('dispose', function () { disposals++; disposedAttribute = geometry.getAttribute('position'); });
@@ -16,6 +19,8 @@ test('growing line buffers disposes the previously uploaded attributes before re
 		expect(disposals).toBe(1);
 		expect(disposedAttribute).toBe(original);
 		expect(geometry.getAttribute('position')).not.toBe(original);
+		geometry.computeBoundingSphere();
+		expect(Number.isFinite(geometry.boundingSphere?.radius)).toBe(true);
 		expect(geometry.drawRange.count).toBe(600);
 		lines.clear(); lines.flush();
 		expect(disposals).toBe(1);

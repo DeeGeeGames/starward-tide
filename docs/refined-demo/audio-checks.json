@@ -1,0 +1,15 @@
+{
+  "checks": [
+    "no autoplay context before interaction; mute persists across reload",
+    "trusted pointer unlocks native audio with nonzero output",
+    "normal paused dispatch plays command cue and keeps controls playable",
+    "real orbital combat emits native laser playback",
+    "pause stops battle voices and never replays frozen volleys",
+    "mute silences UI and combat immediately; both controls synchronize",
+    "simulated focus loss stops active voices and suppresses background events",
+    "mobile title mute control stays reachable",
+    "game journey reports no browser runtime errors"
+  ],
+  "errors": [],
+  "nativeSourcesStarted": 29
+}

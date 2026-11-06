@@ -1,4 +1,4 @@
-# Galaxy Conquest — current game design
+# Starward Tide — current game design
 
 This document describes standalone star system combat. It supersedes the initial v0.1 concept. The [README](../README.md) covers running the game and operating its controls. Tuning values below are defaults, not promises about balance.
 
@@ -8,9 +8,9 @@ Preserve the speed and clarity of a Galcon-like game while adding production cho
 
 The player is blue; one to three computer rivals are red, green, and purple; neutral planets are unclaimed. Tactical ships and transports are individual entities. A dispatch groups units for order tracking and recall, but does not create a separately managed fleet. Planet surfaces and carrier crews hold troop counts; defense platforms are planet-bound counts.
 
-There is no networking, controller support, research, upgrades, diplomacy, construction queue, transport inventory, resource harvesting, account, cloud sync, or save export/import.
+There is no networking, research, upgrades, diplomacy, construction queue, transport inventory, resource harvesting, account, cloud sync, or save export/import.
 
-Procedural sound effects provide command, combat, capture/loss, bombardment, and result feedback. A shared browser mute preference is available in both menus. Transient sound events are bounded, drained each frame, and excluded from saves; battle voices stop on pause, focus loss, and menu transitions. Sound design and physical-device mix acceptance require listening playtests.
+Procedural sound effects provide command, combat, capture/loss, bombardment, and result feedback. An original adaptive ambient score and independent music/effects volumes accompany the effects. A shared browser mute preference affects both. Transient sound events are bounded, drained each frame, and excluded from saves; battle voices stop on pause, focus loss, and menu transitions. Sound design and physical-device mix acceptance require listening playtests.
 
 ## Skirmish
 
@@ -31,6 +31,8 @@ Maps with multiple opponents are 25% wider and taller than the dimensions above.
 Each side starts with one planet, 44 troops, three ships, no platforms, troop production, and production rate 2.6. Other planets are neutral, with no ships or platforms, and do not produce until captured. Neutral tiers have 8/14/24 troops and production rates 1.7/2.2/3.4 respectively.
 
 With carriers enabled, each side also starts with one carrier with 20 crew and three docked ships. Its current production rate is 25% of the standard home-planet rate. That multiplier is provisional implementation tuning; it is not a balance conclusion.
+
+First Command is an authored, mirrored eight-world introduction using the same combat, production, and save rules. It defaults to relaxed expansionist AI and offers a paused briefing plus optional state-driven guidance. Its starting forces match ordinary conquest. The generated sandbox remains available through Custom operation. After-action reports distinguish player orders and first capture from all-faction capture and transit-loss metrics.
 
 The Prototype lab uses a fixed eighteen-planet 1200 × 1320 map. Its skirmish starts with AI enabled. Blockade and invasion scenarios start with AI disabled: Sol has a red surface with 18 troops; the blockade adds four blue orbital ships, while the invasion adds two red platforms and a red ship there, plus five extra blue ships at Terra. Restart restores the chosen scenario; pace persists.
 
@@ -97,7 +99,7 @@ The tactical simulation advances in fixed **0.05-second** steps at 0.5×, 1×, o
 
 The rival evaluates tactical decisions every **2.8 simulation seconds**, using the same unit costs and combat rules. It favors nearby lightly defended targets, switches between troops and ships, builds ships under hostile orbital pressure, and sends ship-only attacks to clear resistance. It normally retains 25% of a source, increasing its troop commitment when necessary to exceed the current garrison. It can pool troops to finish an invasion and pool ships to relieve a blockade with more ships than the blockaders. Existing inbound cargo reduces additional troop demand. With carriers enabled, it retains carrier crew for boarding defense, launches docked ships locally against blockaders, and in Conquest moves carriers to bombard nonfriendly worlds. Active bombardment orders retain their charge between AI decisions. Large garrisons increase a bombardment target's value; style still influences neutral versus player targets. Ordinary worlds keep expanding rather than saving troops to beat a garrison scheduled for bombardment, then send occupation forces after neutralization. A Conquest faction with only carriers can send crew above a 20-person reserve to occupy an empty neutral world and rebuild its planetary economy. Worlds preparing escorts for a boarding response retain that production choice through the rest of the decision. When a player carrier threatens a rival world, the AI attempts to board it with sufficient troops and escorts, accounting for docked defenders. Race carriers retain their destination priority rather than starting bombardment detours. The destination modes also retain their carrier attack priorities described above. The heuristic is not a prediction of future production, interception, or survival along a route; it does not guarantee winning decisions.
 
-The gameplay HUD uses compact status/action clusters and one contextual command rail, replaced by a collapsible bottom sheet on portrait phones. Production choices expand on demand there. During destination choice, the command panel clears and the map is reframed while preserving zoom. Selection framing uses the playable area clear of the current rail or sheet. A separate presentation world uses ECSpresso’s renderer-agnostic camera and timer plugins, so notices expire in real time during tactical pause and camera state is shared by DOM and Pixi.
+The gameplay HUD uses compact status/action clusters and one contextual command rail, replaced by a collapsible bottom sheet on portrait phones. Production choices expand on demand there. During destination choice, the command panel clears and the map is reframed while preserving zoom. Selection framing uses the playable area clear of the current rail or sheet. A separate presentation world uses ECSpresso’s renderer-agnostic camera and timer plugins, so notices expire in real time during tactical pause and camera state is shared by DOM and Three.js.
 
 The map distinguishes ownership, surface troops or carrier crew, docked ships (▣), orbital ships (◆), and platforms (✣). Orders shows routes involving the current selection; Show all preserves selection until it changes. Selecting a row highlights its route. The lab records first player capture time, player orders, total captures, and combined transport/cargo losses; production shares, blockade duration, average match length, and stalemate frequency are not currently collected.
 
@@ -120,7 +122,7 @@ Storage is browser- and origin-local, can be blocked/partitioned in embedded con
 | Maps and lab setup | [maps.ts](../src/maps.ts), [game-scenario.ts](../src/game-scenario.ts) |
 | Screens, interaction, save lifecycle | [main.ts](../src/main.ts), [front-menu.ts](../src/front-menu.ts) |
 | Persistence and validation | [profile-storage.ts](../src/profile-storage.ts), [save-state.ts](../src/save-state.ts) |
-| Presentation and culling | [pixi-renderer.ts](../src/pixi-renderer.ts), [render-candidates.ts](../src/render-candidates.ts) |
+| Presentation and culling | [three-renderer.ts](../src/three-renderer.ts), [space-backdrop.ts](../src/space-backdrop.ts) |
 
 ## Playtest questions and acceptance limits
 
